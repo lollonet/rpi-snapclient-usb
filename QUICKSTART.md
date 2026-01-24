@@ -52,7 +52,6 @@ sudo bash common/scripts/setup.sh
 **Follow the prompts:**
 - Choose configuration: `1` for DAC+ 9" or `2` for Digi+ 4K
 - Enter Snapserver IP (default: 192.168.63.3)
-- Confirm WiFi settings
 
 The script automatically:
 - Installs Docker and dependencies

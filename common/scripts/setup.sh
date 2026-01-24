@@ -117,31 +117,6 @@ else
 fi
 echo ""
 
-echo "📡 Configuring WiFi..."
-WIFI_CONFIG="/etc/wpa_supplicant/wpa_supplicant.conf"
-
-if [ -f "$PROJECT_DIR/common/config/wpa_supplicant.conf.template" ]; then
-    if [ ! -f "$WIFI_CONFIG" ] || ! grep -q "YOUR_WIFI_SSID" "$WIFI_CONFIG"; then
-        read -rp "Configure WiFi now? (y/n): " configure_wifi
-
-        if [ "$configure_wifi" = "y" ]; then
-            read -rp "Enter WiFi SSID: " wifi_ssid
-            read -rsp "Enter WiFi Password: " wifi_password
-            echo ""
-
-            sed "s/YOUR_WIFI_SSID/$wifi_ssid/g; s/YOUR_WIFI_PASSWORD/$wifi_password/g" \
-                "$PROJECT_DIR/common/config/wpa_supplicant.conf.template" > "$WIFI_CONFIG"
-
-            echo "✓ WiFi configured"
-        else
-            echo "⚠️  Please configure WiFi manually later"
-        fi
-    else
-        echo "✓ WiFi already configured"
-    fi
-fi
-echo ""
-
 echo "🐳 Setting up Docker containers..."
 cd "$INSTALL_DIR"
 

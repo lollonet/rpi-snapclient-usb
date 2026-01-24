@@ -38,29 +38,19 @@ See **[QUICKSTART.md](QUICKSTART.md)** for 5-minute setup instructions.
 1. Download **Raspberry Pi Imager**: https://www.raspberrypi.com/software/
 2. Select **Raspberry Pi OS Lite (64-bit)**
 3. Flash to your USB drive
-4. Enable SSH in settings before flashing
+4. **Important**: In Imager settings (gear icon), configure:
+   - Enable SSH (with password or key)
+   - Set WiFi credentials (SSID and password)
+   - Set hostname and username if desired
 
-### 2. Configure WiFi
-
-Before first boot, edit `common/config/wpa_supplicant.conf.template`:
-
-```bash
-network={
-    ssid="YOUR_WIFI_SSID"
-    psk="YOUR_WIFI_PASSWORD"
-}
-```
-
-Copy to the boot partition after flashing.
-
-### 3. First Boot
+### 2. First Boot
 
 1. Connect HiFiBerry HAT to GPIO pins
 2. Connect display (HDMI for both configs, or DSI for 9" screen)
 3. Insert USB drive and power on
 4. Wait for boot and SSH access
 
-### 4. Run Setup
+### 3. Run Setup
 
 ```bash
 # SSH into Raspberry Pi
@@ -80,9 +70,8 @@ The script will:
 - Configure HiFiBerry and ALSA
 - Set up cover display with X11
 - Create systemd services for auto-start
-- Configure WiFi if needed
 
-### 5. Configure Snapserver
+### 4. Configure Snapserver
 
 Edit `/opt/snapclient/.env`:
 
@@ -92,7 +81,7 @@ SNAPSERVER_PORT=1704
 SNAPSERVER_RPC_PORT=1705
 ```
 
-### 6. Reboot
+### 5. Reboot
 
 ```bash
 sudo reboot
@@ -122,8 +111,7 @@ rpi-snapclient-usb/
 │   └── cover-display/        # HTML + metadata service (4K)
 │
 ├── common/                   # Shared files
-│   ├── scripts/setup.sh      # Installation script
-│   └── config/               # WiFi templates
+│   └── scripts/setup.sh      # Installation script
 │
 ├── README.md                 # This file
 └── QUICKSTART.md             # 5-minute setup guide
