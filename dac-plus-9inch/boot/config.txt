@@ -1,0 +1,32 @@
+# HiFiBerry DAC+ Configuration for Raspberry Pi 4
+# Copy this to /boot/firmware/config.txt or /boot/config.txt
+
+# GPU Memory (increase for video display)
+gpu_mem=256
+
+# HiFiBerry DAC+ overlay
+dtoverlay=hifiberry-dacplus
+
+# Disable onboard audio
+dtparam=audio=off
+
+# Enable I2C (if needed for screen)
+dtparam=i2c_arm=on
+
+# Display settings for 9" screen
+# Uncomment and adjust based on your specific display
+# hdmi_group=2
+# hdmi_mode=87
+# hdmi_cvt=1024 600 60 6 0 0 0
+# hdmi_drive=2
+
+# Force HDMI output (if using HDMI screen)
+# hdmi_force_hotplug=1
+
+# Enable hardware video acceleration
+dtoverlay=vc4-kms-v3d
+max_framebuffers=2
+
+# Boot options
+disable_splash=1
+boot_delay=0

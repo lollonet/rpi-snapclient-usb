@@ -1,0 +1,16 @@
+PLACEHOLDER IMAGE NEEDED
+
+Create a placeholder.jpg image (400x400px minimum) to display when no music is playing.
+
+Options:
+1. Use any image editor to create a 400x400px image
+2. Use ImageMagick:
+   convert -size 400x400 xc:#1a1a1a -gravity center \
+           -fill white -pointsize 48 -annotate +0+0 "No Music" \
+           placeholder.jpg
+
+3. Use an online tool like Canva or Photopea
+
+Or just use any album art image as fallback.
+
+This file will be replaced by actual album art when music plays.

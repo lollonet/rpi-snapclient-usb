@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  snapclient:
+    build: ./snapclient
+    container_name: snapclient
+    network_mode: host
+    restart: unless-stopped
+    devices:
+      - /dev/snd:/dev/snd
+    environment:
+      - SNAPSERVER_HOST=${SNAPSERVER_HOST:-192.168.63.3}
+      - SNAPSERVER_PORT=${SNAPSERVER_PORT:-1704}
+      - HOST_ID=snapclient-dac-9inch
+      - SOUNDCARD=default
+    privileged: true
+
+  metadata-service:
+    build: ./cover-display
+    container_name: metadata-service
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - SNAPSERVER_HOST=${SNAPSERVER_HOST:-192.168.63.3}
+      - SNAPSERVER_PORT=${SNAPSERVER_RPC_PORT:-1705}
+      - CLIENT_ID=snapclient-dac-9inch
+    volumes:
+      - ./cover-display/public:/app/public
+
+  nginx:
+    image: nginx:alpine
+    container_name: cover-webserver
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./cover-display/public:/usr/share/nginx/html:ro
