@@ -5,11 +5,15 @@ Get your Raspberry Pi Snapcast client running in 5 minutes.
 ## Prerequisites
 
 - Raspberry Pi 4 (2GB+)
-- HiFiBerry DAC+ or Digi+
+- One of the supported audio HATs (HiFiBerry, IQaudio, Allo, JustBoom) or USB audio device
 - USB drive (8GB+)
 - Display (9" screen or 4K HDMI)
 - Computer with Raspberry Pi Imager
 - Snapserver running on your network
+
+## Supported Audio HATs
+
+The setup supports: HiFiBerry (DAC+, Digi+, DAC2 HD), IQaudio (DAC+, DigiAMP+, Codec Zero), Allo (Boss, DigiOne), JustBoom (DAC, Digi), and USB Audio.
 
 ## Step 1: Flash USB Drive
 
@@ -26,7 +30,7 @@ Get your Raspberry Pi Snapcast client running in 5 minutes.
 
 ## Step 2: First Boot
 
-1. Attach HiFiBerry HAT to Raspberry Pi GPIO pins
+1. Attach your audio HAT to Raspberry Pi GPIO pins (or connect USB audio device)
 2. Connect display:
    - **9" screen**: DSI or HDMI
    - **4K TV**: HDMI
@@ -55,15 +59,20 @@ sudo bash common/scripts/setup.sh
 ```
 
 The script will:
-- Prompt you to choose configuration (1=DAC+ 9", 2=Digi+ 4K)
-- Ask for your Snapserver IP address
-- Install Docker CE and dependencies
-- Configure HiFiBerry and ALSA
-- Set up cover display with X11
-- Create systemd services for auto-start
-- Copy files to `/opt/snapclient/`
+1. **Prompt you to select your audio HAT** (11 options):
+   - HiFiBerry DAC+, Digi+, DAC2 HD
+   - IQaudio DAC+, DigiAMP+, Codec Zero
+   - Allo Boss, DigiOne
+   - JustBoom DAC, Digi
+   - USB Audio Device
+2. Ask for your Snapserver IP address
+3. Install Docker CE and dependencies
+4. Automatically configure your audio HAT and ALSA
+5. Set up cover display with X11
+6. Create systemd services for auto-start
+7. Copy files to `/opt/snapclient/`
 
-**Note**: The script takes 3-5 minutes. It does not build Docker images (uses pre-built images from GHCR).
+**Note**: The script takes 3-5 minutes. It uses pre-built Docker images from GHCR (no building required).
 
 ## Step 5: Configure and Reboot
 
@@ -73,13 +82,13 @@ Edit configuration if needed:
 sudo nano /opt/snapclient/.env
 ```
 
-Example `.env`:
+Example `.env` (automatically configured by setup script):
 ```bash
 SNAPSERVER_HOST=192.168.1.100
 SNAPSERVER_PORT=1704
 SNAPSERVER_RPC_PORT=1705
 HOST_ID=snapclient-living-room
-SOUNDCARD=hw:sndrpihifiberry,0
+SOUNDCARD=hw:sndrpihifiberry,0  # Auto-set based on selected HAT
 ```
 
 Reboot:

@@ -56,26 +56,34 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 
 - 🎵 **Synchronized Audio**: Multi-room playback via Snapcast
 - 🎨 **Cover Display**: Full-screen album art with track metadata
-- 🎛️ **HiFiBerry Support**: DAC+ (analog) and Digi+ (S/PDIF) configurations
+- 🎛️ **Multiple Audio HATs**: Support for 11 popular Raspberry Pi audio HATs
 - 📺 **Display Options**: 9" touchscreen or 4K HDMI TV
 - 🐳 **Docker-based**: Pre-built images for easy deployment
 - 🔄 **Auto-start**: Systemd services for automatic startup
 
+## Supported Audio HATs
+
+| HAT | Type | Output |
+|-----|------|--------|
+| **HiFiBerry DAC+** | Analog | Line out, headphones |
+| **HiFiBerry Digi+** | S/PDIF | Digital coax/optical |
+| **HiFiBerry DAC2 HD** | Analog HD | High-res line out |
+| **IQaudio DAC+** | Analog | Line out |
+| **IQaudio DigiAMP+** | Analog+Amp | Speaker terminals |
+| **IQaudio Codec Zero** | Analog | Line in/out |
+| **Allo Boss DAC** | Analog | High-res line out |
+| **Allo DigiOne** | S/PDIF | Digital coax/optical |
+| **JustBoom DAC** | Analog | Line out, headphones |
+| **JustBoom Digi** | S/PDIF | Digital coax/optical |
+| **USB Audio** | Varies | Any USB DAC/soundcard |
+
 ## Hardware Requirements
 
-### Configuration 1: DAC+ with 9" Screen
+### Common Components
 - Raspberry Pi 4 (2GB+)
-- HiFiBerry DAC+ or DAC+ Pro
-- 9" display (1024x600)
 - USB drive (8GB+ for boot)
-- Analog output to speakers/amplifier
-
-### Configuration 2: Digi+ with 4K TV
-- Raspberry Pi 4 (2GB+)
-- HiFiBerry Digi+ or Digi+ Pro
-- 4K HDMI display (3840x2160)
-- USB drive (8GB+ for boot)
-- S/PDIF output to receiver/DAC
+- Display: 9" touchscreen (1024x600) or 4K HDMI TV (3840x2160)
+- One of the supported audio HATs listed above, or a USB audio device
 
 ## Quick Setup
 
@@ -85,36 +93,45 @@ See **[QUICKSTART.md](QUICKSTART.md)** for detailed 5-minute setup instructions.
 
 1. Flash Raspberry Pi OS Lite (64-bit) to USB drive
 2. Enable SSH and WiFi in Raspberry Pi Imager settings
-3. Boot Pi with HiFiBerry HAT attached
+3. Boot Pi with your audio HAT attached
 4. Copy project files and run `sudo bash common/scripts/setup.sh`
-5. Configure `.env` with your Snapserver IP and reboot
+5. Select your audio HAT from the interactive menu (11 options)
+6. Configure Snapserver IP and reboot
 
-The setup script installs Docker CE, configures HiFiBerry and ALSA, sets up the cover display, and creates systemd services for auto-start.
+The setup script installs Docker CE, automatically configures your audio HAT and ALSA, sets up the cover display, and creates systemd services for auto-start.
 
 ## Project Structure
 
 ```
 rpi-snapclient-usb/
-├── dac-plus-9inch/           # HiFiBerry DAC+ with 9" screen
-│   ├── docker-compose.yml
-│   ├── .env.example
-│   ├── boot/config.txt
-│   ├── config/asound.conf
-│   └── cover-display/
-│       ├── metadata-service/
-│       └── public/index.html
-│
-├── digi-plus-4k/             # HiFiBerry Digi+ with 4K TV
-│   ├── docker-compose.yml
-│   ├── .env.example
-│   ├── boot/config.txt
-│   ├── config/asound.conf
-│   └── cover-display/
-│       ├── metadata-service/
-│       └── public/index.html
-│
 ├── common/
-│   └── scripts/setup.sh      # Main installation script
+│   ├── scripts/setup.sh      # Main installation script with HAT selection
+│   └── audio-hats/           # Audio HAT configurations
+│       ├── hifiberry-dac.conf
+│       ├── hifiberry-digi.conf
+│       ├── hifiberry-dac2hd.conf
+│       ├── iqaudio-dac.conf
+│       ├── iqaudio-digiamp.conf
+│       ├── iqaudio-codec.conf
+│       ├── allo-boss.conf
+│       ├── allo-digione.conf
+│       ├── justboom-dac.conf
+│       ├── justboom-digi.conf
+│       └── usb-audio.conf
+│
+├── dac-plus-9inch/           # 9" display configuration
+│   ├── docker-compose.yml
+│   ├── .env.example
+│   ├── boot/config.txt       # Display-specific boot settings
+│   ├── config/asound.conf    # Reference ALSA config
+│   └── cover-display/
+│
+├── digi-plus-4k/             # 4K display configuration
+│   ├── docker-compose.yml
+│   ├── .env.example
+│   ├── boot/config.txt       # Display-specific boot settings
+│   ├── config/asound.conf    # Reference ALSA config
+│   └── cover-display/
 │
 └── docs/
     └── archive/              # Historical documentation
@@ -190,6 +207,8 @@ sudo docker-compose up -d
 ## Notes
 
 - The setup script installs **Docker CE** (official Docker Community Edition), not the Debian `docker.io` package
-- ALSA configuration uses card name `sndrpihifiberry` instead of hardcoded card numbers for reliability
+- ALSA configuration is automatically generated based on the selected audio HAT
+- The script supports 11 different audio HATs with appropriate device tree overlays and card names
 - Cover display polls the Snapserver metadata API every 2 seconds
 - All configuration is done via `.env` files - no hardcoded IP addresses in the code
+- USB audio devices are supported without requiring device tree overlays
