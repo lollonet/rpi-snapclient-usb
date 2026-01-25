@@ -1,311 +1,195 @@
-# Raspberry Pi Snapclient with HiFiBerry & Cover Display
+# Raspberry Pi Snapcast Client with HiFiBerry & Cover Display
 
-Complete setup for Raspberry Pi 4 as Snapcast client with HiFiBerry DAC and visual cover art display.
+Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring synchronized multiroom audio and visual cover art display.
+
+## Multiroom Audio Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                       MULTIROOM AUDIO SETUP                              │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   ┌────────────────────────────────────────────────────────────────┐     │
+│   │                    SERVER (Single Host)                         │     │
+│   │  ┌─────────────────┐    ┌────────────────────────────────────┐ │     │
+│   │  │  MPD            │───▶│  Snapserver                        │ │     │
+│   │  │  - Local files  │    │  - Streams to all clients          │ │     │
+│   │  │  - Playlists    │FIFO│  - Ports configured via .env       │ │     │
+│   │  │  - Metadata     │    │  - Synchronized playback           │ │     │
+│   │  └─────────────────┘    └────────────────────────────────────┘ │     │
+│   └────────────────────────────────────────────────────────────────┘     │
+│                                    │                                      │
+│                          Network (WiFi/Ethernet)                         │
+│                                    │                                      │
+│   ┌────────────────────────────────┼────────────────────────────────┐    │
+│   │                                ▼                                │    │
+│   │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │    │
+│   │  │ Pi Client 1 │  │ Pi Client 2 │  │ Pi Client N │             │    │
+│   │  │ Living Room │  │ Bedroom     │  │ Kitchen     │             │    │
+│   │  │ HiFiBerry   │  │ HiFiBerry   │  │ HiFiBerry   │             │    │
+│   │  │ DAC+/Digi+  │  │ DAC+/Digi+  │  │ DAC+/Digi+  │             │    │
+│   │  │ + Display   │  │ + Display   │  │ (optional)  │             │    │
+│   │  └─────────────┘  └─────────────┘  └─────────────┘             │    │
+│   │                                                                 │    │
+│   │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │    │
+│   │  │📱 Mobile    │  │💻 Desktop   │  │📺 Smart TV  │             │    │
+│   │  │ Phone/Tablet│  │ PC/Mac      │  │ Android TV  │             │    │
+│   │  │ Snapclient  │  │ Snapclient  │  │ Snapclient  │             │    │
+│   │  └─────────────┘  └─────────────┘  └─────────────┘             │    │
+│   │                    SNAPCAST CLIENTS                             │    │
+│   └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+│   ┌────────────────────────────────────────────────────────────────┐     │
+│   │                      CONTROL APPS                               │     │
+│   │  Mobile (Recommended):        Desktop:                         │     │
+│   │  - MALP (Android)             - Cantata                        │     │
+│   │  - MPDroid                    - GMPC                           │     │
+│   │  - MPoD (iOS)                 - Sonata                         │     │
+│   │  - Rigelian (iOS)             - Persephone (macOS)             │     │
+│   └────────────────────────────────────────────────────────────────┘     │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**Note**: Mobile apps are more mature and feature-rich for MPD control. This project provides the Raspberry Pi client implementation shown above.
 
 ## Features
 
-- 🎵 **Snapcast Audio**: Multi-room synchronized audio playback
-- 🎨 **Cover Display**: Beautiful full-screen album art with track info
-- 🎛️ **HiFiBerry Support**: DAC+ (analog) or Digi+ (S/PDIF) configurations
-- 📺 **Dual Display Options**: 9" touchscreen or 4K HDMI TV
-- 🐳 **Docker-based**: Easy deployment and updates
-- 🔄 **Auto-start**: Boots directly into music player mode
+- 🎵 **Synchronized Audio**: Multi-room playback via Snapcast
+- 🎨 **Cover Display**: Full-screen album art with track metadata
+- 🎛️ **HiFiBerry Support**: DAC+ (analog) and Digi+ (S/PDIF) configurations
+- 📺 **Display Options**: 9" touchscreen or 4K HDMI TV
+- 🐳 **Docker-based**: Pre-built images for easy deployment
+- 🔄 **Auto-start**: Systemd services for automatic startup
 
 ## Hardware Requirements
 
-### Common Components
-- Raspberry Pi 4 (2GB+ recommended for cover display)
-- USB drive (8GB+ for boot)
-- Power supply (official 3A recommended)
-- MicroSD card (for initial flashing only)
-
 ### Configuration 1: DAC+ with 9" Screen
-- **HiFiBerry DAC+** (or DAC+ Pro)
-- **9" display** (1024x600 recommended)
+- Raspberry Pi 4 (2GB+)
+- HiFiBerry DAC+ or DAC+ Pro
+- 9" display (1024x600)
+- USB drive (8GB+ for boot)
 - Analog output to speakers/amplifier
 
 ### Configuration 2: Digi+ with 4K TV
-- **HiFiBerry Digi+** (or Digi+ Pro)
-- **4K HDMI TV** (3840x2160)
-- S/PDIF digital output to receiver/DAC
+- Raspberry Pi 4 (2GB+)
+- HiFiBerry Digi+ or Digi+ Pro
+- 4K HDMI display (3840x2160)
+- USB drive (8GB+ for boot)
+- S/PDIF output to receiver/DAC
 
-## Quick Start
+## Quick Setup
 
-See **[QUICKSTART.md](QUICKSTART.md)** for 5-minute setup instructions.
+See **[QUICKSTART.md](QUICKSTART.md)** for detailed 5-minute setup instructions.
 
-### 1. Flash Raspberry Pi OS
+### Summary
 
-1. Download **Raspberry Pi Imager**: https://www.raspberrypi.com/software/
-2. Select **Raspberry Pi OS Lite (64-bit)**
-3. Flash to your USB drive
-4. **Important**: In Imager settings (gear icon), configure:
-   - Enable SSH (with password or key)
-   - Set WiFi credentials (SSID and password)
-   - Set hostname and username if desired
+1. Flash Raspberry Pi OS Lite (64-bit) to USB drive
+2. Enable SSH and WiFi in Raspberry Pi Imager settings
+3. Boot Pi with HiFiBerry HAT attached
+4. Copy project files and run `sudo bash common/scripts/setup.sh`
+5. Configure `.env` with your Snapserver IP and reboot
 
-### 2. First Boot
-
-1. Connect HiFiBerry HAT to GPIO pins
-2. Connect display (HDMI for both configs, or DSI for 9" screen)
-3. Insert USB drive and power on
-4. Wait for boot and SSH access
-
-### 3. Run Setup
-
-```bash
-# SSH into Raspberry Pi
-ssh pi@raspberrypi.local
-
-# Copy project files (from your computer)
-scp -r ~/rpi-snapclient-usb pi@raspberrypi.local:/home/pi/
-
-# On Raspberry Pi, run setup
-cd /home/pi/rpi-snapclient-usb
-sudo bash common/scripts/setup.sh
-```
-
-The script will:
-- Ask which configuration (DAC+ 9" or Digi+ 4K)
-- Install Docker and dependencies
-- Configure HiFiBerry and ALSA
-- Set up cover display with X11
-- Create systemd services for auto-start
-
-### 4. Configure Snapserver
-
-Edit `/opt/snapclient/.env`:
-
-```bash
-SNAPSERVER_HOST=192.168.63.3    # Your Snapserver IP
-SNAPSERVER_PORT=1704
-SNAPSERVER_RPC_PORT=1705
-```
-
-### 5. Reboot
-
-```bash
-sudo reboot
-```
-
-After reboot, the system will automatically:
-- Start snapclient and connect to your server
-- Launch X11 with cover display
-- Show album art and track info on screen
+The setup script installs Docker CE, configures HiFiBerry and ALSA, sets up the cover display, and creates systemd services for auto-start.
 
 ## Project Structure
 
 ```
 rpi-snapclient-usb/
 ├── dac-plus-9inch/           # HiFiBerry DAC+ with 9" screen
-│   ├── docker-compose.yml    # Docker services
-│   ├── .env.example          # Configuration template
-│   ├── boot/                 # Boot config for DAC+
-│   ├── config/               # ALSA config
-│   └── cover-display/        # HTML + metadata service
+│   ├── docker-compose.yml
+│   ├── .env.example
+│   ├── boot/config.txt
+│   ├── config/asound.conf
+│   └── cover-display/
+│       ├── metadata-service/
+│       └── public/index.html
 │
 ├── digi-plus-4k/             # HiFiBerry Digi+ with 4K TV
-│   ├── docker-compose.yml    # Docker services (4K optimized)
-│   ├── .env.example          # Configuration template
-│   ├── boot/                 # Boot config for Digi+ 4K
-│   ├── config/               # ALSA config
-│   └── cover-display/        # HTML + metadata service (4K)
+│   ├── docker-compose.yml
+│   ├── .env.example
+│   ├── boot/config.txt
+│   ├── config/asound.conf
+│   └── cover-display/
+│       ├── metadata-service/
+│       └── public/index.html
 │
-├── common/                   # Shared files
-│   └── scripts/setup.sh      # Installation script
+├── common/
+│   └── scripts/setup.sh      # Main installation script
 │
-├── README.md                 # This file
-└── QUICKSTART.md             # 5-minute setup guide
+└── docs/
+    └── archive/              # Historical documentation
 ```
 
-## Cover Display
+## Configuration
 
-The cover display automatically:
-- Polls Snapserver for metadata every 2 seconds
-- Downloads and displays album artwork
-- Shows track title, artist, and album
-- Adapts to screen resolution (1024x600 or 3840x2160)
-
-### Customization
-
-Edit `cover-display/public/index.html` to customize:
-- Colors and gradients
-- Font sizes and styles
-- Animation effects
-- Polling interval
-
-## Troubleshooting
-
-### Snapclient not connecting
+After installation, configure your Snapserver connection in `/opt/snapclient/.env`:
 
 ```bash
-# Check snapclient status
-sudo docker ps
-sudo docker logs snapclient
+# Snapserver connection
+SNAPSERVER_HOST=your.server.ip
+SNAPSERVER_PORT=1704
+SNAPSERVER_RPC_PORT=1705
 
-# Verify Snapserver IP
-cat /opt/snapclient/.env
+# Client identification
+CLIENT_ID=snapclient-living-room
 
-# Test network connectivity
-ping 192.168.63.3
+# Audio device
+SOUNDCARD=hw:sndrpihifiberry,0
 ```
 
-### No audio output
-
+Then restart services:
 ```bash
-# List audio devices
-aplay -l
-
-# Test HiFiBerry
-speaker-test -t wav -c 2
-
-# Check ALSA config
-cat /etc/asound.conf
-```
-
-### Cover display not showing
-
-```bash
-# Check X11 service
-sudo systemctl status x11-autostart
-
-# Check display environment
-echo $DISPLAY
-
-# View X11 logs
-journalctl -u x11-autostart -f
-
-# Manually test Chromium
-DISPLAY=:0 chromium-browser --kiosk http://localhost:8080
-```
-
-### Docker containers not starting
-
-```bash
-# Check Docker service
-sudo systemctl status docker
-
-# View all containers
-sudo docker ps -a
-
-# Rebuild containers
 cd /opt/snapclient
-sudo docker-compose down
-sudo docker-compose build --no-cache
-sudo docker-compose up -d
+sudo docker-compose restart
 ```
 
-## Advanced Configuration
+## Verification
 
-### Change Audio Device
-
-Edit `docker-compose.yml`:
-
-```yaml
-environment:
-  - SNAPCLIENT_OPTS=--hostID myhost --host 192.168.63.3 --soundcard hw:0,0
-```
-
-### Adjust Cover Display Size (9" only)
-
-Edit `docker-compose.yml`:
-
-```yaml
-environment:
-  - CHROMIUM_FLAGS=--window-size=800,480 --window-position=0,0
-```
-
-### Enable SSH After Boot
+Check that everything is running:
 
 ```bash
-sudo systemctl enable ssh
-sudo systemctl start ssh
+# Check Docker containers
+sudo docker ps
+# Should show: snapclient, metadata-service, cover-webserver
+
+# Check snapclient logs
+sudo docker logs -f snapclient
+
+# Check systemd services
+sudo systemctl status snapclient x11-autostart
+
+# Test audio device
+aplay -l
+# Should show: sndrpihifiberry
+
+# View cover display (on Pi)
+curl http://localhost:8080
 ```
 
-### Add Static IP
+## Docker Image
 
-Edit `/etc/dhcpcd.conf`:
+This project uses a unified pre-built image:
+- **Image**: `ghcr.io/lollonet/rpi-snapclient-usb:latest`
+- **Platform**: ARM64 (Raspberry Pi 4)
+- **Services**: snapclient, metadata-service, nginx
 
-```bash
-interface wlan0
-static ip_address=192.168.63.100/24
-static routers=192.168.63.1
-static domain_name_servers=192.168.63.1 8.8.8.8
-```
-
-## Snapserver Configuration
-
-For metadata and artwork to work, your Snapserver needs to provide this information. Configure your audio source (Mopidy, MPD, etc.) to send metadata.
-
-Example Mopidy `snapserver.conf`:
-
-```ini
-[stream]
-source = pipe:///tmp/snapfifo?name=Mopidy&mode=read&sampleformat=48000:16:2
-```
-
-## Updates
-
-### Update Snapclient
-
+Update to latest version:
 ```bash
 cd /opt/snapclient
 sudo docker-compose pull
 sudo docker-compose up -d
 ```
 
-### Update Cover Display
-
-```bash
-cd /opt/snapclient/cover-display
-# Edit files
-sudo docker-compose build metadata-service
-sudo docker-compose up -d
-```
-
-## System Maintenance
-
-### View Logs
-
-```bash
-# Snapclient logs
-sudo docker logs -f snapclient
-
-# Metadata service logs
-sudo docker logs -f metadata-service
-
-# System logs
-journalctl -xe
-```
-
-### Performance Monitoring
-
-```bash
-# CPU/Memory usage
-htop
-
-# Docker stats
-sudo docker stats
-```
-
-## Additional Resources
+## Resources
 
 - **Snapcast**: https://github.com/badaix/snapcast
 - **HiFiBerry**: https://www.hifiberry.com/docs/
 - **Raspberry Pi OS**: https://www.raspberrypi.com/documentation/
+- **MPD Clients**: https://www.musicpd.org/clients/
 
-## Support
+## Notes
 
-For issues:
-1. Check troubleshooting section above
-2. Review Docker logs
-3. Verify hardware connections
-4. Ensure Snapserver is reachable and configured
-
-## License
-
-This project configuration is provided as-is for personal use.
-
-Components use their respective licenses:
-- Snapcast: GPL-3.0
-- Docker images: Various (check each image)
-- Chromium: BSD-style license
+- The setup script installs **Docker CE** (official Docker Community Edition), not the Debian `docker.io` package
+- ALSA configuration uses card name `sndrpihifiberry` instead of hardcoded card numbers for reliability
+- Cover display polls the Snapserver metadata API every 2 seconds
+- All configuration is done via `.env` files - no hardcoded IP addresses in the code

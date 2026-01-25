@@ -1,34 +1,39 @@
-# Quick Start Guide (5 Minutes)
+# Quick Start Guide
+
+Get your Raspberry Pi Snapcast client running in 5 minutes.
 
 ## Prerequisites
 
-- Raspberry Pi 4 with HiFiBerry DAC+ or Digi+
-- USB drive (8GB+) for boot
-- Display (9" touchscreen or 4K HDMI TV)
+- Raspberry Pi 4 (2GB+)
+- HiFiBerry DAC+ or Digi+
+- USB drive (8GB+)
+- Display (9" screen or 4K HDMI)
 - Computer with Raspberry Pi Imager
-- Snapserver running on your network (e.g., 192.168.63.3)
+- Snapserver running on your network
 
-## Step 1: Flash USB (2 minutes)
+## Step 1: Flash USB Drive
 
 1. Download **Raspberry Pi Imager**: https://www.raspberrypi.com/software/
-2. Choose **Raspberry Pi OS Lite (64-bit)**
-3. Select your USB drive
-4. In settings:
-   - Enable SSH
-   - Set username: `pi`
+2. Select **Raspberry Pi OS Lite (64-bit)**
+3. Choose your USB drive as the target
+4. Click the gear icon (⚙️) to configure settings:
+   - Enable SSH (with password or key)
+   - Set username: `pi` (or your choice)
    - Set password
    - Configure WiFi (SSID and password)
-5. Write to USB
+   - Set hostname (optional)
+5. Click **Write** and wait for completion
 
-## Step 2: First Boot (1 minute)
+## Step 2: First Boot
 
-1. Connect HiFiBerry HAT to Raspberry Pi GPIO
-2. Connect display (HDMI)
-3. Insert USB drive
-4. Power on
-5. Wait for boot (~30 seconds)
+1. Attach HiFiBerry HAT to Raspberry Pi GPIO pins
+2. Connect display:
+   - **9" screen**: DSI or HDMI
+   - **4K TV**: HDMI
+3. Insert USB drive into Raspberry Pi
+4. Power on and wait ~30 seconds for boot
 
-## Step 3: SSH and Copy Files (1 minute)
+## Step 3: Copy Project Files
 
 From your computer:
 
@@ -36,11 +41,11 @@ From your computer:
 # SSH into Raspberry Pi
 ssh pi@raspberrypi.local
 
-# In another terminal, copy project files
+# From another terminal, copy project files
 scp -r ~/rpi-snapclient-usb pi@raspberrypi.local:/home/pi/
 ```
 
-## Step 4: Run Setup Script (1 minute)
+## Step 4: Run Setup Script
 
 On the Raspberry Pi:
 
@@ -49,85 +54,72 @@ cd /home/pi/rpi-snapclient-usb
 sudo bash common/scripts/setup.sh
 ```
 
-**Follow the prompts:**
-- Choose configuration: `1` for DAC+ 9" or `2` for Digi+ 4K
-- Enter Snapserver IP (default: 192.168.63.3)
+The script will:
+- Prompt you to choose configuration (1=DAC+ 9", 2=Digi+ 4K)
+- Ask for your Snapserver IP address
+- Install Docker CE and dependencies
+- Configure HiFiBerry and ALSA
+- Set up cover display with X11
+- Create systemd services for auto-start
+- Copy files to `/opt/snapclient/`
 
-The script automatically:
-- Installs Docker and dependencies
-- Configures HiFiBerry and ALSA
-- Sets up cover display
-- Creates auto-start services
+**Note**: The script takes 3-5 minutes. It does not build Docker images (uses pre-built images from GHCR).
 
-## Step 5: Reboot
+## Step 5: Configure and Reboot
 
+Edit configuration if needed:
+
+```bash
+sudo nano /opt/snapclient/.env
+```
+
+Example `.env`:
+```bash
+SNAPSERVER_HOST=192.168.1.100
+SNAPSERVER_PORT=1704
+SNAPSERVER_RPC_PORT=1705
+HOST_ID=snapclient-living-room
+SOUNDCARD=hw:sndrpihifiberry,0
+```
+
+Reboot:
 ```bash
 sudo reboot
 ```
 
-**After reboot (~30 seconds):**
-- Snapclient connects to your Snapserver
-- Cover display shows album art
-- Audio plays through HiFiBerry
-
 ## Verification
 
-```bash
-# Check services are running
-sudo systemctl status snapclient
-sudo systemctl status x11-autostart
+After reboot (~30 seconds), verify everything is running:
 
+```bash
 # Check Docker containers
 sudo docker ps
+# Should show: snapclient, metadata-service, cover-webserver
 
-# You should see:
-# - snapclient
-# - cover-display
-# - metadata-service
-# - cover-webserver
-```
+# Check services
+sudo systemctl status snapclient x11-autostart
 
-## Troubleshooting
+# View snapclient logs
+sudo docker logs -f snapclient
 
-### No audio
-```bash
-# Test speakers
-speaker-test -t wav -c 2
-
-# Check ALSA devices
+# Test audio device
 aplay -l
 ```
 
-### Cover display not showing
-```bash
-# Restart X11
-sudo systemctl restart x11-autostart
-
-# Check logs
-journalctl -u x11-autostart -f
-```
-
-### Snapclient not connecting
-```bash
-# Check logs
-sudo docker logs snapclient
-
-# Verify Snapserver IP
-cat /opt/snapclient/.env
-
-# Test connection
-ping 192.168.63.3
-```
+You should see:
+- Album art displayed on screen
+- Audio playing through HiFiBerry
+- Snapclient connected to your server
 
 ## Configuration
 
-Edit `/opt/snapclient/.env` to change:
-- Snapserver IP address
-- Port numbers
-- Audio device
+To change settings:
 
-Then restart:
 ```bash
+# Edit configuration
+sudo nano /opt/snapclient/.env
+
+# Restart services
 cd /opt/snapclient
 sudo docker-compose restart
 ```
@@ -135,9 +127,6 @@ sudo docker-compose restart
 ## Next Steps
 
 - See **[README.md](README.md)** for full documentation
-- Customize cover display: edit `/opt/snapclient/cover-display/public/index.html`
-- Add multiple clients for multi-room audio
-
-## Support
-
-Common issues and solutions are in the [README.md](README.md) troubleshooting section.
+- Customize cover display: `/opt/snapclient/cover-display/public/index.html`
+- Set up additional clients for multiroom audio
+- Install MPD control app (MALP, MPDroid, Cantata, etc.)
