@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Shellcheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './common/scripts'
+          severity: warning
+
+      - name: Hadolint (snapclient)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: common/docker/snapclient/Dockerfile
+          failure-threshold: warning
+
+      - name: Hadolint (metadata-service)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: digi-plus-4k/cover-display/Dockerfile
+          failure-threshold: warning
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Bash syntax check (setup.sh)
+        run: bash -n common/scripts/setup.sh
+
+      - name: Test HAT configurations
+        run: bash tests/test-hat-configs.sh
+
+      - name: Validate HAT config count
+        run: |
+          count=$(ls -1 common/audio-hats/*.conf | wc -l)
+          if [ "$count" -ne 11 ]; then
+            echo "Expected 11 HAT configs, found $count"
+            exit 1
+          fi
+          echo "All 11 HAT configs present"
