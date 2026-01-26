@@ -1,7 +1,7 @@
 FROM debian:bookworm-slim AS builder
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     git \
@@ -27,13 +27,13 @@ RUN cmake -S . -B build \
     -DBUILD_CLIENT=ON \
     -DBUILD_TESTS=OFF
 
-RUN cmake --build build --parallel $(nproc)
+RUN cmake --build build --parallel "$(nproc)"
 
 # Runtime image
 FROM debian:bookworm-slim
 
 # Install runtime dependencies only
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     alsa-utils \
     libboost-system-dev \
