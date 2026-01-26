@@ -18,6 +18,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 COMMON_DIR="$PROJECT_DIR/common"
 
+# Markers for idempotent config.txt edits
+CONFIG_MARKER_START="# --- SNAPCLIENT SETUP START ---"
+CONFIG_MARKER_END="# --- SNAPCLIENT SETUP END ---"
+
 # ============================================
 # Step 1: Select Audio HAT
 # ============================================
@@ -141,25 +145,35 @@ apt-get install -y \
     openbox \
     git
 
-# Install Docker CE (official repository)
-echo "Installing Docker CE from official repository..."
+# Install Docker CE (official repository) - skip if already installed
+if command -v docker &> /dev/null && docker --version | grep -q "Docker version"; then
+    echo "Docker CE already installed, skipping installation..."
+else
+    echo "Installing Docker CE from official repository..."
 
-# Remove conflicting Debian packages first
-apt-get remove -y docker.io docker-compose docker-buildx containerd runc 2>/dev/null || true
+    # Remove conflicting Debian packages first
+    apt-get remove -y docker.io docker-compose docker-buildx containerd runc 2>/dev/null || true
 
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-chmod a+r /etc/apt/keyrings/docker.asc
+    # Only download GPG key if not already present
+    if [ ! -f /etc/apt/keyrings/docker.asc ]; then
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.asc
+    fi
 
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  tee /etc/apt/sources.list.d/docker.list > /dev/null
+    # Only add repo if not already present
+    if [ ! -f /etc/apt/sources.list.d/docker.list ]; then
+        echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
+          $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+          tee /etc/apt/sources.list.d/docker.list > /dev/null
+        apt-get update
+    fi
 
-apt-get update
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+fi
 
-# Enable Docker service
+# Enable Docker service (idempotent)
 systemctl enable docker
 systemctl start docker
 
@@ -173,10 +187,22 @@ echo "Setting up installation directory..."
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/public"
 
-# Copy configuration files from common/
+# Copy docker-compose.yml (always update to latest)
 cp "$COMMON_DIR/docker-compose.yml" "$INSTALL_DIR/"
-cp "$COMMON_DIR/.env.example" "$INSTALL_DIR/.env"
+
+# Copy .env only if it doesn't exist (preserve user settings)
+if [ ! -f "$INSTALL_DIR/.env" ]; then
+    echo "Creating new .env from template..."
+    cp "$COMMON_DIR/.env.example" "$INSTALL_DIR/.env"
+else
+    echo "Preserving existing .env configuration..."
+fi
+
+# Copy docker build files (always update to latest)
 cp -r "$COMMON_DIR/docker" "$INSTALL_DIR/"
+
+# Copy public files including index.html
+cp "$COMMON_DIR/public/index.html" "$INSTALL_DIR/public/"
 
 echo "Files copied to $INSTALL_DIR"
 echo ""
@@ -243,7 +269,7 @@ echo "ALSA configured for $HAT_NAME (card: $HAT_CARD_NAME)"
 echo ""
 
 # ============================================
-# Step 7: Configure Boot Settings
+# Step 7: Configure Boot Settings (Idempotent)
 # ============================================
 echo "Configuring boot settings..."
 BOOT_CONFIG=""
@@ -254,43 +280,58 @@ elif [ -f /boot/config.txt ]; then
 fi
 
 if [ -n "$BOOT_CONFIG" ]; then
-    # Backup original config
-    cp "$BOOT_CONFIG" "${BOOT_CONFIG}.backup.$(date +%Y%m%d)"
-
-    # Append audio HAT configuration
-    echo "" >> "$BOOT_CONFIG"
-    echo "# Audio HAT Configuration: $HAT_NAME (added by setup script)" >> "$BOOT_CONFIG"
-
-    # Add device tree overlay for HAT (skip if USB audio)
-    if [ -n "$HAT_OVERLAY" ]; then
-        echo "dtoverlay=$HAT_OVERLAY" >> "$BOOT_CONFIG"
+    # Backup original config (only once per day)
+    BACKUP_FILE="${BOOT_CONFIG}.backup.$(date +%Y%m%d)"
+    if [ ! -f "$BACKUP_FILE" ]; then
+        cp "$BOOT_CONFIG" "$BACKUP_FILE"
+        echo "Backup created: $BACKUP_FILE"
     fi
 
-    # Disable onboard audio
-    echo "dtparam=audio=off" >> "$BOOT_CONFIG"
+    # Remove any previous snapclient setup section (idempotent)
+    if grep -q "$CONFIG_MARKER_START" "$BOOT_CONFIG"; then
+        echo "Removing previous snapclient configuration..."
+        sed -i "/$CONFIG_MARKER_START/,/$CONFIG_MARKER_END/d" "$BOOT_CONFIG"
+    fi
 
     # Extract display width from resolution
     DISPLAY_WIDTH="${DISPLAY_RESOLUTION%x*}"
 
-    # Display-specific configuration based on resolution
-    echo "" >> "$BOOT_CONFIG"
-    echo "# Display Configuration (${DISPLAY_RESOLUTION})" >> "$BOOT_CONFIG"
+    # Build new configuration block
+    {
+        echo ""
+        echo "$CONFIG_MARKER_START"
+        echo "# Audio HAT: $HAT_NAME"
+        echo "# Display: ${DISPLAY_RESOLUTION}"
+        echo "# Generated: $(date -Iseconds)"
+        echo ""
 
-    if [ "$DISPLAY_WIDTH" -gt 1920 ]; then
-        # High resolution (>1080p)
-        echo "gpu_mem=512" >> "$BOOT_CONFIG"
-        echo "hdmi_enable_4kp60=1" >> "$BOOT_CONFIG"
-        echo "hdmi_force_hotplug=1" >> "$BOOT_CONFIG"
-    else
-        # Standard resolution (<=1080p)
-        echo "gpu_mem=256" >> "$BOOT_CONFIG"
-    fi
+        # Add device tree overlay for HAT (skip if USB audio)
+        if [ -n "$HAT_OVERLAY" ]; then
+            echo "dtoverlay=$HAT_OVERLAY"
+        fi
 
-    # Video acceleration
-    echo "dtoverlay=vc4-kms-v3d" >> "$BOOT_CONFIG"
-    echo "max_framebuffers=2" >> "$BOOT_CONFIG"
+        # Disable onboard audio
+        echo "dtparam=audio=off"
 
-    echo "Boot configuration updated (backup saved)"
+        # GPU memory based on resolution
+        if [ "$DISPLAY_WIDTH" -gt 1920 ]; then
+            echo "gpu_mem=512"
+            echo "hdmi_enable_4kp60=1"
+            echo "hdmi_force_hotplug=1"
+        else
+            echo "gpu_mem=256"
+        fi
+
+        # Video acceleration (only if not already in base config)
+        if ! grep -q "^dtoverlay=vc4-kms-v3d" "$BOOT_CONFIG" 2>/dev/null; then
+            echo "dtoverlay=vc4-kms-v3d"
+            echo "max_framebuffers=2"
+        fi
+
+        echo "$CONFIG_MARKER_END"
+    } >> "$BOOT_CONFIG"
+
+    echo "Boot configuration updated"
 else
     echo "Warning: Could not find boot config file"
 fi
@@ -302,22 +343,38 @@ echo ""
 echo "Configuring Docker environment..."
 cd "$INSTALL_DIR"
 
+# Read current snapserver from .env if exists, use as default
+current_snapserver=$(grep "^SNAPSERVER_HOST=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "snapserver.local")
+[ "$current_snapserver" = "snapserver.local" ] || echo "Current Snapserver: $current_snapserver"
+
 # Configure snapserver host
-read -rp "Enter Snapserver IP address or hostname [snapserver.local]: " snapserver_ip
-snapserver_ip=${snapserver_ip:-snapserver.local}
+read -rp "Enter Snapserver IP address or hostname [$current_snapserver]: " snapserver_ip
+snapserver_ip=${snapserver_ip:-$current_snapserver}
 
-# Update .env with all settings
-sed -i "s/SNAPSERVER_HOST=.*/SNAPSERVER_HOST=$snapserver_ip/" "$INSTALL_DIR/.env"
-sed -i "s/CLIENT_ID=.*/CLIENT_ID=$CLIENT_ID/" "$INSTALL_DIR/.env"
-sed -i "s/DISPLAY_RESOLUTION=.*/DISPLAY_RESOLUTION=$DISPLAY_RESOLUTION/" "$INSTALL_DIR/.env"
-
-# Update SOUNDCARD in .env based on HAT
+# Update SOUNDCARD value based on HAT
 if [ "$HAT_CARD_NAME" = "USB" ]; then
     SOUNDCARD_VALUE="default"
 else
     SOUNDCARD_VALUE="hw:$HAT_CARD_NAME,0"
 fi
-sed -i "s|SOUNDCARD=.*|SOUNDCARD=$SOUNDCARD_VALUE|" "$INSTALL_DIR/.env"
+
+# Update .env with all settings (idempotent - works on existing or new file)
+# Use grep to check if key exists, then sed to update or echo to append
+update_env_var() {
+    local key="$1"
+    local value="$2"
+    local file="$INSTALL_DIR/.env"
+    if grep -q "^${key}=" "$file" 2>/dev/null; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+    else
+        echo "${key}=${value}" >> "$file"
+    fi
+}
+
+update_env_var "SNAPSERVER_HOST" "$snapserver_ip"
+update_env_var "CLIENT_ID" "$CLIENT_ID"
+update_env_var "SOUNDCARD" "$SOUNDCARD_VALUE"
+update_env_var "DISPLAY_RESOLUTION" "$DISPLAY_RESOLUTION"
 
 echo "Docker configuration ready"
 echo "  - Snapserver: $snapserver_ip"
