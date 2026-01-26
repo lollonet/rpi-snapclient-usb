@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dynamic boot/config.txt generation based on resolution
   - GPU memory auto-scaled (256MB ≤1080p, 512MB >1080p)
 
+### Added
+- **Animated Cover Display**
+  - Spinning vinyl record with realistic grooves and red label
+  - Animated equalizer bars (9 bars with gradient colors)
+  - Pulsing purple glow effect behind vinyl
+  - Album art overlays vinyl when available
+  - Animations pause when music stops
+
+- **MusicBrainz Integration** (no API key required)
+  - Album artwork via Cover Art Archive (fallback after iTunes)
+  - Artist images via MusicBrainz → Wikidata → Wikimedia Commons
+  - Proper rate limiting (1 req/sec)
+
 ### Fixed
 - **Setup Idempotency** - Running setup.sh multiple times now produces consistent results
   - Use markers in config.txt for clean removal on re-run
