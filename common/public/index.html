@@ -12,7 +12,7 @@
         }
 
         body {
-            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
             color: #ffffff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             display: flex;
@@ -28,26 +28,177 @@
             padding: 4vh 4vw;
         }
 
-        /* Responsive album art - uses viewport height to ensure it fits */
-        .album-art {
+        /* Album art container */
+        .album-art-container {
+            position: relative;
             width: min(65vh, 85vw);
             height: min(65vh, 85vw);
             margin: 0 auto 3vh;
+        }
+
+        /* Pulsing glow effect behind vinyl */
+        .glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 110%;
+            height: 110%;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(102, 126, 234, 0.4) 0%, transparent 70%);
+            animation: pulse 3s ease-in-out infinite;
+            z-index: 0;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+            50% { transform: translate(-50%, -50%) scale(1.15); opacity: 0.8; }
+        }
+
+        /* Vinyl record */
+        .vinyl {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background:
+                radial-gradient(circle at center, #1a1a1a 0%, #1a1a1a 15%, transparent 15.5%),
+                radial-gradient(circle at center, #333 15.5%, #333 16%, transparent 16.5%),
+                radial-gradient(circle at center, #1a1a1a 35%, #222 35.5%, #1a1a1a 36%, #222 45%, #1a1a1a 45.5%),
+                repeating-radial-gradient(circle at center, #111 0px, #222 1px, #111 2px, #1a1a1a 3px),
+                linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 50%, #0a0a0a 100%);
+            box-shadow:
+                0 0 0 3px #333,
+                0 2vmin 6vmin rgba(0, 0, 0, 0.6),
+                inset 0 0 30px rgba(0,0,0,0.8);
+            animation: spin 4s linear infinite;
+            z-index: 1;
+        }
+
+        .vinyl::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 30%;
+            height: 30%;
+            border-radius: 50%;
+            background:
+                radial-gradient(circle, #e74c3c 0%, #c0392b 40%, #333 41%, #222 100%);
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        .vinyl::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 8%;
+            height: 8%;
+            border-radius: 50%;
+            background: #111;
+            box-shadow: inset 0 1px 3px rgba(255,255,255,0.1);
+        }
+
+        /* Vinyl shine effect */
+        .vinyl-shine {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: linear-gradient(
+                135deg,
+                transparent 0%,
+                transparent 40%,
+                rgba(255,255,255,0.03) 45%,
+                rgba(255,255,255,0.08) 50%,
+                rgba(255,255,255,0.03) 55%,
+                transparent 60%,
+                transparent 100%
+            );
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .vinyl.paused {
+            animation-play-state: paused;
+        }
+
+        /* Album art overlay (when artwork available) */
+        .album-art {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             border-radius: 2vmin;
-            box-shadow: 0 2vmin 6vmin rgba(0, 0, 0, 0.5);
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             background-size: cover;
             background-position: center;
-            transition: all 0.5s ease;
+            box-shadow: 0 2vmin 6vmin rgba(0, 0, 0, 0.5);
+            z-index: 3;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .album-art.visible {
+            opacity: 1;
+        }
+
+        /* Equalizer bars */
+        .equalizer {
+            position: absolute;
+            bottom: -15%;
+            left: 50%;
+            transform: translateX(-50%);
             display: flex;
-            align-items: center;
+            align-items: flex-end;
             justify-content: center;
-            font-size: 15vmin;
-            color: rgba(255, 255, 255, 0.3);
+            gap: 1vmin;
+            height: 12%;
+            z-index: 4;
+        }
+
+        .eq-bar {
+            width: 1.5vmin;
+            background: linear-gradient(to top, #667eea, #764ba2, #f093fb);
+            border-radius: 1vmin;
+            animation: equalize 0.8s ease-in-out infinite;
+            box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
+        }
+
+        .eq-bar:nth-child(1) { animation-delay: 0.0s; height: 40%; }
+        .eq-bar:nth-child(2) { animation-delay: 0.1s; height: 60%; }
+        .eq-bar:nth-child(3) { animation-delay: 0.2s; height: 80%; }
+        .eq-bar:nth-child(4) { animation-delay: 0.15s; height: 50%; }
+        .eq-bar:nth-child(5) { animation-delay: 0.3s; height: 70%; }
+        .eq-bar:nth-child(6) { animation-delay: 0.25s; height: 90%; }
+        .eq-bar:nth-child(7) { animation-delay: 0.05s; height: 55%; }
+        .eq-bar:nth-child(8) { animation-delay: 0.35s; height: 75%; }
+        .eq-bar:nth-child(9) { animation-delay: 0.2s; height: 45%; }
+
+        @keyframes equalize {
+            0%, 100% { transform: scaleY(0.3); }
+            50% { transform: scaleY(1); }
+        }
+
+        .equalizer.paused .eq-bar {
+            animation-play-state: paused;
+            transform: scaleY(0.2);
         }
 
         .track-info {
-            margin-top: 2vh;
+            margin-top: 5vh;
         }
 
         /* Responsive text sizes using viewport width */
@@ -57,6 +208,10 @@
             margin-bottom: 1.5vh;
             text-shadow: 0.2vmin 0.2vmin 0.4vmin rgba(0, 0, 0, 0.5);
             line-height: 1.2;
+            background: linear-gradient(135deg, #fff 0%, #ddd 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
 
         .track-artist {
@@ -93,7 +248,7 @@
                 gap: 4vw;
             }
 
-            .album-art {
+            .album-art-container {
                 width: min(70vh, 45vw);
                 height: min(70vh, 45vw);
                 margin: 0;
@@ -105,12 +260,32 @@
                 margin-top: 0;
                 max-width: 40vw;
             }
+
+            .equalizer {
+                bottom: -12%;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div id="albumArt" class="album-art">&#9835;</div>
+        <div class="album-art-container">
+            <div class="glow"></div>
+            <div id="vinyl" class="vinyl"></div>
+            <div class="vinyl-shine"></div>
+            <div id="albumArt" class="album-art"></div>
+            <div id="equalizer" class="equalizer">
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+                <div class="eq-bar"></div>
+            </div>
+        </div>
         <div class="track-info">
             <div id="trackTitle" class="track-title">No Music Playing</div>
             <div id="trackArtist" class="track-artist"></div>
@@ -137,32 +312,40 @@
 
         function updateDisplay(data) {
             const albumArt = document.getElementById('albumArt');
+            const vinyl = document.getElementById('vinyl');
+            const equalizer = document.getElementById('equalizer');
             const trackTitle = document.getElementById('trackTitle');
             const trackArtist = document.getElementById('trackArtist');
             const trackAlbum = document.getElementById('trackAlbum');
 
             if (data.playing && data.title) {
-                if (data.artwork) {
-                    albumArt.style.backgroundImage = 'url(' + data.artwork + ')';
-                    albumArt.textContent = '';
+                // Music is playing
+                vinyl.classList.remove('paused');
+                equalizer.classList.remove('paused');
+
+                // Try album artwork first, then artist image as fallback
+                const imageUrl = data.artwork || data.artist_image || '';
+                if (imageUrl) {
+                    albumArt.style.backgroundImage = 'url(' + imageUrl + ')';
+                    albumArt.classList.add('visible');
                 } else {
                     albumArt.style.backgroundImage = '';
-                    albumArt.textContent = '\u266B';
+                    albumArt.classList.remove('visible');
                 }
-                albumArt.classList.add('fade-in');
 
                 trackTitle.textContent = data.title || 'Unknown Track';
-                trackArtist.textContent = data.artist || 'Unknown Artist';
+                trackArtist.textContent = data.artist || '';
                 trackAlbum.textContent = data.album || '';
             } else {
+                // No music
+                vinyl.classList.add('paused');
+                equalizer.classList.add('paused');
                 albumArt.style.backgroundImage = '';
-                albumArt.textContent = '\u266B';
+                albumArt.classList.remove('visible');
                 trackTitle.textContent = 'No Music Playing';
                 trackArtist.textContent = '';
                 trackAlbum.textContent = '';
             }
-
-            setTimeout(function() { albumArt.classList.remove('fade-in'); }, 500);
         }
 
         // Poll for updates every 2 seconds
