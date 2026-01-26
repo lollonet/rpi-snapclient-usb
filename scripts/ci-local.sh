@@ -2,9 +2,6 @@
 # Local CI runner - runs the same checks as GitHub Actions
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-
 echo "========================================="
 echo "Running Local CI Checks"
 echo "========================================="
@@ -44,7 +41,7 @@ echo "========================================="
 echo ""
 
 if command -v shellcheck &> /dev/null; then
-    run_check "Shellcheck" "shellcheck common/scripts/*.sh" || true
+    run_check "Shellcheck" "shellcheck common/scripts/*.sh tests/*.sh scripts/*.sh" || true
 else
     echo -e "${YELLOW}⚠ Shellcheck not installed (install: brew install shellcheck)${NC}"
     echo ""

@@ -34,7 +34,7 @@ run_check() {
 
 # Shellcheck (match remote CI: only fail on warnings and errors, not info/style)
 if command -v shellcheck &> /dev/null; then
-    run_check "Shellcheck" "shellcheck --severity=warning common/scripts/*.sh"
+    run_check "Shellcheck" "shellcheck --severity=warning common/scripts/*.sh tests/*.sh scripts/*.sh"
 else
     echo -e "${YELLOW}⚠ Shellcheck not installed - skipping${NC}"
 fi

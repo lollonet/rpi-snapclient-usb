@@ -32,6 +32,12 @@ echo "10) JustBoom Digi"
 echo "11) USB Audio Device"
 read -rp "Enter choice [1-11]: " hat_choice
 
+# Validate input
+if [[ ! "$hat_choice" =~ ^([1-9]|1[01])$ ]]; then
+    echo "❌ Invalid choice. Please enter a number between 1 and 11."
+    exit 1
+fi
+
 case "$hat_choice" in
     1) HAT_CONFIG="hifiberry-dac" ;;
     2) HAT_CONFIG="hifiberry-digi" ;;
