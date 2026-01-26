@@ -258,7 +258,7 @@ class SnapcastMetadataService:
 
 
 if __name__ == "__main__":
-    snapserver_host = os.environ.get("SNAPSERVER_HOST", "192.168.63.3")
+    snapserver_host = os.environ.get("SNAPSERVER_HOST", "snapserver.local")
     snapserver_port = int(os.environ.get("SNAPSERVER_PORT", "1705"))
     client_id = os.environ.get("CLIENT_ID", "snapclient-dac-9inch")
 

@@ -247,8 +247,8 @@ echo "🐳 Setting up Docker containers..."
 cd "$INSTALL_DIR"
 
 # Configure snapserver host and soundcard
-read -rp "Enter Snapserver IP address [192.168.63.3]: " snapserver_ip
-snapserver_ip=${snapserver_ip:-192.168.63.3}
+read -rp "Enter Snapserver IP address or hostname [snapserver.local]: " snapserver_ip
+snapserver_ip=${snapserver_ip:-snapserver.local}
 
 sed -i "s/SNAPSERVER_HOST=.*/SNAPSERVER_HOST=$snapserver_ip/" "$INSTALL_DIR/.env"
 

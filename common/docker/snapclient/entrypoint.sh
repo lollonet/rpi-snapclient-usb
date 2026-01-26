@@ -2,7 +2,7 @@
 set -e
 
 # Default values
-SNAPSERVER_HOST="${SNAPSERVER_HOST:-192.168.63.3}"
+SNAPSERVER_HOST="${SNAPSERVER_HOST:-snapserver.local}"
 SNAPSERVER_PORT="${SNAPSERVER_PORT:-1704}"
 HOST_ID="${HOST_ID:-snapclient-digi-4k}"
 SOUNDCARD="${SOUNDCARD:-default}"
