@@ -9,7 +9,7 @@ services:
     devices:
       - /dev/snd:/dev/snd
     environment:
-      - SNAPSERVER_HOST=${SNAPSERVER_HOST:-192.168.63.3}
+      - SNAPSERVER_HOST=${SNAPSERVER_HOST:?SNAPSERVER_HOST not set in .env}
       - SNAPSERVER_PORT=${SNAPSERVER_PORT:-1704}
       - HOST_ID=snapclient-digi-4k
       - SOUNDCARD=${SOUNDCARD:-default}
@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
-      - SNAPSERVER_HOST=${SNAPSERVER_HOST:-192.168.63.3}
+      - SNAPSERVER_HOST=${SNAPSERVER_HOST:?SNAPSERVER_HOST not set in .env}
       - SNAPSERVER_PORT=${SNAPSERVER_RPC_PORT:-1705}
       - CLIENT_ID=snapclient-digi-4k
     volumes:

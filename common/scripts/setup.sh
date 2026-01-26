@@ -32,6 +32,12 @@ echo "10) JustBoom Digi"
 echo "11) USB Audio Device"
 read -rp "Enter choice [1-11]: " hat_choice
 
+# Validate input
+if [[ ! "$hat_choice" =~ ^([1-9]|1[01])$ ]]; then
+    echo "❌ Invalid choice. Please enter a number between 1 and 11."
+    exit 1
+fi
+
 case "$hat_choice" in
     1) HAT_CONFIG="hifiberry-dac" ;;
     2) HAT_CONFIG="hifiberry-digi" ;;
@@ -241,8 +247,8 @@ echo "🐳 Setting up Docker containers..."
 cd "$INSTALL_DIR"
 
 # Configure snapserver host and soundcard
-read -rp "Enter Snapserver IP address [192.168.63.3]: " snapserver_ip
-snapserver_ip=${snapserver_ip:-192.168.63.3}
+read -rp "Enter Snapserver IP address or hostname [snapserver.local]: " snapserver_ip
+snapserver_ip=${snapserver_ip:-snapserver.local}
 
 sed -i "s/SNAPSERVER_HOST=.*/SNAPSERVER_HOST=$snapserver_ip/" "$INSTALL_DIR/.env"
 
