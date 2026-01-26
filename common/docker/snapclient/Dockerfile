@@ -3,6 +3,7 @@ FROM debian:bookworm-slim AS builder
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ca-certificates \
     cmake \
     git \
     libasound2-dev \
