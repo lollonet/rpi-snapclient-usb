@@ -30,7 +30,7 @@ jobs:
       - name: Hadolint (metadata-service)
         uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: digi-plus-4k/cover-display/Dockerfile
+          dockerfile: common/docker/metadata-service/Dockerfile
           config: .hadolint.yaml
           failure-threshold: warning
 

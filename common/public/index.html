@@ -24,16 +24,17 @@
 
         .container {
             text-align: center;
-            max-width: 900px;
-            padding: 40px;
+            max-width: 90vw;
+            padding: 4vh 4vw;
         }
 
+        /* Responsive album art - uses viewport height to ensure it fits */
         .album-art {
-            width: 700px;
-            height: 700px;
-            margin: 0 auto 30px;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            width: min(65vh, 85vw);
+            height: min(65vh, 85vw);
+            margin: 0 auto 3vh;
+            border-radius: 2vmin;
+            box-shadow: 0 2vmin 6vmin rgba(0, 0, 0, 0.5);
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             background-size: cover;
             background-position: center;
@@ -41,34 +42,36 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 6em;
+            font-size: 15vmin;
             color: rgba(255, 255, 255, 0.3);
         }
 
         .track-info {
-            margin-top: 30px;
+            margin-top: 2vh;
         }
 
+        /* Responsive text sizes using viewport width */
         .track-title {
-            font-size: 2.5em;
+            font-size: clamp(1.2rem, 4vw, 5rem);
             font-weight: 700;
-            margin-bottom: 15px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            margin-bottom: 1.5vh;
+            text-shadow: 0.2vmin 0.2vmin 0.4vmin rgba(0, 0, 0, 0.5);
+            line-height: 1.2;
         }
 
         .track-artist {
-            font-size: 1.8em;
+            font-size: clamp(1rem, 3vw, 3.5rem);
             color: #b3b3b3;
-            margin-bottom: 10px;
+            margin-bottom: 1vh;
         }
 
         .track-album {
-            font-size: 1.3em;
+            font-size: clamp(0.8rem, 2vw, 2.5rem);
             color: #888888;
         }
 
         .no-music {
-            font-size: 2em;
+            font-size: clamp(1.5rem, 4vw, 4rem);
             color: #666666;
         }
 
@@ -80,11 +83,34 @@
         .fade-in {
             animation: fadeIn 0.5s ease;
         }
+
+        /* Landscape orientation - album art on left, info on right */
+        @media (orientation: landscape) and (max-aspect-ratio: 16/9) {
+            .container {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 4vw;
+            }
+
+            .album-art {
+                width: min(70vh, 45vw);
+                height: min(70vh, 45vw);
+                margin: 0;
+                flex-shrink: 0;
+            }
+
+            .track-info {
+                text-align: left;
+                margin-top: 0;
+                max-width: 40vw;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div id="albumArt" class="album-art">♪</div>
+        <div id="albumArt" class="album-art">&#9835;</div>
         <div class="track-info">
             <div id="trackTitle" class="track-title">No Music Playing</div>
             <div id="trackArtist" class="track-artist"></div>
@@ -117,11 +143,11 @@
 
             if (data.playing && data.title) {
                 if (data.artwork) {
-                    albumArt.style.backgroundImage = `url(${data.artwork})`;
+                    albumArt.style.backgroundImage = 'url(' + data.artwork + ')';
                     albumArt.textContent = '';
                 } else {
                     albumArt.style.backgroundImage = '';
-                    albumArt.textContent = '♪';
+                    albumArt.textContent = '\u266B';
                 }
                 albumArt.classList.add('fade-in');
 
@@ -130,13 +156,13 @@
                 trackAlbum.textContent = data.album || '';
             } else {
                 albumArt.style.backgroundImage = '';
-                albumArt.textContent = '♪';
+                albumArt.textContent = '\u266B';
                 trackTitle.textContent = 'No Music Playing';
                 trackArtist.textContent = '';
                 trackAlbum.textContent = '';
             }
 
-            setTimeout(() => albumArt.classList.remove('fade-in'), 500);
+            setTimeout(function() { albumArt.classList.remove('fade-in'); }, 500);
         }
 
         // Poll for updates every 2 seconds

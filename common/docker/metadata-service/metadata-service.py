@@ -260,7 +260,12 @@ class SnapcastMetadataService:
 if __name__ == "__main__":
     snapserver_host = os.environ.get("SNAPSERVER_HOST", "snapserver.local")
     snapserver_port = int(os.environ.get("SNAPSERVER_PORT", "1705"))
-    client_id = os.environ.get("CLIENT_ID", "snapclient-dac-9inch")
+
+    # CLIENT_ID is required - fail if not set
+    client_id = os.environ.get("CLIENT_ID")
+    if not client_id:
+        logger.error("CLIENT_ID environment variable is required")
+        raise SystemExit(1)
 
     service = SnapcastMetadataService(snapserver_host, snapserver_port, client_id)
     service.run()

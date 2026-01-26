@@ -7,7 +7,7 @@ Get your Raspberry Pi Snapcast client running in 5 minutes.
 - Raspberry Pi 4 (2GB+)
 - One of the supported audio HATs (HiFiBerry, IQaudio, Allo, JustBoom) or USB audio device
 - USB drive (8GB+)
-- Display (9" screen or 4K HDMI)
+- Display (any resolution from 800x480 to 4K)
 - Computer with Raspberry Pi Imager
 - Snapserver running on your network
 
@@ -65,12 +65,15 @@ The script will:
    - Allo Boss, DigiOne
    - JustBoom DAC, Digi
    - USB Audio Device
-2. Ask for your Snapserver IP address
-3. Install Docker CE and dependencies
-4. Automatically configure your audio HAT and ALSA
-5. Set up cover display with X11
-6. Create systemd services for auto-start
-7. Copy files to `/opt/snapclient/`
+2. **Prompt you to select display resolution** (6 presets + custom):
+   - 800x480, 1024x600, 1280x720, 1920x1080, 2560x1440, 3840x2160
+   - Or enter custom resolution (e.g., 1366x768)
+3. Auto-generate CLIENT_ID from hostname
+4. Ask for your Snapserver IP address
+5. Install Docker CE and dependencies
+6. Configure audio HAT, ALSA, and boot settings
+7. Set up cover display with X11 at selected resolution
+8. Create systemd services for auto-start
 
 **Note**: The script takes 3-5 minutes. It uses pre-built Docker images from GHCR (no building required).
 
@@ -87,8 +90,9 @@ Example `.env` (automatically configured by setup script):
 SNAPSERVER_HOST=192.168.1.100
 SNAPSERVER_PORT=1704
 SNAPSERVER_RPC_PORT=1705
-HOST_ID=snapclient-living-room
-SOUNDCARD=hw:sndrpihifiberry,0  # Auto-set based on selected HAT
+CLIENT_ID=snapclient-raspberrypi    # Auto-generated from hostname
+SOUNDCARD=hw:sndrpihifiberry,0      # Auto-set based on selected HAT
+DISPLAY_RESOLUTION=1920x1080        # Auto-set based on selection
 ```
 
 Reboot:
@@ -130,12 +134,12 @@ sudo nano /opt/snapclient/.env
 
 # Restart services
 cd /opt/snapclient
-sudo docker-compose restart
+sudo docker compose restart
 ```
 
 ## Next Steps
 
 - See **[README.md](README.md)** for full documentation
-- Customize cover display: `/opt/snapclient/cover-display/public/index.html`
+- Customize cover display: `/opt/snapclient/public/`
 - Set up additional clients for multiroom audio
 - Install MPD control app (MALP, MPDroid, Cantata, etc.)

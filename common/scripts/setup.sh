@@ -9,15 +9,18 @@ echo ""
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
-    echo "⚠️  Please run as root: sudo bash setup.sh"
+    echo "Please run as root: sudo bash setup.sh"
     exit 1
 fi
 
 # Get the script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+COMMON_DIR="$PROJECT_DIR/common"
 
-# Select audio HAT
+# ============================================
+# Step 1: Select Audio HAT
+# ============================================
 echo "Select your audio HAT:"
 echo "1) HiFiBerry DAC+"
 echo "2) HiFiBerry Digi+"
@@ -34,7 +37,7 @@ read -rp "Enter choice [1-11]: " hat_choice
 
 # Validate input
 if [[ ! "$hat_choice" =~ ^([1-9]|1[01])$ ]]; then
-    echo "❌ Invalid choice. Please enter a number between 1 and 11."
+    echo "Invalid choice. Please enter a number between 1 and 11."
     exit 1
 fi
 
@@ -51,32 +54,69 @@ case "$hat_choice" in
     10) HAT_CONFIG="justboom-digi" ;;
     11) HAT_CONFIG="usb-audio" ;;
     *)
-        echo "❌ Invalid choice"
+        echo "Invalid choice"
         exit 1
         ;;
 esac
 
 # Load HAT configuration
 # shellcheck source=/dev/null
-source "$PROJECT_DIR/common/audio-hats/$HAT_CONFIG.conf"
+source "$COMMON_DIR/audio-hats/$HAT_CONFIG.conf"
 
-# Determine display configuration based on HAT type
-if [ "$HAT_DISPLAY" = "4k" ]; then
-    CONFIG_DIR="digi-plus-4k"
-    DISPLAY_SIZE="3840,2160"
-else
-    CONFIG_DIR="dac-plus-9inch"
-    DISPLAY_SIZE="1024,600"
+echo "Selected HAT: $HAT_NAME"
+echo ""
+
+# ============================================
+# Step 2: Select Display Resolution
+# ============================================
+echo "Select your display resolution:"
+echo "1) 800x480   (Small touchscreen)"
+echo "2) 1024x600  (9-inch display)"
+echo "3) 1280x720  (720p HD)"
+echo "4) 1920x1080 (1080p Full HD)"
+echo "5) 2560x1440 (1440p QHD)"
+echo "6) 3840x2160 (4K UHD)"
+echo "7) Custom    (Enter WIDTHxHEIGHT)"
+read -rp "Enter choice [1-7]: " resolution_choice
+
+# Validate input
+if [[ ! "$resolution_choice" =~ ^[1-7]$ ]]; then
+    echo "Invalid choice. Please enter a number between 1 and 7."
+    exit 1
 fi
 
-CONFIG_NAME="$HAT_NAME ($HAT_DISPLAY display)"
+case "$resolution_choice" in
+    1) DISPLAY_RESOLUTION="800x480" ;;
+    2) DISPLAY_RESOLUTION="1024x600" ;;
+    3) DISPLAY_RESOLUTION="1280x720" ;;
+    4) DISPLAY_RESOLUTION="1920x1080" ;;
+    5) DISPLAY_RESOLUTION="2560x1440" ;;
+    6) DISPLAY_RESOLUTION="3840x2160" ;;
+    7)
+        read -rp "Enter resolution (e.g., 1366x768): " DISPLAY_RESOLUTION
+        if [[ ! "$DISPLAY_RESOLUTION" =~ ^[0-9]+x[0-9]+$ ]]; then
+            echo "Invalid format. Use WIDTHxHEIGHT (e.g., 1366x768)"
+            exit 1
+        fi
+        ;;
+esac
 
-echo "✓ Selected HAT: $HAT_NAME"
-echo "✓ Display configuration: $HAT_DISPLAY"
+echo "Selected resolution: $DISPLAY_RESOLUTION"
 echo ""
+
+# ============================================
+# Step 3: Auto-generate Client ID from hostname
+# ============================================
+CLIENT_ID="snapclient-$(hostname)"
+echo "Client ID: $CLIENT_ID"
+echo ""
+
+# ============================================
+# Step 4: Install Dependencies
+# ============================================
 INSTALL_DIR="/opt/snapclient"
 
-echo "📦 Installing system dependencies..."
+echo "Installing system dependencies..."
 
 # Detect chromium package name (chromium on Debian, chromium-browser on older Raspberry Pi OS)
 if apt-cache show chromium > /dev/null 2>&1; then
@@ -84,7 +124,7 @@ if apt-cache show chromium > /dev/null 2>&1; then
 elif apt-cache show chromium-browser > /dev/null 2>&1; then
     CHROMIUM_PKG="chromium-browser"
 else
-    echo "⚠️  Warning: Could not find chromium package, skipping"
+    echo "Warning: Could not find chromium package, skipping"
     CHROMIUM_PKG=""
 fi
 
@@ -102,7 +142,7 @@ apt-get install -y \
     git
 
 # Install Docker CE (official repository)
-echo "🐳 Installing Docker CE from official repository..."
+echo "Installing Docker CE from official repository..."
 
 # Remove conflicting Debian packages first
 apt-get remove -y docker.io docker-compose docker-buildx containerd runc 2>/dev/null || true
@@ -123,24 +163,28 @@ apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin do
 systemctl enable docker
 systemctl start docker
 
-echo "✓ System dependencies installed"
+echo "System dependencies installed"
 echo ""
 
-echo "📁 Setting up installation directory..."
+# ============================================
+# Step 5: Setup Installation Directory
+# ============================================
+echo "Setting up installation directory..."
 mkdir -p "$INSTALL_DIR"
-cd "$PROJECT_DIR/$CONFIG_DIR"
+mkdir -p "$INSTALL_DIR/public"
 
-# Copy configuration files
-cp docker-compose.yml "$INSTALL_DIR/"
-cp .env.example "$INSTALL_DIR/.env"
-cp -r config "$INSTALL_DIR/"
-cp -r boot "$INSTALL_DIR/"
-cp -r cover-display "$INSTALL_DIR/"
+# Copy configuration files from common/
+cp "$COMMON_DIR/docker-compose.yml" "$INSTALL_DIR/"
+cp "$COMMON_DIR/.env.example" "$INSTALL_DIR/.env"
+cp -r "$COMMON_DIR/docker" "$INSTALL_DIR/"
 
-echo "✓ Files copied to $INSTALL_DIR"
+echo "Files copied to $INSTALL_DIR"
 echo ""
 
-echo "🎵 Configuring ALSA for $HAT_NAME..."
+# ============================================
+# Step 6: Configure ALSA
+# ============================================
+echo "Configuring ALSA for $HAT_NAME..."
 
 # Generate ALSA configuration from HAT settings
 cat > /etc/asound.conf << EOF
@@ -195,10 +239,13 @@ pcm.asymed {
 defaults.pcm.rate_converter "samplerate_best"
 EOF
 
-echo "✓ ALSA configured for $HAT_NAME (card: $HAT_CARD_NAME)"
+echo "ALSA configured for $HAT_NAME (card: $HAT_CARD_NAME)"
 echo ""
 
-echo "📺 Configuring boot settings..."
+# ============================================
+# Step 7: Configure Boot Settings
+# ============================================
+echo "Configuring boot settings..."
 BOOT_CONFIG=""
 if [ -f /boot/firmware/config.txt ]; then
     BOOT_CONFIG="/boot/firmware/config.txt"
@@ -222,35 +269,47 @@ if [ -n "$BOOT_CONFIG" ]; then
     # Disable onboard audio
     echo "dtparam=audio=off" >> "$BOOT_CONFIG"
 
-    # Display-specific configuration
-    if [ "$HAT_DISPLAY" = "4k" ]; then
-        echo "" >> "$BOOT_CONFIG"
-        echo "# 4K Display Configuration" >> "$BOOT_CONFIG"
+    # Extract display width from resolution
+    DISPLAY_WIDTH="${DISPLAY_RESOLUTION%x*}"
+
+    # Display-specific configuration based on resolution
+    echo "" >> "$BOOT_CONFIG"
+    echo "# Display Configuration (${DISPLAY_RESOLUTION})" >> "$BOOT_CONFIG"
+
+    if [ "$DISPLAY_WIDTH" -gt 1920 ]; then
+        # High resolution (>1080p)
         echo "gpu_mem=512" >> "$BOOT_CONFIG"
-        echo "hdmi_drive=1" >> "$BOOT_CONFIG"
+        echo "hdmi_enable_4kp60=1" >> "$BOOT_CONFIG"
+        echo "hdmi_force_hotplug=1" >> "$BOOT_CONFIG"
     else
-        echo "" >> "$BOOT_CONFIG"
-        echo "# Display Configuration" >> "$BOOT_CONFIG"
+        # Standard resolution (<=1080p)
         echo "gpu_mem=256" >> "$BOOT_CONFIG"
     fi
 
     # Video acceleration
     echo "dtoverlay=vc4-kms-v3d" >> "$BOOT_CONFIG"
+    echo "max_framebuffers=2" >> "$BOOT_CONFIG"
 
-    echo "✓ Boot configuration updated (backup saved)"
+    echo "Boot configuration updated (backup saved)"
 else
-    echo "⚠️  Could not find boot config file"
+    echo "Warning: Could not find boot config file"
 fi
 echo ""
 
-echo "🐳 Setting up Docker containers..."
+# ============================================
+# Step 8: Configure Docker Environment
+# ============================================
+echo "Configuring Docker environment..."
 cd "$INSTALL_DIR"
 
-# Configure snapserver host and soundcard
+# Configure snapserver host
 read -rp "Enter Snapserver IP address or hostname [snapserver.local]: " snapserver_ip
 snapserver_ip=${snapserver_ip:-snapserver.local}
 
+# Update .env with all settings
 sed -i "s/SNAPSERVER_HOST=.*/SNAPSERVER_HOST=$snapserver_ip/" "$INSTALL_DIR/.env"
+sed -i "s/CLIENT_ID=.*/CLIENT_ID=$CLIENT_ID/" "$INSTALL_DIR/.env"
+sed -i "s/DISPLAY_RESOLUTION=.*/DISPLAY_RESOLUTION=$DISPLAY_RESOLUTION/" "$INSTALL_DIR/.env"
 
 # Update SOUNDCARD in .env based on HAT
 if [ "$HAT_CARD_NAME" = "USB" ]; then
@@ -260,10 +319,17 @@ else
 fi
 sed -i "s|SOUNDCARD=.*|SOUNDCARD=$SOUNDCARD_VALUE|" "$INSTALL_DIR/.env"
 
-echo "✓ Docker configuration ready (SOUNDCARD=$SOUNDCARD_VALUE)"
+echo "Docker configuration ready"
+echo "  - Snapserver: $snapserver_ip"
+echo "  - Client ID: $CLIENT_ID"
+echo "  - Soundcard: $SOUNDCARD_VALUE"
+echo "  - Resolution: $DISPLAY_RESOLUTION"
 echo ""
 
-echo "🖥️  Setting up X11 auto-start for cover display..."
+# ============================================
+# Step 9: Configure X11 Auto-start
+# ============================================
+echo "Setting up X11 auto-start for cover display..."
 
 # Configure Xwrapper to allow any user to start X server
 echo "allowed_users=anybody" > /etc/X11/Xwrapper.config
@@ -272,8 +338,10 @@ echo "allowed_users=anybody" > /etc/X11/Xwrapper.config
 REAL_USER="${SUDO_USER:-$USER}"
 REAL_HOME=$(eval echo ~"$REAL_USER")
 
+# Convert resolution to comma-separated for chromium
+CHROMIUM_SIZE="${DISPLAY_RESOLUTION/x/,}"
+
 # Create .xinitrc for automatic X11 startup with Chromium kiosk
-# (DISPLAY_SIZE already set from HAT configuration)
 cat > "$REAL_HOME/.xinitrc" << EOF
 #!/bin/bash
 xset s off
@@ -287,7 +355,7 @@ openbox &
 sleep 10
 
 # Launch Chromium in kiosk mode
-chromium --kiosk --window-size=$DISPLAY_SIZE --window-position=0,0 \\
+chromium --kiosk --window-size=$CHROMIUM_SIZE --window-position=0,0 \\
   --start-fullscreen --disable-infobars --disable-session-crashed-bubble \\
   --disable-features=TranslateUI --noerrdialogs --disable-translate \\
   --no-first-run --fast --fast-start --disable-popup-blocking \\
@@ -318,10 +386,13 @@ EOF
 systemctl daemon-reload
 systemctl enable x11-autostart.service
 
-echo "✓ X11 auto-start configured"
+echo "X11 auto-start configured"
 echo ""
 
-echo "🚀 Creating systemd service for Docker containers..."
+# ============================================
+# Step 10: Create Systemd Service for Docker
+# ============================================
+echo "Creating systemd service for Docker containers..."
 
 cat > /etc/systemd/system/snapclient.service << EOF
 [Unit]
@@ -345,18 +416,24 @@ EOF
 systemctl daemon-reload
 systemctl enable snapclient.service
 
-echo "✓ Systemd service created and enabled"
+echo "Systemd service created and enabled"
 echo ""
 
+# ============================================
+# Setup Complete
+# ============================================
 echo "========================================="
-echo "✅ Setup Complete!"
+echo "Setup Complete!"
 echo "========================================="
 echo ""
-echo "Configuration: $CONFIG_NAME"
-echo "Installation directory: $INSTALL_DIR"
-echo "Snapserver: $snapserver_ip"
+echo "Configuration Summary:"
+echo "  - Audio HAT: $HAT_NAME"
+echo "  - Resolution: $DISPLAY_RESOLUTION"
+echo "  - Client ID: $CLIENT_ID"
+echo "  - Snapserver: $snapserver_ip"
+echo "  - Install dir: $INSTALL_DIR"
 echo ""
-echo "📝 Next steps:"
+echo "Next steps:"
 echo "1. Review configuration in $INSTALL_DIR/.env"
 echo "2. Reboot the system: sudo reboot"
 echo "3. After reboot, check services:"
@@ -364,6 +441,6 @@ echo "   - sudo systemctl status snapclient"
 echo "   - sudo systemctl status x11-autostart"
 echo "   - sudo docker ps"
 echo ""
-echo "🎵 The snapclient will start automatically on boot"
-echo "📺 Cover display will show on the connected screen"
+echo "The snapclient will start automatically on boot"
+echo "Cover display will show on the connected screen"
 echo ""
