@@ -204,6 +204,32 @@ sudo docker-compose up -d
 - **Raspberry Pi OS**: https://www.raspberrypi.com/documentation/
 - **MPD Clients**: https://www.musicpd.org/clients/
 
+## Development
+
+### Git Hooks (Local CI)
+
+Install pre-push hooks to run CI checks locally before pushing:
+
+```bash
+bash scripts/install-hooks.sh
+```
+
+This installs a pre-push hook that runs:
+- Shellcheck (bash linting)
+- Hadolint (Dockerfile linting)
+- HAT configuration tests
+- Syntax validation
+
+To bypass: `git push --no-verify`
+
+### Contributing
+
+1. Create a feature branch from `dev`
+2. Make changes and commit
+3. Pre-push hook runs automatically
+4. Push and create a PR
+5. CI must pass before merge
+
 ## Notes
 
 - The setup script installs **Docker CE** (official Docker Community Edition), not the Debian `docker.io` package
