@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dynamic boot/config.txt generation based on resolution
   - GPU memory auto-scaled (256MB ≤1080p, 512MB >1080p)
 
+### Fixed
+- **Setup Idempotency** - Running setup.sh multiple times now produces consistent results
+  - Use markers in config.txt for clean removal on re-run
+  - Preserve existing .env settings (Snapserver IP, custom values)
+  - Copy index.html to public/ directory
+  - Skip Docker install if already present
+
 ### Removed
 - `dac-plus-9inch/` directory (consolidated to `common/`)
 - `digi-plus-4k/` directory (consolidated to `common/`)
