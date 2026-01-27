@@ -138,6 +138,7 @@ apt-get install -y \
     curl \
     gnupg \
     alsa-utils \
+    avahi-daemon \
     xinit \
     x11-xserver-utils \
     xserver-xorg \
@@ -176,6 +177,10 @@ fi
 # Enable Docker service (idempotent)
 systemctl enable docker
 systemctl start docker
+
+# Enable Avahi for mDNS autodiscovery (idempotent)
+systemctl enable avahi-daemon
+systemctl start avahi-daemon
 
 echo "System dependencies installed"
 echo ""
@@ -343,12 +348,12 @@ echo ""
 echo "Configuring Docker environment..."
 cd "$INSTALL_DIR"
 
-# Read current snapserver from .env if exists, use as default
-current_snapserver=$(grep "^SNAPSERVER_HOST=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "snapserver.local")
-[ "$current_snapserver" = "snapserver.local" ] || echo "Current Snapserver: $current_snapserver"
+# Read current snapserver from .env if exists (empty = autodiscovery)
+current_snapserver=$(grep "^SNAPSERVER_HOST=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "")
+[ -z "$current_snapserver" ] && echo "Current: mDNS autodiscovery" || echo "Current Snapserver: $current_snapserver"
 
-# Configure snapserver host
-read -rp "Enter Snapserver IP address or hostname [$current_snapserver]: " snapserver_ip
+# Configure snapserver host (empty = autodiscovery via mDNS)
+read -rp "Enter Snapserver IP/hostname (or press Enter for autodiscovery): " snapserver_ip
 snapserver_ip=${snapserver_ip:-$current_snapserver}
 
 # Update SOUNDCARD value based on HAT
@@ -377,7 +382,7 @@ update_env_var "SOUNDCARD" "$SOUNDCARD_VALUE"
 update_env_var "DISPLAY_RESOLUTION" "$DISPLAY_RESOLUTION"
 
 echo "Docker configuration ready"
-echo "  - Snapserver: $snapserver_ip"
+echo "  - Snapserver: ${snapserver_ip:-autodiscovery}"
 echo "  - Client ID: $CLIENT_ID"
 echo "  - Soundcard: $SOUNDCARD_VALUE"
 echo "  - Resolution: $DISPLAY_RESOLUTION"
@@ -487,7 +492,7 @@ echo "Configuration Summary:"
 echo "  - Audio HAT: $HAT_NAME"
 echo "  - Resolution: $DISPLAY_RESOLUTION"
 echo "  - Client ID: $CLIENT_ID"
-echo "  - Snapserver: $snapserver_ip"
+echo "  - Snapserver: ${snapserver_ip:-autodiscovery (mDNS)}"
 echo "  - Install dir: $INSTALL_DIR"
 echo ""
 echo "Next steps:"

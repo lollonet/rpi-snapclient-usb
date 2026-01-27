@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   snapclient:
     image: ghcr.io/lollonet/rpi-snapclient-usb:latest
@@ -8,8 +6,11 @@ services:
     restart: unless-stopped
     devices:
       - /dev/snd:/dev/snd
+    volumes:
+      - /var/run/dbus:/var/run/dbus:ro
+      - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket:ro
     environment:
-      - SNAPSERVER_HOST=${SNAPSERVER_HOST:?SNAPSERVER_HOST not set in .env}
+      - SNAPSERVER_HOST=${SNAPSERVER_HOST:-}
       - SNAPSERVER_PORT=${SNAPSERVER_PORT:-1704}
       - HOST_ID=${CLIENT_ID:?CLIENT_ID not set in .env}
       - SOUNDCARD=${SOUNDCARD:-default}
@@ -21,7 +22,7 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
-      - SNAPSERVER_HOST=${SNAPSERVER_HOST:?SNAPSERVER_HOST not set in .env}
+      - SNAPSERVER_HOST=${SNAPSERVER_HOST:-}
       - SNAPSERVER_PORT=${SNAPSERVER_RPC_PORT:-1705}
       - CLIENT_ID=${CLIENT_ID:?CLIENT_ID not set in .env}
     volumes:
