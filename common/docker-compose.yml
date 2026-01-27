@@ -36,3 +36,17 @@ services:
       - "8080:80"
     volumes:
       - ./public:/usr/share/nginx/html:ro
+
+  # Optional: Audio visualizer (enable with --profile visualizer)
+  audio-visualizer:
+    build: ./docker/audio-visualizer
+    container_name: audio-visualizer
+    restart: unless-stopped
+    profiles:
+      - visualizer
+    devices:
+      - /dev/snd:/dev/snd
+    ports:
+      - "8081:8081"
+    environment:
+      - VISUALIZER_WS_PORT=8081
