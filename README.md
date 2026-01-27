@@ -57,7 +57,7 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 - 🎵 **Synchronized Audio**: Multi-room playback via Snapcast
 - 🎨 **Cover Display**: Full-screen album art with track metadata
 - 🎛️ **Multiple Audio HATs**: Support for 11 popular Raspberry Pi audio HATs
-- 📺 **Display Options**: 9" touchscreen or 4K HDMI TV
+- 📺 **Flexible Resolution**: 6 presets (800x480 to 4K) plus custom resolution support
 - 🐳 **Docker-based**: Pre-built images for easy deployment
 - 🔄 **Auto-start**: Systemd services for automatic startup
 
@@ -95,51 +95,44 @@ See **[QUICKSTART.md](QUICKSTART.md)** for detailed 5-minute setup instructions.
 2. Enable SSH and WiFi in Raspberry Pi Imager settings
 3. Boot Pi with your audio HAT attached
 4. Copy project files and run `sudo bash common/scripts/setup.sh`
-5. Select your audio HAT from the interactive menu (11 options)
-6. Configure Snapserver IP and reboot
+5. Select your audio HAT (11 options) and display resolution (6 presets + custom)
+6. Enter Snapserver IP and reboot
 
-The setup script installs Docker CE, automatically configures your audio HAT and ALSA, sets up the cover display, and creates systemd services for auto-start.
+The setup script installs Docker CE, automatically configures your audio HAT and ALSA, sets up the cover display for your chosen resolution, and creates systemd services for auto-start. Client ID is automatically generated from hostname.
 
 ## Project Structure
 
 ```
 rpi-snapclient-usb/
 ├── common/
-│   ├── scripts/setup.sh      # Main installation script with HAT selection
-│   └── audio-hats/           # Audio HAT configurations
-│       ├── hifiberry-dac.conf
-│       ├── hifiberry-digi.conf
-│       ├── hifiberry-dac2hd.conf
-│       ├── iqaudio-dac.conf
-│       ├── iqaudio-digiamp.conf
-│       ├── iqaudio-codec.conf
-│       ├── allo-boss.conf
-│       ├── allo-digione.conf
-│       ├── justboom-dac.conf
-│       ├── justboom-digi.conf
-│       └── usb-audio.conf
+│   ├── scripts/setup.sh        # Main installation script
+│   ├── docker-compose.yml      # Unified Docker services
+│   ├── .env.example            # Environment template
+│   ├── audio-hats/             # Audio HAT configurations (11 files)
+│   │   ├── hifiberry-dac.conf
+│   │   ├── hifiberry-digi.conf
+│   │   ├── hifiberry-dac2hd.conf
+│   │   ├── iqaudio-*.conf
+│   │   ├── allo-*.conf
+│   │   ├── justboom-*.conf
+│   │   └── usb-audio.conf
+│   └── docker/
+│       ├── snapclient/         # Snapclient Docker image
+│       └── metadata-service/   # Cover display metadata service
 │
-├── dac-plus-9inch/           # 9" display configuration
-│   ├── docker-compose.yml
-│   ├── .env.example
-│   ├── boot/config.txt       # Display-specific boot settings
-│   ├── config/asound.conf    # Reference ALSA config
-│   └── cover-display/
+├── scripts/                    # Development scripts
+│   ├── ci-local.sh             # Local CI runner
+│   └── install-hooks.sh        # Git hooks installer
 │
-├── digi-plus-4k/             # 4K display configuration
-│   ├── docker-compose.yml
-│   ├── .env.example
-│   ├── boot/config.txt       # Display-specific boot settings
-│   ├── config/asound.conf    # Reference ALSA config
-│   └── cover-display/
+├── tests/                      # Test scripts
+│   └── test-hat-configs.sh     # HAT config validation
 │
-└── docs/
-    └── archive/              # Historical documentation
+└── .github/workflows/          # CI/CD pipelines
 ```
 
 ## Configuration
 
-After installation, configure your Snapserver connection in `/opt/snapclient/.env`:
+After installation, configure your settings in `/opt/snapclient/.env`:
 
 ```bash
 # Snapserver connection
@@ -147,17 +140,20 @@ SNAPSERVER_HOST=your.server.ip
 SNAPSERVER_PORT=1704
 SNAPSERVER_RPC_PORT=1705
 
-# Client identification
-CLIENT_ID=snapclient-living-room
+# Client identification (auto-generated from hostname)
+CLIENT_ID=snapclient-raspberrypi
 
-# Audio device
+# Audio device (auto-configured based on HAT selection)
 SOUNDCARD=hw:sndrpihifiberry,0
+
+# Display resolution (auto-configured)
+DISPLAY_RESOLUTION=1920x1080
 ```
 
 Then restart services:
 ```bash
 cd /opt/snapclient
-sudo docker-compose restart
+sudo docker compose restart
 ```
 
 ## Verification
@@ -193,8 +189,8 @@ This project uses a unified pre-built image:
 Update to latest version:
 ```bash
 cd /opt/snapclient
-sudo docker-compose pull
-sudo docker-compose up -d
+sudo docker compose pull
+sudo docker compose up -d
 ```
 
 ## Resources

@@ -50,7 +50,7 @@ fi
 # 2. Hadolint
 if command -v hadolint &> /dev/null; then
     run_check "Hadolint (snapclient)" "hadolint --config .hadolint.yaml common/docker/snapclient/Dockerfile" || true
-    run_check "Hadolint (metadata)" "hadolint --config .hadolint.yaml digi-plus-4k/cover-display/Dockerfile" || true
+    run_check "Hadolint (metadata)" "hadolint --config .hadolint.yaml common/docker/metadata-service/Dockerfile" || true
 else
     echo -e "${YELLOW}⚠ Hadolint not installed (install: brew install hadolint)${NC}"
     echo ""

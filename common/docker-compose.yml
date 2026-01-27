@@ -11,21 +11,21 @@ services:
     environment:
       - SNAPSERVER_HOST=${SNAPSERVER_HOST:?SNAPSERVER_HOST not set in .env}
       - SNAPSERVER_PORT=${SNAPSERVER_PORT:-1704}
-      - HOST_ID=snapclient-dac-9inch
+      - HOST_ID=${CLIENT_ID:?CLIENT_ID not set in .env}
       - SOUNDCARD=${SOUNDCARD:-default}
     privileged: true
 
   metadata-service:
-    build: ./cover-display
+    build: ./docker/metadata-service
     container_name: metadata-service
     restart: unless-stopped
     network_mode: host
     environment:
       - SNAPSERVER_HOST=${SNAPSERVER_HOST:?SNAPSERVER_HOST not set in .env}
       - SNAPSERVER_PORT=${SNAPSERVER_RPC_PORT:-1705}
-      - CLIENT_ID=snapclient-dac-9inch
+      - CLIENT_ID=${CLIENT_ID:?CLIENT_ID not set in .env}
     volumes:
-      - ./cover-display/public:/app/public
+      - ./public:/app/public
 
   nginx:
     image: nginx:alpine
@@ -34,4 +34,4 @@ services:
     ports:
       - "8080:80"
     volumes:
-      - ./cover-display/public:/usr/share/nginx/html:ro
+      - ./public:/usr/share/nginx/html:ro

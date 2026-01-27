@@ -96,7 +96,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: digi-plus-4k/cover-display
+          context: common/docker/metadata-service
           platforms: linux/arm64,linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

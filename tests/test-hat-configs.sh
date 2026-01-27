@@ -17,7 +17,6 @@ for conf in "$PROJECT_DIR/common/audio-hats/"*.conf; do
     [[ -n "$HAT_TYPE" ]] || { echo "❌ FAIL: HAT_TYPE missing in $conf"; exit 1; }
     [[ -n "$HAT_FORMAT" ]] || { echo "❌ FAIL: HAT_FORMAT missing in $conf"; exit 1; }
     [[ -n "$HAT_RATE" ]] || { echo "❌ FAIL: HAT_RATE missing in $conf"; exit 1; }
-    [[ -n "$HAT_DISPLAY" ]] || { echo "❌ FAIL: HAT_DISPLAY missing in $conf"; exit 1; }
 
     echo "✓ $HAT_NAME"
 done
