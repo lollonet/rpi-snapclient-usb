@@ -117,6 +117,9 @@ class SnapcastMetadataService:
 
                     # Get artwork URL - prefer artUrl, fall back to artData
                     artwork = meta.get("artUrl", "")
+                    # Fix internal snapcast URLs to use actual server IP
+                    if artwork and "://snapcast:" in artwork:
+                        artwork = artwork.replace("://snapcast:", f"://{self.snapserver_host}:")
 
                     return {
                         "playing": stream.get("status") == "playing",
@@ -275,6 +278,48 @@ class SnapcastMetadataService:
         self.artwork_cache[cache_key] = ""
         return ""
 
+    def download_artwork(self, url: str) -> str:
+        """Download artwork and save locally, return local path"""
+        if not url:
+            return ""
+
+        try:
+            # Generate filename from URL hash
+            url_hash = hashlib.md5(url.encode()).hexdigest()
+            local_path = self.output_file.parent / f"artwork_{url_hash}.jpg"
+
+            # Skip if already downloaded and has content
+            if local_path.exists() and local_path.stat().st_size > 0:
+                return f"/artwork_{url_hash}.jpg"
+
+            # Download the image with chunked reading for reliability
+            req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
+            with urllib.request.urlopen(req, timeout=15) as response:
+                data = b""
+                while True:
+                    chunk = response.read(8192)
+                    if not chunk:
+                        break
+                    data += chunk
+
+                if len(data) > 0:
+                    with open(local_path, 'wb') as f:
+                        f.write(data)
+                    logger.info(f"Downloaded artwork ({len(data)} bytes) to {local_path}")
+                    return f"/artwork_{url_hash}.jpg"
+                else:
+                    logger.warning("Downloaded empty artwork")
+                    return ""
+
+        except Exception as e:
+            logger.error(f"Failed to download artwork: {e}")
+            # Remove incomplete file
+            try:
+                local_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return ""  # Don't fall back to broken URL
+
     def write_metadata(self, metadata: dict) -> None:
         """Write metadata to JSON file"""
         try:
@@ -299,11 +344,17 @@ class SnapcastMetadataService:
                 # Get metadata from Snapserver JSON-RPC
                 metadata = self.get_metadata_from_snapserver()
 
-                # Fetch album artwork if playing and not already provided
+                # Fetch and download album artwork if playing
                 if metadata.get('playing') and metadata.get('artist'):
-                    if metadata.get('album') and not metadata.get('artwork'):
+                    artwork_url = metadata.get('artwork', '')
+
+                    # If no artwork from stream, fetch from external APIs
+                    if not artwork_url and metadata.get('album'):
                         artwork_url = self.fetch_album_artwork(metadata['artist'], metadata['album'])
-                        metadata['artwork'] = artwork_url
+
+                    # Download artwork locally for reliable serving
+                    if artwork_url:
+                        metadata['artwork'] = self.download_artwork(artwork_url)
 
                     # Fetch artist image for fallback
                     artist_image = self.fetch_artist_image(metadata['artist'])

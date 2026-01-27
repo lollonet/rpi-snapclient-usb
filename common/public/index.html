@@ -326,7 +326,8 @@
                 // Try album artwork first, then artist image as fallback
                 const imageUrl = data.artwork || data.artist_image || '';
                 if (imageUrl) {
-                    albumArt.style.backgroundImage = 'url(' + imageUrl + ')';
+                    // Properly escape URL for CSS
+                    albumArt.style.backgroundImage = `url("${imageUrl.replace(/"/g, '\\"')}")`;
                     albumArt.classList.add('visible');
                 } else {
                     albumArt.style.backgroundImage = '';
