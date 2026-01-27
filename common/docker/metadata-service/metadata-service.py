@@ -25,6 +25,8 @@ class SnapcastMetadataService:
         self.snapserver_host = snapserver_host
         self.snapserver_port = snapserver_port
         self.client_id = client_id
+        self.mpd_host = snapserver_host  # MPD usually on same host as snapserver
+        self.mpd_port = 6600
         self.output_file = Path("/app/public/metadata.json")
         self.current_metadata: dict[str, Any] = {}
         self.artwork_cache: dict[str, str] = {}
@@ -41,6 +43,85 @@ class SnapcastMetadataService:
         except Exception as e:
             logger.error(f"Failed to connect to Snapserver: {e}")
             return None
+
+    def get_mpd_metadata(self) -> dict[str, Any]:
+        """Get metadata directly from MPD"""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            sock.connect((self.mpd_host, self.mpd_port))
+
+            # Read MPD greeting
+            sock.recv(1024)
+
+            # Send status command
+            sock.sendall(b"status\n")
+            status_response = b""
+            while True:
+                chunk = sock.recv(1024)
+                status_response += chunk
+                if b"OK\n" in chunk or b"ACK" in chunk:
+                    break
+
+            status_lines = status_response.decode('utf-8', errors='replace').split('\n')
+            status = {}
+            for line in status_lines:
+                if ': ' in line:
+                    key, value = line.split(': ', 1)
+                    status[key] = value
+
+            playing = status.get('state') == 'play'
+
+            if not playing:
+                sock.close()
+                return {"playing": False, "source": "MPD"}
+
+            # Get current song info
+            sock.sendall(b"currentsong\n")
+            song_response = b""
+            while True:
+                chunk = sock.recv(1024)
+                song_response += chunk
+                if b"OK\n" in chunk or b"ACK" in chunk:
+                    break
+
+            sock.close()
+
+            song_lines = song_response.decode('utf-8', errors='replace').split('\n')
+            song = {}
+            for line in song_lines:
+                if ': ' in line:
+                    key, value = line.split(': ', 1)
+                    song[key] = value
+
+            title = song.get('Title', '')
+            artist = song.get('Artist', '')
+            album = song.get('Album', '')
+
+            # For radio streams: Title often contains "Artist - Title" format
+            # and Name contains the station name
+            if not artist and ' - ' in title:
+                parts = title.split(' - ', 1)
+                artist = parts[0].strip()
+                title = parts[1].strip() if len(parts) > 1 else title
+
+            # Use station Name as album for radio streams
+            if not album and song.get('Name'):
+                album = song.get('Name', '')
+
+            return {
+                "playing": True,
+                "title": title,
+                "artist": artist,
+                "album": album,
+                "artwork": "",
+                "stream_id": "MPD",
+                "source": "MPD"
+            }
+
+        except Exception as e:
+            logger.debug(f"MPD query failed: {e}")
+            return {"playing": False, "source": "MPD"}
 
     def send_rpc_request(self, sock: socket.socket, method: str, params: dict | None = None) -> dict | None:
         """Send JSON-RPC request and get response"""
@@ -337,12 +418,22 @@ class SnapcastMetadataService:
         """Main service loop"""
         logger.info(f"Starting Snapcast Metadata Service")
         logger.info(f"  Snapserver: {self.snapserver_host}:{self.snapserver_port}")
+        logger.info(f"  MPD fallback: {self.mpd_host}:{self.mpd_port}")
         logger.info(f"  Client ID: {self.client_id}")
 
         while True:
             try:
                 # Get metadata from Snapserver JSON-RPC
                 metadata = self.get_metadata_from_snapserver()
+
+                # If stream is MPD and has no metadata, query MPD directly
+                if (metadata.get('source') == 'MPD' and
+                    metadata.get('playing') and
+                    not metadata.get('title')):
+                    mpd_meta = self.get_mpd_metadata()
+                    if mpd_meta.get('title'):
+                        metadata = mpd_meta
+                        logger.debug("Using MPD metadata (Snapserver had none)")
 
                 # Fetch and download album artwork if playing
                 if metadata.get('playing') and metadata.get('artist'):
