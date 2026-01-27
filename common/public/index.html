@@ -298,7 +298,7 @@
 
         async function fetchMetadata() {
             try {
-                const response = await fetch('/metadata.json');
+                const response = await fetch('/metadata.json', { cache: 'no-store' });
                 const data = await response.json();
 
                 if (JSON.stringify(data) !== JSON.stringify(currentTrack)) {
