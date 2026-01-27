@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Clone and build snapclient from official repo
 WORKDIR /build
-RUN git clone --depth 1 --branch v0.33.0 https://github.com/badaix/snapcast.git
+RUN git clone --depth 1 --branch v0.34.0 https://github.com/badaix/snapcast.git
 
 WORKDIR /build/snapcast
 RUN cmake -S . -B build \

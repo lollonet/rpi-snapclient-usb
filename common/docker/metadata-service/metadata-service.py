@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Snapcast Metadata Service
-Fetches metadata from MPD server and serves it as JSON for cover display
+Fetches metadata from Snapserver JSON-RPC and serves it as JSON for cover display.
+Supports all sources: MPD, AirPlay, Spotify, etc.
 """
 
 import json
@@ -13,7 +14,7 @@ import hashlib
 import urllib.request
 import urllib.parse
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,24 +26,23 @@ class SnapcastMetadataService:
         self.snapserver_port = snapserver_port
         self.client_id = client_id
         self.output_file = Path("/app/public/metadata.json")
-        self.current_metadata = {}
-        self.artwork_cache = {}  # Cache artwork URLs to avoid repeated API calls
-        self.artist_image_cache = {}  # Cache artist images
+        self.current_metadata: dict[str, Any] = {}
+        self.artwork_cache: dict[str, str] = {}
+        self.artist_image_cache: dict[str, str] = {}
         self.user_agent = "SnapcastMetadataService/1.0 (https://github.com/lollonet/rpi-snapclient-usb)"
 
-    def connect_to_snapserver(self) -> Optional[socket.socket]:
+    def connect_to_snapserver(self) -> socket.socket | None:
         """Connect to Snapserver JSON-RPC interface"""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5)
             sock.connect((self.snapserver_host, self.snapserver_port))
-            logger.info(f"Connected to Snapserver at {self.snapserver_host}:{self.snapserver_port}")
             return sock
         except Exception as e:
             logger.error(f"Failed to connect to Snapserver: {e}")
             return None
 
-    def send_rpc_request(self, sock: socket.socket, method: str, params: Optional[Dict] = None) -> Optional[Dict]:
+    def send_rpc_request(self, sock: socket.socket, method: str, params: dict | None = None) -> dict | None:
         """Send JSON-RPC request and get response"""
         try:
             request = {
@@ -54,10 +54,9 @@ class SnapcastMetadataService:
 
             sock.sendall((json.dumps(request) + "\r\n").encode())
 
-            # Read response in chunks until we get the complete JSON (terminated by \r\n)
             response_bytes = b""
             while True:
-                chunk = sock.recv(4096)
+                chunk = sock.recv(8192)
                 if not chunk:
                     break
                 response_bytes += chunk
@@ -70,127 +69,79 @@ class SnapcastMetadataService:
             logger.error(f"RPC request failed: {e}")
             return None
 
-    def get_server_status(self, sock: socket.socket) -> Optional[Dict]:
-        """Get full server status including all clients and streams"""
-        return self.send_rpc_request(sock, "Server.GetStatus")
-
-    def get_mpd_metadata(self) -> Dict[str, Any]:
-        """Fetch current track metadata from MPD server"""
-        try:
-            # Connect to MPD
-            mpd_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            mpd_sock.settimeout(3)
-            mpd_sock.connect((self.snapserver_host, 6600))
-
-            # Read MPD greeting
-            mpd_sock.recv(1024)
-
-            # Send currentsong command
-            mpd_sock.sendall(b"currentsong\n")
-
-            # Read response
-            response = b""
-            while True:
-                chunk = mpd_sock.recv(4096)
-                if not chunk:
-                    break
-                response += chunk
-                if b"OK\n" in response or b"ACK" in response:
-                    break
-
-            mpd_sock.close()
-
-            # Parse MPD response
-            metadata = {}
-            lines = response.decode('utf-8', errors='replace').split('\n')
-
-            for line in lines:
-                if ':' in line:
-                    key, value = line.split(':', 1)
-                    key = key.strip().lower()
-                    value = value.strip()
-
-                    if key == 'title':
-                        metadata['title'] = value
-                    elif key == 'artist':
-                        metadata['artist'] = value
-                    elif key == 'album':
-                        metadata['album'] = value
-                    elif key == 'file':
-                        metadata['file'] = value
-
-            # Check if playing
-            mpd_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            mpd_sock.settimeout(3)
-            mpd_sock.connect((self.snapserver_host, 6600))
-            mpd_sock.recv(1024)
-            mpd_sock.sendall(b"status\n")
-
-            response = b""
-            while True:
-                chunk = mpd_sock.recv(4096)
-                if not chunk:
-                    break
-                response += chunk
-                if b"OK\n" in response or b"ACK" in response:
-                    break
-
-            mpd_sock.close()
-
-            playing = False
-            for line in response.decode('utf-8', errors='replace').split('\n'):
-                if line.startswith('state:'):
-                    state = line.split(':', 1)[1].strip()
-                    playing = state == 'play'
-                    break
-
-            return {
-                "playing": playing,
-                "title": metadata.get("title", ""),
-                "artist": metadata.get("artist", ""),
-                "album": metadata.get("album", ""),
-                "artwork": "",
-                "file": metadata.get("file", "")
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to get MPD metadata: {e}")
+    def get_metadata_from_snapserver(self) -> dict[str, Any]:
+        """Get metadata from Snapserver JSON-RPC for our client's stream"""
+        sock = self.connect_to_snapserver()
+        if not sock:
             return {"playing": False}
 
-    def extract_metadata_for_client(self, status: Dict) -> Dict[str, Any]:
-        """Extract metadata for our specific client"""
         try:
-            # Find our client in the server status
-            for group in status.get("result", {}).get("server", {}).get("groups", []):
+            status = self.send_rpc_request(sock, "Server.GetStatus")
+            if not status:
+                return {"playing": False}
+
+            # Find our client and its stream
+            server = status.get("result", {}).get("server", {})
+            client_stream_id = None
+
+            for group in server.get("groups", []):
                 for client in group.get("clients", []):
-                    if client.get("host", {}).get("name") == self.client_id:
-                        # Get the stream this client is connected to
-                        stream_id = group.get("stream_id")
+                    # Match by client ID or hostname
+                    client_host_name = client.get("host", {}).get("name", "")
+                    client_config_name = client.get("config", {}).get("name", "")
+                    client_id_value = client.get("id", "")
 
-                        # Find metadata for this stream
-                        for stream in status.get("result", {}).get("server", {}).get("streams", []):
-                            if stream.get("id") == stream_id:
-                                metadata = stream.get("properties", {}).get("metadata", {})
+                    if (self.client_id in [client_host_name, client_config_name, client_id_value] or
+                        client_host_name in self.client_id or
+                        self.client_id in client_host_name):
+                        client_stream_id = group.get("stream_id")
+                        logger.debug(f"Found client {self.client_id} on stream {client_stream_id}")
+                        break
+                if client_stream_id:
+                    break
 
-                                return {
-                                    "playing": stream.get("status") == "playing",
-                                    "title": metadata.get("title", ""),
-                                    "artist": metadata.get("artist", ""),
-                                    "album": metadata.get("album", ""),
-                                    "artwork": metadata.get("artUrl", ""),
-                                    "stream_id": stream_id
-                                }
+            if not client_stream_id:
+                logger.warning(f"Client {self.client_id} not found in server status")
+                return {"playing": False}
+
+            # Find metadata for this stream
+            for stream in server.get("streams", []):
+                if stream.get("id") == client_stream_id:
+                    props = stream.get("properties", {})
+                    meta = props.get("metadata", {})
+
+                    # Handle artist which can be a string or list
+                    artist = meta.get("artist", "")
+                    if isinstance(artist, list):
+                        artist = ", ".join(artist)
+
+                    # Get artwork URL - prefer artUrl, fall back to artData
+                    artwork = meta.get("artUrl", "")
+                    # Fix internal snapcast URLs to use actual server IP
+                    if artwork and "://snapcast:" in artwork:
+                        artwork = artwork.replace("://snapcast:", f"://{self.snapserver_host}:")
+
+                    return {
+                        "playing": stream.get("status") == "playing",
+                        "title": meta.get("title", ""),
+                        "artist": artist,
+                        "album": meta.get("album", ""),
+                        "artwork": artwork,
+                        "stream_id": client_stream_id,
+                        "source": stream.get("id", "")
+                    }
 
             return {"playing": False}
 
         except Exception as e:
-            logger.error(f"Error extracting metadata: {e}")
+            logger.error(f"Error getting Snapserver metadata: {e}")
             return {"playing": False}
+        finally:
+            sock.close()
 
     def fetch_musicbrainz_artwork(self, artist: str, album: str) -> str:
-        """Fetch album artwork from MusicBrainz/Cover Art Archive (no API key needed)"""
+        """Fetch album artwork from MusicBrainz/Cover Art Archive"""
         try:
-            # Search for release on MusicBrainz
             query = urllib.parse.quote(f'artist:"{artist}" AND release:"{album}"')
             url = f"https://musicbrainz.org/ws/2/release/?query={query}&fmt=json&limit=1"
 
@@ -202,10 +153,7 @@ class SnapcastMetadataService:
                 if releases:
                     mbid = releases[0].get('id')
                     if mbid:
-                        # Fetch artwork from Cover Art Archive
-                        caa_url = f"https://coverartarchive.org/release/{mbid}/front-500"
-                        # CAA redirects to the actual image, so we return the redirect URL
-                        return caa_url
+                        return f"https://coverartarchive.org/release/{mbid}/front-500"
 
         except Exception as e:
             logger.debug(f"MusicBrainz API failed: {e}")
@@ -217,12 +165,10 @@ class SnapcastMetadataService:
         if not artist:
             return ""
 
-        # Check cache first
         if artist in self.artist_image_cache:
             return self.artist_image_cache[artist]
 
         try:
-            # Search for artist on MusicBrainz
             query = urllib.parse.quote(f'artist:"{artist}"')
             url = f"https://musicbrainz.org/ws/2/artist/?query={query}&fmt=json&limit=1"
 
@@ -240,16 +186,13 @@ class SnapcastMetadataService:
                     self.artist_image_cache[artist] = ""
                     return ""
 
-            # Rate limit: MusicBrainz requires 1 req/sec
-            time.sleep(1.1)
+            time.sleep(1.1)  # MusicBrainz rate limit
 
-            # Get artist details with URL relations
             url = f"https://musicbrainz.org/ws/2/artist/{artist_mbid}?inc=url-rels&fmt=json"
             req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
             with urllib.request.urlopen(req, timeout=5) as response:
                 data = json.loads(response.read().decode())
 
-                # Look for Wikidata relation
                 relations = data.get('relations', [])
                 wikidata_id = None
                 for rel in relations:
@@ -263,7 +206,6 @@ class SnapcastMetadataService:
                     self.artist_image_cache[artist] = ""
                     return ""
 
-            # Fetch image from Wikidata
             time.sleep(1.1)
             url = f"https://www.wikidata.org/wiki/Special:EntityData/{wikidata_id}.json"
             req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
@@ -273,18 +215,14 @@ class SnapcastMetadataService:
                 entity = data.get('entities', {}).get(wikidata_id, {})
                 claims = entity.get('claims', {})
 
-                # P18 is the "image" property in Wikidata
                 image_claims = claims.get('P18', [])
                 if image_claims:
                     image_name = image_claims[0].get('mainsnak', {}).get('datavalue', {}).get('value', '')
                     if image_name:
-                        # Convert to Wikimedia Commons URL
                         image_name = image_name.replace(' ', '_')
-                        # Use MD5 hash for the path
                         md5 = hashlib.md5(image_name.encode()).hexdigest()
                         image_url = f"https://upload.wikimedia.org/wikipedia/commons/thumb/{md5[0]}/{md5[0:2]}/{urllib.parse.quote(image_name)}/500px-{urllib.parse.quote(image_name)}"
 
-                        # Handle file extensions for thumbnails
                         if image_name.lower().endswith('.svg'):
                             image_url += '.png'
 
@@ -299,16 +237,15 @@ class SnapcastMetadataService:
         return ""
 
     def fetch_album_artwork(self, artist: str, album: str) -> str:
-        """Fetch album artwork URL from external APIs (iTunes, then MusicBrainz)"""
+        """Fetch album artwork URL from external APIs"""
         if not artist or not album:
             return ""
 
-        # Check cache first
         cache_key = f"{artist}|{album}"
         if cache_key in self.artwork_cache:
             return self.artwork_cache[cache_key]
 
-        # Try iTunes Search API first (faster, no rate limit)
+        # Try iTunes Search API first
         try:
             query = urllib.parse.quote(f"{artist} {album}")
             url = f"https://itunes.apple.com/search?term={query}&media=music&entity=album&limit=1"
@@ -328,7 +265,7 @@ class SnapcastMetadataService:
         except Exception as e:
             logger.debug(f"iTunes API failed: {e}")
 
-        # Fallback to MusicBrainz/Cover Art Archive
+        # Fallback to MusicBrainz
         try:
             artwork_url = self.fetch_musicbrainz_artwork(artist, album)
             if artwork_url:
@@ -338,11 +275,52 @@ class SnapcastMetadataService:
         except Exception as e:
             logger.debug(f"MusicBrainz artwork failed: {e}")
 
-        # Cache empty result to avoid repeated failed lookups
         self.artwork_cache[cache_key] = ""
         return ""
 
-    def write_metadata(self, metadata: Dict):
+    def download_artwork(self, url: str) -> str:
+        """Download artwork and save locally, return local path"""
+        if not url:
+            return ""
+
+        try:
+            # Generate filename from URL hash
+            url_hash = hashlib.md5(url.encode()).hexdigest()
+            local_path = self.output_file.parent / f"artwork_{url_hash}.jpg"
+
+            # Skip if already downloaded and has content
+            if local_path.exists() and local_path.stat().st_size > 0:
+                return f"/artwork_{url_hash}.jpg"
+
+            # Download the image with chunked reading for reliability
+            req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
+            with urllib.request.urlopen(req, timeout=15) as response:
+                data = b""
+                while True:
+                    chunk = response.read(8192)
+                    if not chunk:
+                        break
+                    data += chunk
+
+                if len(data) > 0:
+                    with open(local_path, 'wb') as f:
+                        f.write(data)
+                    logger.info(f"Downloaded artwork ({len(data)} bytes) to {local_path}")
+                    return f"/artwork_{url_hash}.jpg"
+                else:
+                    logger.warning("Downloaded empty artwork")
+                    return ""
+
+        except Exception as e:
+            logger.error(f"Failed to download artwork: {e}")
+            # Remove incomplete file
+            try:
+                local_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return ""  # Don't fall back to broken URL
+
+    def write_metadata(self, metadata: dict) -> None:
         """Write metadata to JSON file"""
         try:
             self.output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -350,28 +328,35 @@ class SnapcastMetadataService:
             with open(self.output_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
 
-            logger.info(f"Updated metadata: {metadata.get('title', 'No title')} - {metadata.get('artist', 'No artist')}")
+            logger.info(f"Updated: {metadata.get('title', 'N/A')} - {metadata.get('artist', 'N/A')} [{metadata.get('source', 'N/A')}]")
 
         except Exception as e:
             logger.error(f"Failed to write metadata: {e}")
 
-    def run(self):
+    def run(self) -> None:
         """Main service loop"""
-        logger.info(f"Starting Snapcast Metadata Service (MPD polling mode)")
+        logger.info(f"Starting Snapcast Metadata Service")
+        logger.info(f"  Snapserver: {self.snapserver_host}:{self.snapserver_port}")
+        logger.info(f"  Client ID: {self.client_id}")
 
         while True:
             try:
-                # Get metadata directly from MPD
-                metadata = self.get_mpd_metadata()
+                # Get metadata from Snapserver JSON-RPC
+                metadata = self.get_metadata_from_snapserver()
 
-                # Fetch album artwork if playing and we don't have it cached
+                # Fetch and download album artwork if playing
                 if metadata.get('playing') and metadata.get('artist'):
-                    # Fetch album artwork
-                    if metadata.get('album') and not metadata.get('artwork'):
-                        artwork_url = self.fetch_album_artwork(metadata['artist'], metadata['album'])
-                        metadata['artwork'] = artwork_url
+                    artwork_url = metadata.get('artwork', '')
 
-                    # Fetch artist image (for slideshow/fallback)
+                    # If no artwork from stream, fetch from external APIs
+                    if not artwork_url and metadata.get('album'):
+                        artwork_url = self.fetch_album_artwork(metadata['artist'], metadata['album'])
+
+                    # Download artwork locally for reliable serving
+                    if artwork_url:
+                        metadata['artwork'] = self.download_artwork(artwork_url)
+
+                    # Fetch artist image for fallback
                     artist_image = self.fetch_artist_image(metadata['artist'])
                     metadata['artist_image'] = artist_image
 
@@ -382,14 +367,17 @@ class SnapcastMetadataService:
             except Exception as e:
                 logger.error(f"Error in main loop: {e}")
 
-            time.sleep(2)  # Poll every 2 seconds
+            time.sleep(2)
 
 
 if __name__ == "__main__":
-    snapserver_host = os.environ.get("SNAPSERVER_HOST", "snapserver.local")
+    snapserver_host = os.environ.get("SNAPSERVER_HOST", "")
+    if not snapserver_host:
+        logger.error("SNAPSERVER_HOST environment variable is required")
+        raise SystemExit(1)
+
     snapserver_port = int(os.environ.get("SNAPSERVER_PORT", "1705"))
 
-    # CLIENT_ID is required - fail if not set
     client_id = os.environ.get("CLIENT_ID")
     if not client_id:
         logger.error("CLIENT_ID environment variable is required")
