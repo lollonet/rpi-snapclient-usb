@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- **Unified Setup Flow** ([#1](https://github.com/lollonet/rpi-snapclient-usb/pull/1))
+### Added
+- **Unified Setup Flow** ([#1](https://github.com/lollonet/rpi-snapclient-usb/pull/1)) - Jan 27
   - Separate HAT selection from display resolution (no longer coupled)
   - Add 6 resolution presets (800x480 to 3840x2160) plus custom option
   - Auto-generate CLIENT_ID from hostname
@@ -17,24 +17,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dynamic boot/config.txt generation based on resolution
   - GPU memory auto-scaled (256MB ≤1080p, 512MB >1080p)
 
-### Added
-- **Animated Cover Display**
+- **mDNS Autodiscovery** ([#2](https://github.com/lollonet/rpi-snapclient-usb/pull/2)) - Jan 27
+  - Snapclient auto-discovers Snapserver via `_snapcast._tcp` mDNS
+  - No hardcoded hostnames required (SNAPSERVER_HOST now optional)
+  - Avahi daemon integration for service discovery
+
+- **Optional Audio Visualizer** (CAVA + WebSocket) - Jan 27
+  - Real-time FFT-based equalizer visualization
+  - ALSA loopback (snd-aloop) for audio routing
+  - WebSocket server streams CAVA data to browser
+  - Graceful fallback to CSS animation if unavailable
+  - Enable via `AUDIO_VISUALIZER_ENABLED=true` or Docker profile
+
+- **Animated Cover Display** - Jan 27
   - Spinning vinyl record with realistic grooves and red label
   - Animated equalizer bars (9 bars with gradient colors)
   - Pulsing purple glow effect behind vinyl
   - Album art overlays vinyl when available
   - Animations pause when music stops
 
-- **MusicBrainz Integration** (no API key required)
+- **MusicBrainz Integration** (no API key required) - Jan 27
   - Album artwork via Cover Art Archive (fallback after iTunes)
   - Artist images via MusicBrainz → Wikidata → Wikimedia Commons
   - Proper rate limiting (1 req/sec)
 
 ### Fixed
-- **Setup Idempotency** - Running setup.sh multiple times now produces consistent results
+- **MPD Metadata Fallback** - Jan 27
+  - Query MPD directly when Snapserver has no metadata for pipe streams
+  - Parse radio stream "Artist - Title" format from Title field
+  - Use station Name as album for radio streams
+
+- **Cover Art Refresh** - Jan 27
+  - Cache-busting timestamp added to local artwork URLs
+  - Browser no longer serves stale cached artwork images
+
+- **Setup Idempotency** - Jan 27
   - Use markers in config.txt for clean removal on re-run
   - Preserve existing .env settings (Snapserver IP, custom values)
-  - Copy index.html to public/ directory
   - Skip Docker install if already present
 
 ### Removed
