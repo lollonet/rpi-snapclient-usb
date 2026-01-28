@@ -7,8 +7,8 @@ services:
     devices:
       - /dev/snd:/dev/snd
     volumes:
-      - /var/run/dbus:/var/run/dbus:ro
-      - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket:ro
+      - /var/run/dbus:/var/run/dbus
+      - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
     environment:
       - SNAPSERVER_HOST=${SNAPSERVER_HOST:-}
       - SNAPSERVER_PORT=${SNAPSERVER_PORT:-1704}

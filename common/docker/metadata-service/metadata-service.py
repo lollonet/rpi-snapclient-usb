@@ -16,8 +16,38 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
+from zeroconf import ServiceBrowser, ServiceStateChange, Zeroconf
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def discover_snapserver(timeout: int = 10) -> tuple[str, int] | None:
+    """Discover Snapserver via mDNS, returns (host, rpc_port) or None."""
+    result: tuple[str, int] | None = None
+
+    def on_service_state_change(zeroconf: Zeroconf, service_type: str,
+                                name: str, state_change: ServiceStateChange) -> None:
+        nonlocal result
+        if state_change is ServiceStateChange.Added:
+            info = zeroconf.get_service_info(service_type, name)
+            if info and info.parsed_addresses():
+                host = info.parsed_addresses()[0]
+                port = info.port or 1705
+                logger.info(f"Discovered Snapserver via mDNS: {host}:{port}")
+                result = (host, port)
+
+    zc = Zeroconf()
+    # Snapserver advertises _snapcast-ctrl._tcp for the control/RPC interface
+    browser = ServiceBrowser(zc, "_snapcast-ctrl._tcp.local.", handlers=[on_service_state_change])
+
+    deadline = time.time() + timeout
+    while result is None and time.time() < deadline:
+        time.sleep(0.2)
+
+    browser.cancel()
+    zc.close()
+    return result
 
 
 class SnapcastMetadataService:
@@ -32,8 +62,9 @@ class SnapcastMetadataService:
         self.artwork_cache: dict[str, str] = {}
         self.artist_image_cache: dict[str, str] = {}
         self.user_agent = os.environ.get("USER_AGENT", "SnapcastMetadataService/1.0")
+        self._mpd_was_connected = False
 
-    def _create_socket_connection(self, host: str, port: int, timeout: int = 5) -> socket.socket | None:
+    def _create_socket_connection(self, host: str, port: int, timeout: int = 5, log_errors: bool = True) -> socket.socket | None:
         """Create a socket connection with standard settings"""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -41,7 +72,8 @@ class SnapcastMetadataService:
             sock.connect((host, port))
             return sock
         except Exception as e:
-            logger.error(f"Failed to connect to {host}:{port}: {e}")
+            if log_errors:
+                logger.error(f"Failed to connect to {host}:{port}: {e}")
             return None
 
     def connect_to_snapserver(self) -> socket.socket | None:
@@ -79,11 +111,18 @@ class SnapcastMetadataService:
 
     def get_mpd_metadata(self) -> dict[str, Any]:
         """Get metadata directly from MPD"""
-        sock = self._create_socket_connection(self.mpd_host, self.mpd_port)
+        sock = self._create_socket_connection(self.mpd_host, self.mpd_port, log_errors=False)
         if not sock:
+            if self._mpd_was_connected:
+                logger.warning(f"MPD connection lost (host={self.mpd_host}, port={self.mpd_port})")
+                self._mpd_was_connected = False
             return {"playing": False, "source": "MPD"}
 
         try:
+            if not self._mpd_was_connected:
+                logger.info(f"MPD connected (host={self.mpd_host}, port={self.mpd_port})")
+                self._mpd_was_connected = True
+
             # Read MPD greeting
             sock.recv(1024)
 
@@ -115,7 +154,9 @@ class SnapcastMetadataService:
             }
 
         except Exception as e:
-            logger.error(f"MPD query failed (host={self.mpd_host}, port={self.mpd_port}): {e}")
+            if self._mpd_was_connected:
+                logger.warning(f"MPD query failed (host={self.mpd_host}, port={self.mpd_port}): {e}")
+                self._mpd_was_connected = False
             return {"playing": False, "source": "MPD"}
         finally:
             sock.close()
@@ -468,11 +509,17 @@ class SnapcastMetadataService:
 
 if __name__ == "__main__":
     snapserver_host = os.environ.get("SNAPSERVER_HOST", "")
-    if not snapserver_host:
-        logger.error("SNAPSERVER_HOST environment variable is required")
-        raise SystemExit(1)
-
     snapserver_port = int(os.environ.get("SNAPSERVER_PORT", "1705"))
+
+    if not snapserver_host:
+        logger.info("SNAPSERVER_HOST not set, discovering via mDNS...")
+        while True:
+            discovered = discover_snapserver()
+            if discovered:
+                snapserver_host, snapserver_port = discovered
+                break
+            logger.warning("Snapserver not found via mDNS, retrying in 10s...")
+            time.sleep(10)
 
     client_id = os.environ.get("CLIENT_ID")
     if not client_id:

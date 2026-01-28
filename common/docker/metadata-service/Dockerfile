@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install mDNS discovery dependency
+RUN pip install --no-cache-dir zeroconf
+
 # Copy metadata service
 COPY metadata-service.py /app/
 
