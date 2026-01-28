@@ -31,83 +31,78 @@ class SnapcastMetadataService:
         self.current_metadata: dict[str, Any] = {}
         self.artwork_cache: dict[str, str] = {}
         self.artist_image_cache: dict[str, str] = {}
-        self.user_agent = "SnapcastMetadataService/1.0 (https://github.com/lollonet/rpi-snapclient-usb)"
+        self.user_agent = os.environ.get("USER_AGENT", "SnapcastMetadataService/1.0")
+
+    def _create_socket_connection(self, host: str, port: int, timeout: int = 5) -> socket.socket | None:
+        """Create a socket connection with standard settings"""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            sock.connect((host, port))
+            return sock
+        except Exception as e:
+            logger.error(f"Failed to connect to {host}:{port}: {e}")
+            return None
 
     def connect_to_snapserver(self) -> socket.socket | None:
         """Connect to Snapserver JSON-RPC interface"""
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(5)
-            sock.connect((self.snapserver_host, self.snapserver_port))
-            return sock
-        except Exception as e:
-            logger.error(f"Failed to connect to Snapserver: {e}")
-            return None
+        return self._create_socket_connection(self.snapserver_host, self.snapserver_port)
+
+    def _read_mpd_response(self, sock: socket.socket) -> bytes:
+        """Read MPD response until OK or ACK"""
+        response = b""
+        while True:
+            chunk = sock.recv(1024)
+            response += chunk
+            if b"OK\n" in chunk or b"ACK" in chunk:
+                break
+        return response
+
+    def _parse_mpd_response(self, response: bytes) -> dict[str, str]:
+        """Parse MPD response into key-value pairs"""
+        lines = response.decode('utf-8', errors='replace').split('\n')
+        return {
+            key: value for line in lines
+            if ': ' in line
+            for key, value in [line.split(': ', 1)]
+        }
+
+    def _extract_radio_metadata(self, title: str, artist: str, song: dict[str, str]) -> tuple[str, str, str]:
+        """Extract artist/title from radio stream format and determine album"""
+        if not artist and ' - ' in title:
+            parts = title.split(' - ', 1)
+            artist = parts[0].strip()
+            title = parts[1].strip() if len(parts) > 1 else title
+
+        album = song.get('Album', '') or song.get('Name', '')
+        return title, artist, album
 
     def get_mpd_metadata(self) -> dict[str, Any]:
         """Get metadata directly from MPD"""
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(5)
-            sock.connect((self.mpd_host, self.mpd_port))
+        sock = self._create_socket_connection(self.mpd_host, self.mpd_port)
+        if not sock:
+            return {"playing": False, "source": "MPD"}
 
+        try:
             # Read MPD greeting
             sock.recv(1024)
 
-            # Send status command
+            # Get status
             sock.sendall(b"status\n")
-            status_response = b""
-            while True:
-                chunk = sock.recv(1024)
-                status_response += chunk
-                if b"OK\n" in chunk or b"ACK" in chunk:
-                    break
+            status = self._parse_mpd_response(self._read_mpd_response(sock))
 
-            status_lines = status_response.decode('utf-8', errors='replace').split('\n')
-            status = {}
-            for line in status_lines:
-                if ': ' in line:
-                    key, value = line.split(': ', 1)
-                    status[key] = value
-
-            playing = status.get('state') == 'play'
-
-            if not playing:
-                sock.close()
+            if status.get('state') != 'play':
                 return {"playing": False, "source": "MPD"}
 
-            # Get current song info
+            # Get current song
             sock.sendall(b"currentsong\n")
-            song_response = b""
-            while True:
-                chunk = sock.recv(1024)
-                song_response += chunk
-                if b"OK\n" in chunk or b"ACK" in chunk:
-                    break
+            song = self._parse_mpd_response(self._read_mpd_response(sock))
 
-            sock.close()
-
-            song_lines = song_response.decode('utf-8', errors='replace').split('\n')
-            song = {}
-            for line in song_lines:
-                if ': ' in line:
-                    key, value = line.split(': ', 1)
-                    song[key] = value
-
-            title = song.get('Title', '')
-            artist = song.get('Artist', '')
-            album = song.get('Album', '')
-
-            # For radio streams: Title often contains "Artist - Title" format
-            # and Name contains the station name
-            if not artist and ' - ' in title:
-                parts = title.split(' - ', 1)
-                artist = parts[0].strip()
-                title = parts[1].strip() if len(parts) > 1 else title
-
-            # Use station Name as album for radio streams
-            if not album and song.get('Name'):
-                album = song.get('Name', '')
+            title, artist, album = self._extract_radio_metadata(
+                song.get('Title', ''),
+                song.get('Artist', ''),
+                song
+            )
 
             return {
                 "playing": True,
@@ -120,8 +115,10 @@ class SnapcastMetadataService:
             }
 
         except Exception as e:
-            logger.debug(f"MPD query failed: {e}")
+            logger.error(f"MPD query failed (host={self.mpd_host}, port={self.mpd_port}): {e}")
             return {"playing": False, "source": "MPD"}
+        finally:
+            sock.close()
 
     def send_rpc_request(self, sock: socket.socket, method: str, params: dict | None = None) -> dict | None:
         """Send JSON-RPC request and get response"""
@@ -163,23 +160,7 @@ class SnapcastMetadataService:
 
             # Find our client and its stream
             server = status.get("result", {}).get("server", {})
-            client_stream_id = None
-
-            for group in server.get("groups", []):
-                for client in group.get("clients", []):
-                    # Match by client ID or hostname
-                    client_host_name = client.get("host", {}).get("name", "")
-                    client_config_name = client.get("config", {}).get("name", "")
-                    client_id_value = client.get("id", "")
-
-                    if (self.client_id in [client_host_name, client_config_name, client_id_value] or
-                        client_host_name in self.client_id or
-                        self.client_id in client_host_name):
-                        client_stream_id = group.get("stream_id")
-                        logger.debug(f"Found client {self.client_id} on stream {client_stream_id}")
-                        break
-                if client_stream_id:
-                    break
+            client_stream_id = self._find_client_stream(server)
 
             if not client_stream_id:
                 logger.warning(f"Client {self.client_id} not found in server status")
@@ -220,99 +201,127 @@ class SnapcastMetadataService:
         finally:
             sock.close()
 
+    def _find_client_stream(self, server: dict) -> str | None:
+        """Find the stream ID for our client"""
+        for group in server.get("groups", []):
+            for client in group.get("clients", []):
+                if self._is_matching_client(client):
+                    stream_id = group.get("stream_id")
+                    logger.debug(f"Found client {self.client_id} on stream {stream_id}")
+                    return stream_id
+        return None
+
+    def _is_matching_client(self, client: dict) -> bool:
+        """Check if client matches our client ID"""
+        client_identifiers = [
+            client.get("host", {}).get("name", ""),
+            client.get("config", {}).get("name", ""),
+            client.get("id", "")
+        ]
+
+        return any(
+            self.client_id == identifier or
+            self.client_id in identifier or
+            identifier in self.client_id
+            for identifier in client_identifiers
+            if identifier
+        )
+
+    def _make_api_request(self, url: str, timeout: int = 5) -> dict | None:
+        """Make an API request and return JSON response"""
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                return json.loads(response.read().decode())
+        except Exception as e:
+            logger.debug(f"API request failed for {url}: {e}")
+            return None
+
     def fetch_musicbrainz_artwork(self, artist: str, album: str) -> str:
         """Fetch album artwork from MusicBrainz/Cover Art Archive"""
-        try:
-            query = urllib.parse.quote(f'artist:"{artist}" AND release:"{album}"')
-            url = f"https://musicbrainz.org/ws/2/release/?query={query}&fmt=json&limit=1"
+        query = urllib.parse.quote(f'artist:"{artist}" AND release:"{album}"')
+        url = f"https://musicbrainz.org/ws/2/release/?query={query}&fmt=json&limit=1"
 
-            req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode())
+        data = self._make_api_request(url)
+        if not data:
+            return ""
 
-                releases = data.get('releases', [])
-                if releases:
-                    mbid = releases[0].get('id')
-                    if mbid:
-                        return f"https://coverartarchive.org/release/{mbid}/front-500"
-
-        except Exception as e:
-            logger.debug(f"MusicBrainz API failed: {e}")
+        releases = data.get('releases', [])
+        if releases and (mbid := releases[0].get('id')):
+            return f"https://coverartarchive.org/release/{mbid}/front-500"
 
         return ""
 
+    def _get_wikidata_id_from_relations(self, relations: list) -> str | None:
+        """Extract Wikidata ID from MusicBrainz relations"""
+        for rel in relations:
+            if rel.get('type') == 'wikidata':
+                wikidata_url = rel.get('url', {}).get('resource', '')
+                if wikidata_url:
+                    return wikidata_url.split('/')[-1]
+        return None
+
+    def _build_wikimedia_image_url(self, image_name: str) -> str:
+        """Build Wikimedia Commons image URL with proper formatting"""
+        image_name = image_name.replace(' ', '_')
+        md5 = hashlib.md5(image_name.encode()).hexdigest()
+        base_url = f"https://upload.wikimedia.org/wikipedia/commons/thumb/{md5[0]}/{md5[0:2]}/{urllib.parse.quote(image_name)}/500px-{urllib.parse.quote(image_name)}"
+
+        if image_name.lower().endswith('.svg'):
+            base_url += '.png'
+
+        return base_url
+
     def fetch_artist_image(self, artist: str) -> str:
         """Fetch artist image from MusicBrainz -> Wikidata -> Wikimedia Commons"""
-        if not artist:
+        if not artist or artist in self.artist_image_cache:
+            return self.artist_image_cache.get(artist, "")
+
+        # Step 1: Get artist MBID from MusicBrainz
+        query = urllib.parse.quote(f'artist:"{artist}"')
+        url = f"https://musicbrainz.org/ws/2/artist/?query={query}&fmt=json&limit=1"
+
+        data = self._make_api_request(url)
+        if not data or not (artists := data.get('artists', [])):
+            self.artist_image_cache[artist] = ""
             return ""
 
-        if artist in self.artist_image_cache:
-            return self.artist_image_cache[artist]
+        artist_mbid = artists[0].get('id')
+        if not artist_mbid:
+            self.artist_image_cache[artist] = ""
+            return ""
 
-        try:
-            query = urllib.parse.quote(f'artist:"{artist}"')
-            url = f"https://musicbrainz.org/ws/2/artist/?query={query}&fmt=json&limit=1"
+        time.sleep(1.1)  # MusicBrainz rate limit
 
-            req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode())
+        # Step 2: Get Wikidata ID from artist relations
+        url = f"https://musicbrainz.org/ws/2/artist/{artist_mbid}?inc=url-rels&fmt=json"
+        data = self._make_api_request(url)
+        if not data:
+            self.artist_image_cache[artist] = ""
+            return ""
 
-                artists = data.get('artists', [])
-                if not artists:
-                    self.artist_image_cache[artist] = ""
-                    return ""
+        wikidata_id = self._get_wikidata_id_from_relations(data.get('relations', []))
+        if not wikidata_id:
+            self.artist_image_cache[artist] = ""
+            return ""
 
-                artist_mbid = artists[0].get('id')
-                if not artist_mbid:
-                    self.artist_image_cache[artist] = ""
-                    return ""
+        time.sleep(1.1)
 
-            time.sleep(1.1)  # MusicBrainz rate limit
+        # Step 3: Get image from Wikidata
+        url = f"https://www.wikidata.org/wiki/Special:EntityData/{wikidata_id}.json"
+        data = self._make_api_request(url)
+        if not data:
+            self.artist_image_cache[artist] = ""
+            return ""
 
-            url = f"https://musicbrainz.org/ws/2/artist/{artist_mbid}?inc=url-rels&fmt=json"
-            req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode())
+        entity = data.get('entities', {}).get(wikidata_id, {})
+        image_claims = entity.get('claims', {}).get('P18', [])
 
-                relations = data.get('relations', [])
-                wikidata_id = None
-                for rel in relations:
-                    if rel.get('type') == 'wikidata':
-                        wikidata_url = rel.get('url', {}).get('resource', '')
-                        if wikidata_url:
-                            wikidata_id = wikidata_url.split('/')[-1]
-                            break
-
-                if not wikidata_id:
-                    self.artist_image_cache[artist] = ""
-                    return ""
-
-            time.sleep(1.1)
-            url = f"https://www.wikidata.org/wiki/Special:EntityData/{wikidata_id}.json"
-            req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode())
-
-                entity = data.get('entities', {}).get(wikidata_id, {})
-                claims = entity.get('claims', {})
-
-                image_claims = claims.get('P18', [])
-                if image_claims:
-                    image_name = image_claims[0].get('mainsnak', {}).get('datavalue', {}).get('value', '')
-                    if image_name:
-                        image_name = image_name.replace(' ', '_')
-                        md5 = hashlib.md5(image_name.encode()).hexdigest()
-                        image_url = f"https://upload.wikimedia.org/wikipedia/commons/thumb/{md5[0]}/{md5[0:2]}/{urllib.parse.quote(image_name)}/500px-{urllib.parse.quote(image_name)}"
-
-                        if image_name.lower().endswith('.svg'):
-                            image_url += '.png'
-
-                        self.artist_image_cache[artist] = image_url
-                        logger.info(f"Found artist image for {artist}")
-                        return image_url
-
-        except Exception as e:
-            logger.debug(f"Artist image fetch failed: {e}")
+        if image_claims and (image_name := image_claims[0].get('mainsnak', {}).get('datavalue', {}).get('value', '')):
+            image_url = self._build_wikimedia_image_url(image_name)
+            self.artist_image_cache[artist] = image_url
+            logger.info(f"Found artist image for {artist}")
+            return image_url
 
         self.artist_image_cache[artist] = ""
         return ""
@@ -327,37 +336,33 @@ class SnapcastMetadataService:
             return self.artwork_cache[cache_key]
 
         # Try iTunes Search API first
-        try:
-            query = urllib.parse.quote(f"{artist} {album}")
-            url = f"https://itunes.apple.com/search?term={query}&media=music&entity=album&limit=1"
-
-            req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode())
-
-                if data.get('resultCount', 0) > 0:
-                    artwork_url = data['results'][0].get('artworkUrl100', '')
-                    if artwork_url:
-                        artwork_url = artwork_url.replace('100x100', '600x600')
-                        self.artwork_cache[cache_key] = artwork_url
-                        logger.info(f"Found iTunes artwork for {artist} - {album}")
-                        return artwork_url
-
-        except Exception as e:
-            logger.debug(f"iTunes API failed: {e}")
+        artwork_url = self._fetch_itunes_artwork(artist, album)
+        if artwork_url:
+            self.artwork_cache[cache_key] = artwork_url
+            logger.info(f"Found iTunes artwork for {artist} - {album}")
+            return artwork_url
 
         # Fallback to MusicBrainz
-        try:
-            artwork_url = self.fetch_musicbrainz_artwork(artist, album)
-            if artwork_url:
-                self.artwork_cache[cache_key] = artwork_url
-                logger.info(f"Found MusicBrainz artwork for {artist} - {album}")
-                return artwork_url
-        except Exception as e:
-            logger.debug(f"MusicBrainz artwork failed: {e}")
+        artwork_url = self.fetch_musicbrainz_artwork(artist, album)
+        if artwork_url:
+            self.artwork_cache[cache_key] = artwork_url
+            logger.info(f"Found MusicBrainz artwork for {artist} - {album}")
+            return artwork_url
 
         self.artwork_cache[cache_key] = ""
         return ""
+
+    def _fetch_itunes_artwork(self, artist: str, album: str) -> str:
+        """Fetch artwork from iTunes Search API"""
+        query = urllib.parse.quote(f"{artist} {album}")
+        url = f"https://itunes.apple.com/search?term={query}&media=music&entity=album&limit=1"
+
+        data = self._make_api_request(url)
+        if not data or data.get('resultCount', 0) == 0:
+            return ""
+
+        artwork_url = data['results'][0].get('artworkUrl100', '')
+        return artwork_url.replace('100x100', '600x600') if artwork_url else ""
 
     def download_artwork(self, url: str) -> str:
         """Download artwork and save locally, return local path"""
@@ -397,8 +402,8 @@ class SnapcastMetadataService:
             # Remove incomplete file
             try:
                 local_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to clean up incomplete artwork file {local_path}: {cleanup_error}")
             return ""  # Don't fall back to broken URL
 
     def write_metadata(self, metadata: dict) -> None:

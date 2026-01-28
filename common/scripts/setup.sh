@@ -25,43 +25,52 @@ CONFIG_MARKER_END="# --- SNAPCLIENT SETUP END ---"
 # ============================================
 # Step 1: Select Audio HAT
 # ============================================
-echo "Select your audio HAT:"
-echo "1) HiFiBerry DAC+"
-echo "2) HiFiBerry Digi+"
-echo "3) HiFiBerry DAC2 HD"
-echo "4) IQaudio DAC+"
-echo "5) IQaudio DigiAMP+"
-echo "6) IQaudio Codec Zero"
-echo "7) Allo Boss DAC"
-echo "8) Allo DigiOne"
-echo "9) JustBoom DAC"
-echo "10) JustBoom Digi"
-echo "11) USB Audio Device"
-read -rp "Enter choice [1-11]: " hat_choice
+show_hat_options() {
+    echo "Select your audio HAT:"
+    echo "1) HiFiBerry DAC+"
+    echo "2) HiFiBerry Digi+"
+    echo "3) HiFiBerry DAC2 HD"
+    echo "4) IQaudio DAC+"
+    echo "5) IQaudio DigiAMP+"
+    echo "6) IQaudio Codec Zero"
+    echo "7) Allo Boss DAC"
+    echo "8) Allo DigiOne"
+    echo "9) JustBoom DAC"
+    echo "10) JustBoom Digi"
+    echo "11) USB Audio Device"
+}
 
-# Validate input
-if [[ ! "$hat_choice" =~ ^([1-9]|1[01])$ ]]; then
-    echo "Invalid choice. Please enter a number between 1 and 11."
-    exit 1
-fi
-
-case "$hat_choice" in
-    1) HAT_CONFIG="hifiberry-dac" ;;
-    2) HAT_CONFIG="hifiberry-digi" ;;
-    3) HAT_CONFIG="hifiberry-dac2hd" ;;
-    4) HAT_CONFIG="iqaudio-dac" ;;
-    5) HAT_CONFIG="iqaudio-digiamp" ;;
-    6) HAT_CONFIG="iqaudio-codec" ;;
-    7) HAT_CONFIG="allo-boss" ;;
-    8) HAT_CONFIG="allo-digione" ;;
-    9) HAT_CONFIG="justboom-dac" ;;
-    10) HAT_CONFIG="justboom-digi" ;;
-    11) HAT_CONFIG="usb-audio" ;;
-    *)
-        echo "Invalid choice"
+validate_choice() {
+    local choice="$1"
+    local max="$2"
+    if [[ ! "$choice" =~ ^[1-9]$|^1[01]$ ]] || [ "$choice" -gt "$max" ]; then
+        echo "Invalid choice. Please enter a number between 1 and $max."
         exit 1
-        ;;
-esac
+    fi
+}
+
+get_hat_config() {
+    local choice="$1"
+    case "$choice" in
+        1) echo "hifiberry-dac" ;;
+        2) echo "hifiberry-digi" ;;
+        3) echo "hifiberry-dac2hd" ;;
+        4) echo "iqaudio-dac" ;;
+        5) echo "iqaudio-digiamp" ;;
+        6) echo "iqaudio-codec" ;;
+        7) echo "allo-boss" ;;
+        8) echo "allo-digione" ;;
+        9) echo "justboom-dac" ;;
+        10) echo "justboom-digi" ;;
+        11) echo "usb-audio" ;;
+        *) echo "Invalid choice"; exit 1 ;;
+    esac
+}
+
+show_hat_options
+read -rp "Enter choice [1-11]: " hat_choice
+validate_choice "$hat_choice" 11
+HAT_CONFIG=$(get_hat_config "$hat_choice")
 
 # Load HAT configuration
 # shellcheck source=/dev/null
@@ -73,37 +82,50 @@ echo ""
 # ============================================
 # Step 2: Select Display Resolution
 # ============================================
-echo "Select your display resolution:"
-echo "1) 800x480   (Small touchscreen)"
-echo "2) 1024x600  (9-inch display)"
-echo "3) 1280x720  (720p HD)"
-echo "4) 1920x1080 (1080p Full HD)"
-echo "5) 2560x1440 (1440p QHD)"
-echo "6) 3840x2160 (4K UHD)"
-echo "7) Custom    (Enter WIDTHxHEIGHT)"
+show_resolution_options() {
+    echo "Select your display resolution:"
+    echo "1) 800x480   (Small touchscreen)"
+    echo "2) 1024x600  (9-inch display)"
+    echo "3) 1280x720  (720p HD)"
+    echo "4) 1920x1080 (1080p Full HD)"
+    echo "5) 2560x1440 (1440p QHD)"
+    echo "6) 3840x2160 (4K UHD)"
+    echo "7) Custom    (Enter WIDTHxHEIGHT)"
+}
+
+get_resolution() {
+    local choice="$1"
+    case "$choice" in
+        1) echo "800x480" ;;
+        2) echo "1024x600" ;;
+        3) echo "1280x720" ;;
+        4) echo "1920x1080" ;;
+        5) echo "2560x1440" ;;
+        6) echo "3840x2160" ;;
+        7)
+            read -rp "Enter resolution (e.g., 1366x768): " custom_resolution
+            if [[ ! "$custom_resolution" =~ ^[0-9]+x[0-9]+$ ]]; then
+                echo "Invalid format. Use WIDTHxHEIGHT (e.g., 1366x768)"
+                exit 1
+            fi
+            # Validate reasonable bounds (320-7680 width, 240-4320 height)
+            local width height
+            width="${custom_resolution%x*}"
+            height="${custom_resolution#*x}"
+            if (( width < 320 || width > 7680 || height < 240 || height > 4320 )); then
+                echo "Invalid resolution. Width must be 320-7680, height must be 240-4320."
+                exit 1
+            fi
+            echo "$custom_resolution"
+            ;;
+        *) echo "Invalid choice"; exit 1 ;;
+    esac
+}
+
+show_resolution_options
 read -rp "Enter choice [1-7]: " resolution_choice
-
-# Validate input
-if [[ ! "$resolution_choice" =~ ^[1-7]$ ]]; then
-    echo "Invalid choice. Please enter a number between 1 and 7."
-    exit 1
-fi
-
-case "$resolution_choice" in
-    1) DISPLAY_RESOLUTION="800x480" ;;
-    2) DISPLAY_RESOLUTION="1024x600" ;;
-    3) DISPLAY_RESOLUTION="1280x720" ;;
-    4) DISPLAY_RESOLUTION="1920x1080" ;;
-    5) DISPLAY_RESOLUTION="2560x1440" ;;
-    6) DISPLAY_RESOLUTION="3840x2160" ;;
-    7)
-        read -rp "Enter resolution (e.g., 1366x768): " DISPLAY_RESOLUTION
-        if [[ ! "$DISPLAY_RESOLUTION" =~ ^[0-9]+x[0-9]+$ ]]; then
-            echo "Invalid format. Use WIDTHxHEIGHT (e.g., 1366x768)"
-            exit 1
-        fi
-        ;;
-esac
+validate_choice "$resolution_choice" 7
+DISPLAY_RESOLUTION=$(get_resolution "$resolution_choice")
 
 echo "Selected resolution: $DISPLAY_RESOLUTION"
 echo ""
@@ -245,7 +267,11 @@ if [ "$AUDIO_VISUALIZER_ENABLED" = "true" ]; then
     fi
 
     # Load module now
-    modprobe snd-aloop 2>/dev/null || true
+    if ! modprobe snd-aloop 2>/dev/null; then
+        echo "Warning: Could not load snd-aloop kernel module."
+        echo "  Audio visualization may not work until next reboot."
+        echo "  Ensure your kernel supports ALSA loopback (snd-aloop)."
+    fi
 
     # Generate ALSA config with loopback (multi-output to DAC + loopback)
     cat > /etc/asound.conf << EOF
@@ -455,7 +481,6 @@ else
 fi
 
 # Update .env with all settings (idempotent - works on existing or new file)
-# Use grep to check if key exists, then sed to update or echo to append
 update_env_var() {
     local key="$1"
     local value="$2"
@@ -467,11 +492,18 @@ update_env_var() {
     fi
 }
 
-update_env_var "SNAPSERVER_HOST" "$snapserver_ip"
-update_env_var "CLIENT_ID" "$CLIENT_ID"
-update_env_var "SOUNDCARD" "$SOUNDCARD_VALUE"
-update_env_var "DISPLAY_RESOLUTION" "$DISPLAY_RESOLUTION"
-update_env_var "AUDIO_VISUALIZER_ENABLED" "$AUDIO_VISUALIZER_ENABLED"
+# Update all environment variables
+declare -A env_vars=(
+    ["SNAPSERVER_HOST"]="$snapserver_ip"
+    ["CLIENT_ID"]="$CLIENT_ID"
+    ["SOUNDCARD"]="$SOUNDCARD_VALUE"
+    ["DISPLAY_RESOLUTION"]="$DISPLAY_RESOLUTION"
+    ["AUDIO_VISUALIZER_ENABLED"]="$AUDIO_VISUALIZER_ENABLED"
+)
+
+for key in "${!env_vars[@]}"; do
+    update_env_var "$key" "${env_vars[$key]}"
+done
 
 echo "Docker configuration ready"
 echo "  - Snapserver: ${snapserver_ip:-autodiscovery}"
@@ -493,7 +525,11 @@ echo "allowed_users=anybody" > /etc/X11/Xwrapper.config
 REAL_USER="${SUDO_USER:-$USER}"
 REAL_HOME=$(eval echo ~"$REAL_USER")
 
-# Convert resolution to comma-separated for chromium
+# Validate and convert resolution to comma-separated for chromium
+if [[ ! "$DISPLAY_RESOLUTION" =~ ^[0-9]+x[0-9]+$ ]]; then
+    echo "Error: Invalid DISPLAY_RESOLUTION format: $DISPLAY_RESOLUTION"
+    exit 1
+fi
 CHROMIUM_SIZE="${DISPLAY_RESOLUTION/x/,}"
 
 # Create .xinitrc for automatic X11 startup with Chromium kiosk
@@ -550,12 +586,20 @@ echo ""
 echo "Creating systemd service for Docker containers..."
 
 # Build docker compose command based on enabled features
-DOCKER_COMPOSE_UP="/usr/bin/docker compose up -d"
-DOCKER_COMPOSE_DOWN="/usr/bin/docker compose down"
-if [ "$AUDIO_VISUALIZER_ENABLED" = "true" ]; then
-    DOCKER_COMPOSE_UP="/usr/bin/docker compose --profile visualizer up -d"
-    DOCKER_COMPOSE_DOWN="/usr/bin/docker compose --profile visualizer down"
-fi
+get_docker_compose_command() {
+    local action="$1"
+    local base_cmd="/usr/bin/docker compose"
+    local profile=""
+
+    if [ "$AUDIO_VISUALIZER_ENABLED" = "true" ]; then
+        profile="--profile visualizer"
+    fi
+
+    echo "$base_cmd $profile $action"
+}
+
+DOCKER_COMPOSE_UP=$(get_docker_compose_command "up -d")
+DOCKER_COMPOSE_DOWN=$(get_docker_compose_command "down")
 
 cat > /etc/systemd/system/snapclient.service << EOF
 [Unit]

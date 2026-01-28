@@ -299,6 +299,19 @@
         let useRealVisualizer = false;
         let artworkCacheBust = Date.now();
 
+        // Validate URL to prevent CSS injection
+        function isValidImageUrl(url) {
+            if (!url || typeof url !== 'string') return false;
+            // Allow local paths and http(s) URLs only
+            if (url.startsWith('/')) return /^\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+$/.test(url);
+            try {
+                const parsed = new URL(url);
+                return ['http:', 'https:'].includes(parsed.protocol);
+            } catch {
+                return false;
+            }
+        }
+
         async function fetchMetadata() {
             try {
                 const response = await fetch('/metadata.json', { cache: 'no-store' });
@@ -330,7 +343,7 @@
 
                 // Try album artwork first, then artist image as fallback
                 const imageUrl = data.artwork || data.artist_image || '';
-                if (imageUrl) {
+                if (imageUrl && isValidImageUrl(imageUrl)) {
                     // Add cache-busting timestamp to local artwork URLs (only changes when track changes)
                     const cacheBust = imageUrl.startsWith('/') ? `?t=${artworkCacheBust}` : '';
                     // Properly escape URL for CSS
