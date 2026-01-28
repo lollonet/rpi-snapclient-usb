@@ -1,9 +1,21 @@
 services:
+  # Init service: creates the FIFO pipe in the shared volume
+  fifo-init:
+    image: busybox:latest
+    container_name: fifo-init
+    volumes:
+      - audio-fifo:/tmp/audio
+    command: sh -c "[ -p /tmp/audio/stream.fifo ] || mkfifo /tmp/audio/stream.fifo; chmod 666 /tmp/audio/stream.fifo"
+    restart: "no"
+
   snapclient:
     image: ghcr.io/lollonet/rpi-snapclient-usb:latest
     container_name: snapclient
     network_mode: host
     restart: unless-stopped
+    depends_on:
+      fifo-init:
+        condition: service_completed_successfully
     devices:
       - /dev/snd:/dev/snd
     volumes:
@@ -43,8 +55,11 @@ services:
     build: ./docker/audio-visualizer
     container_name: audio-visualizer
     restart: unless-stopped
+    depends_on:
+      fifo-init:
+        condition: service_completed_successfully
     volumes:
-      - audio-fifo:/tmp/audio:ro
+      - audio-fifo:/tmp/audio
     ports:
       - "8081:8081"
     environment:
