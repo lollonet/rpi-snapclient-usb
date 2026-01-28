@@ -155,46 +155,20 @@
             opacity: 1;
         }
 
-        /* Equalizer bars */
-        .equalizer {
+        /* Spectrum analyzer canvas */
+        .spectrum-container {
             position: absolute;
-            bottom: -15%;
+            bottom: -18%;
             left: 50%;
             transform: translateX(-50%);
-            display: flex;
-            align-items: flex-end;
-            justify-content: center;
-            gap: 1vmin;
-            height: 12%;
+            width: 100%;
+            height: 20%;
             z-index: 4;
         }
 
-        .eq-bar {
-            width: 1.5vmin;
-            background: linear-gradient(to top, #667eea, #764ba2, #f093fb);
-            border-radius: 1vmin;
-            animation: equalize 0.8s ease-in-out infinite;
-            box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
-        }
-
-        .eq-bar:nth-child(1) { animation-delay: 0.0s; height: 40%; }
-        .eq-bar:nth-child(2) { animation-delay: 0.1s; height: 60%; }
-        .eq-bar:nth-child(3) { animation-delay: 0.2s; height: 80%; }
-        .eq-bar:nth-child(4) { animation-delay: 0.15s; height: 50%; }
-        .eq-bar:nth-child(5) { animation-delay: 0.3s; height: 70%; }
-        .eq-bar:nth-child(6) { animation-delay: 0.25s; height: 90%; }
-        .eq-bar:nth-child(7) { animation-delay: 0.05s; height: 55%; }
-        .eq-bar:nth-child(8) { animation-delay: 0.35s; height: 75%; }
-        .eq-bar:nth-child(9) { animation-delay: 0.2s; height: 45%; }
-
-        @keyframes equalize {
-            0%, 100% { transform: scaleY(0.3); }
-            50% { transform: scaleY(1); }
-        }
-
-        .equalizer.paused .eq-bar {
-            animation-play-state: paused;
-            transform: scaleY(0.2);
+        #spectrumCanvas {
+            width: 100%;
+            height: 100%;
         }
 
         .track-info {
@@ -261,8 +235,8 @@
                 max-width: 40vw;
             }
 
-            .equalizer {
-                bottom: -12%;
+            .spectrum-container {
+                bottom: -15%;
             }
         }
     </style>
@@ -274,16 +248,8 @@
             <div id="vinyl" class="vinyl"></div>
             <div class="vinyl-shine"></div>
             <div id="albumArt" class="album-art"></div>
-            <div id="equalizer" class="equalizer">
-                <div class="eq-bar"></div>
-                <div class="eq-bar"></div>
-                <div class="eq-bar"></div>
-                <div class="eq-bar"></div>
-                <div class="eq-bar"></div>
-                <div class="eq-bar"></div>
-                <div class="eq-bar"></div>
-                <div class="eq-bar"></div>
-                <div class="eq-bar"></div>
+            <div class="spectrum-container">
+                <canvas id="spectrumCanvas"></canvas>
             </div>
         </div>
         <div class="track-info">
@@ -296,8 +262,99 @@
     <script>
         let currentTrack = null;
         let visualizerWs = null;
-        let useRealVisualizer = false;
         let artworkCacheBust = Date.now();
+
+        // Spectrum state
+        const NUM_BANDS = 32;
+        const bands = new Float32Array(NUM_BANDS);
+        const displayBands = new Float32Array(NUM_BANDS);
+        let isPlaying = false;
+        let hasWsData = false;
+
+        // Canvas setup
+        const canvas = document.getElementById('spectrumCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width * devicePixelRatio;
+            canvas.height = rect.height * devicePixelRatio;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Gradient colors matching the theme (blue -> purple -> pink)
+        function createBarGradient(x, barWidth, barHeight) {
+            const grad = ctx.createLinearGradient(x, canvas.height, x, canvas.height - barHeight);
+            grad.addColorStop(0, '#667eea');
+            grad.addColorStop(0.5, '#764ba2');
+            grad.addColorStop(1, '#f093fb');
+            return grad;
+        }
+
+        // Render spectrum bars
+        function renderSpectrum() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const barCount = NUM_BANDS;
+            const gap = canvas.width * 0.008;
+            const totalGaps = (barCount - 1) * gap;
+            const barWidth = (canvas.width - totalGaps) / barCount;
+            const maxHeight = canvas.height * 0.85;
+            const radius = Math.max(1, barWidth * 0.25);
+
+            for (let i = 0; i < barCount; i++) {
+                // Smooth interpolation toward target
+                displayBands[i] += (bands[i] - displayBands[i]) * 0.3;
+
+                const val = displayBands[i] / 100;
+                const barHeight = Math.max(2, val * maxHeight);
+                const x = i * (barWidth + gap);
+                const y = canvas.height - barHeight;
+
+                // Bar fill with gradient
+                ctx.fillStyle = createBarGradient(x, barWidth, barHeight);
+                ctx.beginPath();
+                ctx.moveTo(x, canvas.height);
+                ctx.lineTo(x, y + radius);
+                ctx.quadraticCurveTo(x, y, x + radius, y);
+                ctx.lineTo(x + barWidth - radius, y);
+                ctx.quadraticCurveTo(x + barWidth, y, x + barWidth, y + radius);
+                ctx.lineTo(x + barWidth, canvas.height);
+                ctx.closePath();
+                ctx.fill();
+
+                // Subtle glow
+                ctx.shadowColor = 'rgba(102, 126, 234, 0.3)';
+                ctx.shadowBlur = 4;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Reflection (mirror below, faded)
+                const reflHeight = barHeight * 0.25;
+                const reflGrad = ctx.createLinearGradient(x, canvas.height, x, canvas.height + reflHeight);
+                reflGrad.addColorStop(0, 'rgba(102, 126, 234, 0.15)');
+                reflGrad.addColorStop(1, 'rgba(102, 126, 234, 0)');
+                ctx.fillStyle = reflGrad;
+                ctx.fillRect(x, canvas.height, barWidth, reflHeight);
+            }
+
+            requestAnimationFrame(renderSpectrum);
+        }
+
+        // Start render loop
+        requestAnimationFrame(renderSpectrum);
+
+        // CSS fallback: gentle idle animation when no WebSocket data
+        let idlePhase = 0;
+        function idleAnimation() {
+            if (hasWsData || !isPlaying) return;
+            idlePhase += 0.03;
+            for (let i = 0; i < NUM_BANDS; i++) {
+                bands[i] = 10 + 8 * Math.sin(idlePhase + i * 0.4);
+            }
+        }
+        setInterval(idleAnimation, 50);
 
         // Validate URL to prevent CSS injection
         function isValidImageUrl(url) {
@@ -331,15 +388,14 @@
         function updateDisplay(data) {
             const albumArt = document.getElementById('albumArt');
             const vinyl = document.getElementById('vinyl');
-            const equalizer = document.getElementById('equalizer');
             const trackTitle = document.getElementById('trackTitle');
             const trackArtist = document.getElementById('trackArtist');
             const trackAlbum = document.getElementById('trackAlbum');
 
             if (data.playing && data.title) {
                 // Music is playing
+                isPlaying = true;
                 vinyl.classList.remove('paused');
-                equalizer.classList.remove('paused');
 
                 // Try album artwork first, then artist image as fallback
                 const imageUrl = data.artwork || data.artist_image || '';
@@ -359,13 +415,16 @@
                 trackAlbum.textContent = data.album || '';
             } else {
                 // No music
+                isPlaying = false;
                 vinyl.classList.add('paused');
-                equalizer.classList.add('paused');
                 albumArt.style.backgroundImage = '';
                 albumArt.classList.remove('visible');
                 trackTitle.textContent = 'No Music Playing';
                 trackArtist.textContent = '';
                 trackAlbum.textContent = '';
+
+                // Zero out bands when not playing
+                bands.fill(0);
             }
         }
 
@@ -376,37 +435,26 @@
 
             visualizerWs.onopen = () => {
                 console.log('Visualizer connected');
-                useRealVisualizer = true;
-                // Disable CSS animations when using real data
-                const bars = document.querySelectorAll('.eq-bar');
-                bars.forEach(bar => bar.style.animation = 'none');
+                hasWsData = true;
             };
 
             visualizerWs.onmessage = (event) => {
-                // Data format: "val1;val2;val3;..." (0-100 for each bar)
-                const values = event.data.split(';').map(v => parseInt(v, 10));
-                const bars = document.querySelectorAll('.eq-bar');
-
-                bars.forEach((bar, i) => {
-                    if (i < values.length) {
-                        const height = Math.max(5, values[i]); // Min 5% height
-                        bar.style.height = `${height}%`;
-                    }
-                });
+                // Data format: "val1;val2;...;val32" (0-100 for each band)
+                const values = event.data.split(';');
+                for (let i = 0; i < NUM_BANDS && i < values.length; i++) {
+                    bands[i] = parseInt(values[i], 10) || 0;
+                }
             };
 
             visualizerWs.onclose = () => {
-                console.log('Visualizer disconnected, falling back to CSS animation');
-                useRealVisualizer = false;
-                // Re-enable CSS animations
-                const bars = document.querySelectorAll('.eq-bar');
-                bars.forEach(bar => bar.style.animation = '');
+                console.log('Visualizer disconnected, falling back to idle animation');
+                hasWsData = false;
                 // Reconnect after 5 seconds
                 setTimeout(connectVisualizer, 5000);
             };
 
-            visualizerWs.onerror = (error) => {
-                console.log('Visualizer not available, using CSS animation');
+            visualizerWs.onerror = () => {
+                console.log('Visualizer not available');
                 visualizerWs.close();
             };
         }

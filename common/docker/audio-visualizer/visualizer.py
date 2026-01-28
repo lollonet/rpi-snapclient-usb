@@ -1,94 +1,175 @@
 #!/usr/bin/env python3
-"""Audio visualizer using CAVA and WebSocket."""
+"""Real-time spectrum analyzer using ALSA FIFO and numpy FFT."""
 
 import asyncio
+import fcntl
 import logging
 import os
-import subprocess
 import signal
+import struct
 import sys
-from pathlib import Path
 
+import numpy as np
 import websockets
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-CAVA_FIFO = "/tmp/cava.fifo"
-CAVA_CONFIG = "/app/cava-config"
+# Audio parameters (must match snapclient output)
+SAMPLE_RATE = 48000
+CHANNELS = 2
+SAMPLE_WIDTH = 2  # 16-bit
+FRAME_SIZE = CHANNELS * SAMPLE_WIDTH  # 4 bytes per frame
+
+# FFT parameters
+FFT_SIZE = 2048  # ~42ms window at 48kHz
+FRAMES_PER_READ = FFT_SIZE
+BYTES_PER_READ = FRAMES_PER_READ * FRAME_SIZE
+NUM_BANDS = 32
+MIN_FREQ = 60
+MAX_FREQ = 16000
+TARGET_FPS = 30
+
+# FIFO
+AUDIO_FIFO = os.environ.get("AUDIO_FIFO", "/tmp/audio/stream.fifo")
 WS_PORT = int(os.environ.get("VISUALIZER_WS_PORT", "8081"))
-MAX_CONSECUTIVE_ERRORS = 10
+F_SETPIPE_SZ = 1031
+PIPE_BUF_SIZE = 1048576  # 1MB
+
+# Smoothing
+SMOOTHING = 0.7  # 0 = no smoothing, 1 = frozen
 
 clients: set[websockets.WebSocketServerProtocol] = set()
-cava_process: subprocess.Popen[bytes] | None = None
-consecutive_errors = 0
+prev_bands: np.ndarray = np.zeros(NUM_BANDS)
+
+
+def compute_band_edges() -> list[tuple[int, int]]:
+    """Compute log-spaced frequency band edges mapped to FFT bin indices."""
+    freq_bins = np.fft.rfftfreq(FFT_SIZE, d=1.0 / SAMPLE_RATE)
+    log_min = np.log10(MIN_FREQ)
+    log_max = np.log10(MAX_FREQ)
+    band_freqs = np.logspace(log_min, log_max, NUM_BANDS + 1)
+
+    edges = []
+    for i in range(NUM_BANDS):
+        lo = int(np.searchsorted(freq_bins, band_freqs[i]))
+        hi = int(np.searchsorted(freq_bins, band_freqs[i + 1]))
+        hi = max(hi, lo + 1)  # At least 1 bin per band
+        edges.append((lo, hi))
+    return edges
+
+
+BAND_EDGES = compute_band_edges()
+WINDOW = np.hanning(FFT_SIZE).astype(np.float32)
+
+
+def analyze_pcm(data: bytes) -> str | None:
+    """Convert raw PCM bytes to spectrum band values."""
+    global prev_bands
+
+    # Parse 16-bit signed stereo PCM
+    num_samples = len(data) // SAMPLE_WIDTH
+    if num_samples < FFT_SIZE * CHANNELS:
+        return None
+
+    samples = np.frombuffer(data, dtype=np.int16).astype(np.float32)
+
+    # Mix stereo to mono (interleaved L,R,L,R...)
+    if CHANNELS == 2:
+        mono = (samples[0::2] + samples[1::2]) * 0.5
+    else:
+        mono = samples
+
+    # Take last FFT_SIZE samples
+    mono = mono[-FFT_SIZE:]
+
+    # Apply window and normalize
+    windowed = mono * WINDOW / 32768.0
+
+    # FFT
+    spectrum = np.abs(np.fft.rfft(windowed))
+
+    # Group into bands
+    bands = np.zeros(NUM_BANDS, dtype=np.float32)
+    for i, (lo, hi) in enumerate(BAND_EDGES):
+        bands[i] = np.mean(spectrum[lo:hi]) if lo < len(spectrum) else 0
+
+    # Convert to dB scale, normalize to 0-100
+    bands = np.maximum(bands, 1e-10)
+    db = 20 * np.log10(bands)
+    # Map roughly -60dB..0dB to 0..100
+    normalized = np.clip((db + 60) * (100.0 / 60.0), 0, 100)
+
+    # Smoothing
+    smoothed = prev_bands * SMOOTHING + normalized * (1 - SMOOTHING)
+    prev_bands = smoothed
+
+    # Format as semicolon-separated integers
+    values = ";".join(str(int(v)) for v in smoothed)
+    return values
 
 
 async def broadcast(data: str) -> None:
-    """Send data to all connected WebSocket clients."""
-    if clients:
-        await asyncio.gather(
-            *[client.send(data) for client in clients],
-            return_exceptions=True
-        )
+    """Send spectrum data to all connected WebSocket clients."""
+    if not clients:
+        return
+    dead = set()
+    for client in clients:
+        try:
+            await client.send(data)
+        except Exception:
+            dead.add(client)
+    clients.difference_update(dead)
 
 
-def _setup_cava() -> None:
-    """Initialize CAVA process and FIFO"""
-    global cava_process
-
-    # Create FIFO if it doesn't exist
-    fifo_path = Path(CAVA_FIFO)
-    if not fifo_path.exists():
-        os.mkfifo(CAVA_FIFO)
-
-    # Start CAVA
-    cava_process = subprocess.Popen(
-        ["cava", "-p", CAVA_CONFIG],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
-
-    logger.info(f"CAVA started (PID: {cava_process.pid})")
-
-async def _read_fifo_lines() -> str | None:
-    """Read a single line from CAVA FIFO"""
-    try:
-        loop = asyncio.get_event_loop()
-        with open(CAVA_FIFO, "r") as fifo:
-            while True:
-                line = await loop.run_in_executor(None, fifo.readline)
-                if not line:
-                    return None  # FIFO closed
-
-                # CAVA outputs semicolon-separated values: "val1;val2;val3;...;\n"
-                values = line.strip().rstrip(";")
-                if values:
-                    return values
-    except FileNotFoundError:
-        await asyncio.sleep(0.1)
-        return None
-
-async def read_cava() -> None:
-    """Read CAVA output from FIFO and broadcast to clients."""
-    global consecutive_errors
-    _setup_cava()
+async def read_fifo_and_broadcast() -> None:
+    """Read raw PCM from ALSA FIFO, compute FFT, broadcast."""
+    frame_interval = 1.0 / TARGET_FPS
 
     while True:
         try:
-            values = await _read_fifo_lines()
-            if values:
-                await broadcast(values)
-                consecutive_errors = 0  # Reset on success
+            logger.info(f"Opening FIFO: {AUDIO_FIFO}")
+            fd = os.open(AUDIO_FIFO, os.O_RDONLY)
+
+            # Maximize pipe buffer
+            try:
+                fcntl.fcntl(fd, F_SETPIPE_SZ, PIPE_BUF_SIZE)
+                logger.info(f"Pipe buffer set to {PIPE_BUF_SIZE} bytes")
+            except OSError:
+                logger.warning("Could not set pipe buffer size")
+
+            logger.info("FIFO opened, reading audio data...")
+
+            with os.fdopen(fd, "rb", buffering=0) as fifo:
+                while True:
+                    start = asyncio.get_event_loop().time()
+
+                    # Read PCM data (blocking in executor to not block event loop)
+                    data = await asyncio.get_event_loop().run_in_executor(
+                        None, fifo.read, BYTES_PER_READ
+                    )
+
+                    if not data:
+                        logger.warning("FIFO closed (EOF), reopening...")
+                        break
+
+                    # Analyze and broadcast
+                    result = analyze_pcm(data)
+                    if result:
+                        await broadcast(result)
+
+                    # Maintain target FPS
+                    elapsed = asyncio.get_event_loop().time() - start
+                    sleep_time = frame_interval - elapsed
+                    if sleep_time > 0:
+                        await asyncio.sleep(sleep_time)
+
+        except FileNotFoundError:
+            logger.warning(f"FIFO not found: {AUDIO_FIFO}, retrying in 2s...")
+            await asyncio.sleep(2)
         except Exception as e:
-            consecutive_errors += 1
-            logger.error(f"Error reading CAVA (attempt {consecutive_errors}): {e}")
-
-            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
-                logger.critical(f"CAVA failed {MAX_CONSECUTIVE_ERRORS} times consecutively, check ALSA loopback configuration")
-                consecutive_errors = 0  # Reset to allow continued attempts
-
-            await asyncio.sleep(1)
+            logger.error(f"Error reading FIFO: {e}, retrying in 2s...")
+            await asyncio.sleep(2)
 
 
 async def websocket_handler(websocket: websockets.WebSocketServerProtocol) -> None:
@@ -108,20 +189,19 @@ async def websocket_handler(websocket: websockets.WebSocketServerProtocol) -> No
 
 
 async def main() -> None:
-    """Start WebSocket server and CAVA reader."""
-    logger.info(f"Starting audio visualizer on port {WS_PORT}")
+    """Start WebSocket server and FIFO reader."""
+    logger.info(f"Starting spectrum analyzer on port {WS_PORT}")
+    logger.info(f"  FIFO: {AUDIO_FIFO}")
+    logger.info(f"  FFT size: {FFT_SIZE}, bands: {NUM_BANDS}")
+    logger.info(f"  Frequency range: {MIN_FREQ}-{MAX_FREQ} Hz")
+    logger.info(f"  Target FPS: {TARGET_FPS}")
 
-    # Start WebSocket server
     async with websockets.serve(websocket_handler, "0.0.0.0", WS_PORT):
-        # Start CAVA reader
-        await read_cava()
+        await read_fifo_and_broadcast()
 
 
-def cleanup(signum: int | None = None, frame = None) -> None:
+def cleanup(signum: int | None = None, frame=None) -> None:
     """Clean up on exit."""
-    if cava_process:
-        cava_process.terminate()
-        cava_process.wait()
     sys.exit(0)
 
 

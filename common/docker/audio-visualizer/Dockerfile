@@ -1,19 +1,12 @@
-FROM debian:bookworm-slim
-
-# Install CAVA and Python dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    cava \
-    python3 \
-    python3-pip \
-    python3-websockets \
-    alsa-utils \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install numpy for FFT and websockets for broadcasting
+RUN pip install --no-cache-dir numpy websockets
+
 # Copy visualizer script
 COPY visualizer.py /app/
-COPY cava-config /app/
 
 RUN chmod +x /app/visualizer.py
 

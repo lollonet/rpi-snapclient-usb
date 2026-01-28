@@ -9,6 +9,8 @@ services:
     volumes:
       - /var/run/dbus:/var/run/dbus
       - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
+      - /etc/asound.conf:/etc/asound.conf:ro
+      - audio-fifo:/tmp/audio
     environment:
       - SNAPSERVER_HOST=${SNAPSERVER_HOST:-}
       - SNAPSERVER_PORT=${SNAPSERVER_PORT:-1704}
@@ -37,16 +39,36 @@ services:
     volumes:
       - ./public:/usr/share/nginx/html:ro
 
-  # Optional: Audio visualizer (enable with --profile visualizer)
   audio-visualizer:
     build: ./docker/audio-visualizer
     container_name: audio-visualizer
     restart: unless-stopped
-    profiles:
-      - visualizer
-    devices:
-      - /dev/snd:/dev/snd
+    volumes:
+      - audio-fifo:/tmp/audio:ro
     ports:
       - "8081:8081"
     environment:
       - VISUALIZER_WS_PORT=8081
+      - AUDIO_FIFO=/tmp/audio/stream.fifo
+
+  fb-display:
+    build: ./docker/fb-display
+    container_name: fb-display
+    restart: unless-stopped
+    profiles:
+      - framebuffer
+    network_mode: host
+    devices:
+      - /dev/fb0:/dev/fb0
+    volumes:
+      - ./public:/app/public:ro
+    environment:
+      - DISPLAY_RESOLUTION=${DISPLAY_RESOLUTION:-1024x600}
+      - VISUALIZER_WS_PORT=8081
+
+volumes:
+  audio-fifo:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
