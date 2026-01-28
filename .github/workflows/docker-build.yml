@@ -12,7 +12,7 @@ env:
 jobs:
   build-snapclient:
     name: Build Snapclient Image
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, arm64]
     permissions:
       contents: read
       packages: write
@@ -59,7 +59,7 @@ jobs:
 
   build-metadata:
     name: Build Metadata Service Image
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, arm64]
     permissions:
       contents: read
       packages: write
