@@ -14,25 +14,39 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install shellcheck (aarch64)
+        run: |
+          if ! command -v shellcheck &>/dev/null; then
+            SC_VERSION="v0.10.0"
+            curl -Lso /tmp/sc.tar.xz \
+              "https://github.com/koalaman/shellcheck/releases/download/${SC_VERSION}/shellcheck-${SC_VERSION}.linux.aarch64.tar.xz"
+            tar -xf /tmp/sc.tar.xz -C /tmp
+            sudo install /tmp/shellcheck-${SC_VERSION}/shellcheck /usr/local/bin/
+            rm -rf /tmp/sc.tar.xz /tmp/shellcheck-${SC_VERSION}
+          fi
+          shellcheck --version
+
       - name: Shellcheck
-        uses: ludeeus/action-shellcheck@master
-        with:
-          scandir: './common/scripts ./tests ./scripts'
-          severity: warning
+        run: |
+          find common/scripts tests scripts -name '*.sh' -type f 2>/dev/null \
+            | xargs -r shellcheck --severity=warning
+
+      - name: Install hadolint (aarch64)
+        run: |
+          if ! command -v hadolint &>/dev/null; then
+            HL_VERSION="v2.12.0"
+            curl -Lso /tmp/hadolint \
+              "https://github.com/hadolint/hadolint/releases/download/${HL_VERSION}/hadolint-Linux-arm64"
+            sudo install /tmp/hadolint /usr/local/bin/
+            rm -f /tmp/hadolint
+          fi
+          hadolint --version
 
       - name: Hadolint (snapclient)
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: common/docker/snapclient/Dockerfile
-          config: .hadolint.yaml
-          failure-threshold: warning
+        run: hadolint --config .hadolint.yaml --failure-threshold warning common/docker/snapclient/Dockerfile
 
       - name: Hadolint (metadata-service)
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: common/docker/metadata-service/Dockerfile
-          config: .hadolint.yaml
-          failure-threshold: warning
+        run: hadolint --config .hadolint.yaml --failure-threshold warning common/docker/metadata-service/Dockerfile
 
   test:
     name: Test
