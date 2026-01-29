@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """Framebuffer display renderer for Raspberry Pi.
 
-Renders album art, track info, and real-time spectrum analyzer
-directly to /dev/fb0 without X11.
+Renders two side-by-side panels (album art + rainbow spectrum)
+with slim track info below, directly to /dev/fb0.
 """
 
 import asyncio
+import colorsys
 import io
-import json
 import logging
 import mmap
 import os
 import signal
-import struct
 import sys
 import time
 
@@ -33,17 +32,14 @@ FB_DEVICE = "/dev/fb0"
 # Parse resolution
 WIDTH, HEIGHT = (int(x) for x in DISPLAY_RESOLUTION.split("x"))
 
-# Colors (matching browser theme)
-BG_COLOR_TOP = (10, 10, 10)
-BG_COLOR_BOTTOM = (22, 33, 62)
+# Colors
+BG_TOP = (10, 10, 10)
+BG_BOTTOM = (22, 33, 62)
 TEXT_COLOR = (255, 255, 255)
 ARTIST_COLOR = (179, 179, 179)
-ALBUM_COLOR = (136, 136, 136)
-BAR_COLORS = [
-    (102, 126, 234),  # blue
-    (118, 75, 162),   # purple
-    (240, 147, 251),  # pink
-]
+ALBUM_COLOR = (153, 153, 153)
+DIM_COLOR = (85, 85, 85)
+PANEL_BG = (17, 17, 17)
 
 # Spectrum state
 NUM_BANDS = 32
@@ -52,9 +48,10 @@ display_bands = np.zeros(NUM_BANDS, dtype=np.float32)
 
 # Metadata state
 current_metadata: dict | None = None
-metadata_changed = True
+cached_artwork: Image.Image | None = None
+cached_artwork_url: str = ""
 
-# Framebuffer info
+# Framebuffer
 fb_fd = None
 fb_mmap = None
 fb_stride = 0
@@ -73,11 +70,10 @@ def get_fb_info() -> tuple[int, int, int, int]:
             stride = int(f.read().strip())
         return int(vw), int(vh), bpp, stride
     except FileNotFoundError:
-        # Fallback to configured resolution
         return WIDTH, HEIGHT, 32, WIDTH * 4
 
 
-def open_framebuffer() -> tuple:
+def open_framebuffer() -> None:
     """Open and memory-map the framebuffer device."""
     global fb_fd, fb_mmap, fb_stride, fb_bpp
 
@@ -88,9 +84,6 @@ def open_framebuffer() -> tuple:
     size = fb_stride * fb_h
     fb_mmap = mmap.mmap(fd, size, mmap.MAP_SHARED, mmap.PROT_WRITE | mmap.PROT_READ)
     fb_fd = fd
-    fb_stride = fb_stride
-
-    return fb_mmap, fb_stride, fb_bpp
 
 
 def write_frame(img: Image.Image) -> None:
@@ -98,19 +91,17 @@ def write_frame(img: Image.Image) -> None:
     if fb_mmap is None:
         return
 
-    # Convert to BGRA for framebuffer (most Linux FBs use BGRA)
     if fb_bpp == 32:
         rgba = img.convert("RGBA")
         r, g, b, a = rgba.split()
         bgra = Image.merge("RGBA", (b, g, r, a))
         raw = bgra.tobytes()
     elif fb_bpp == 16:
-        # RGB565
         rgb = np.array(img.convert("RGB"), dtype=np.uint16)
-        r = (rgb[:, :, 0] >> 3) & 0x1F
-        g = (rgb[:, :, 1] >> 2) & 0x3F
-        b = (rgb[:, :, 2] >> 3) & 0x1F
-        rgb565 = (r << 11) | (g << 5) | b
+        r_ch = (rgb[:, :, 0] >> 3) & 0x1F
+        g_ch = (rgb[:, :, 1] >> 2) & 0x3F
+        b_ch = (rgb[:, :, 2] >> 3) & 0x1F
+        rgb565 = (r_ch << 11) | (g_ch << 5) | b_ch
         raw = rgb565.astype(np.uint16).tobytes()
     else:
         return
@@ -122,8 +113,8 @@ def write_frame(img: Image.Image) -> None:
 def load_font(size: int) -> ImageFont.FreeTypeFont:
     """Load a TTF font, falling back to default."""
     font_paths = [
-        "/app/fonts/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
     ]
     for path in font_paths:
@@ -132,9 +123,28 @@ def load_font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
+def load_bold_font(size: int) -> ImageFont.FreeTypeFont:
+    """Load bold TTF font."""
+    bold_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+    ]
+    for path in bold_paths:
+        if os.path.exists(path):
+            return ImageFont.truetype(path, size)
+    return load_font(size)
+
+
 def lerp_color(c1: tuple, c2: tuple, t: float) -> tuple:
     """Linear interpolation between two RGB colors."""
     return tuple(int(a + (b - a) * t) for a, b in zip(c1, c2))
+
+
+def rainbow_color(i: int, total: int) -> tuple[int, int, int]:
+    """Get rainbow color for bar index (hue 0-300 degrees)."""
+    hue = (i / total) * (300 / 360)  # 0 to 300 degrees
+    r, g, b = colorsys.hsv_to_rgb(hue, 0.85, 0.85)
+    return (int(r * 255), int(g * 255), int(b * 255))
 
 
 def create_background() -> Image.Image:
@@ -143,105 +153,135 @@ def create_background() -> Image.Image:
     draw = ImageDraw.Draw(img)
     for y in range(HEIGHT):
         t = y / HEIGHT
-        color = lerp_color(BG_COLOR_TOP, BG_COLOR_BOTTOM, t)
+        color = lerp_color(BG_TOP, BG_BOTTOM, t)
         draw.line([(0, y), (WIDTH, y)], fill=color)
     return img
 
 
-def get_bar_color(t: float) -> tuple:
-    """Get spectrum bar color at position t (0-1)."""
-    if t < 0.5:
-        return lerp_color(BAR_COLORS[0], BAR_COLORS[1], t * 2)
-    return lerp_color(BAR_COLORS[1], BAR_COLORS[2], (t - 0.5) * 2)
-
-
 # Pre-create background and fonts
 background = create_background()
-font_title = load_font(max(16, HEIGHT // 15))
-font_artist = load_font(max(14, HEIGHT // 20))
-font_album = load_font(max(12, HEIGHT // 25))
+font_title = load_bold_font(max(16, HEIGHT // 18))
+font_details = load_font(max(12, HEIGHT // 24))
+
+
+def fetch_artwork(url: str) -> Image.Image | None:
+    """Fetch and cache artwork image."""
+    global cached_artwork, cached_artwork_url
+    if url == cached_artwork_url and cached_artwork is not None:
+        return cached_artwork
+    try:
+        full_url = url
+        if url.startswith("/"):
+            full_url = f"http://localhost:8080{url}"
+        resp = requests.get(full_url, timeout=3)
+        if resp.status_code == 200:
+            cached_artwork = Image.open(io.BytesIO(resp.content))
+            cached_artwork_url = url
+            return cached_artwork
+    except Exception:
+        pass
+    return None
 
 
 def render_frame() -> Image.Image:
-    """Render a complete frame with metadata, art, and spectrum."""
+    """Render a complete frame: two panels + slim track info."""
     img = background.copy()
     draw = ImageDraw.Draw(img)
 
-    # Layout
-    art_size = int(min(WIDTH * 0.4, HEIGHT * 0.6))
-    art_x = int(WIDTH * 0.08)
-    art_y = int((HEIGHT - art_size) * 0.35)
+    # Layout: two equal squares side by side, centered
+    gap = int(WIDTH * 0.02)
+    info_h = int(HEIGHT * 0.12)
+    available_h = HEIGHT - info_h - gap
+    panel_size = min(int((WIDTH - gap * 3) / 2), available_h - gap)
+    total_w = panel_size * 2 + gap
+    start_x = (WIDTH - total_w) // 2
+    start_y = (available_h - panel_size) // 2
 
-    text_x = art_x + art_size + int(WIDTH * 0.05)
-    text_max_w = WIDTH - text_x - int(WIDTH * 0.05)
+    art_x, art_y = start_x, start_y
+    spec_x, spec_y = start_x + panel_size + gap, start_y
 
-    spectrum_h = int(HEIGHT * 0.15)
-    spectrum_y = HEIGHT - spectrum_h - int(HEIGHT * 0.05)
+    # Left panel: album art background
+    draw.rounded_rectangle(
+        [art_x, art_y, art_x + panel_size, art_y + panel_size],
+        radius=8, fill=PANEL_BG
+    )
 
-    # Draw album art
     meta = current_metadata
-    if meta and meta.get("playing") and meta.get("title"):
-        artwork_url = meta.get("artwork") or meta.get("artist_image")
-        if artwork_url:
-            try:
-                full_url = artwork_url
-                if artwork_url.startswith("/"):
-                    full_url = f"http://localhost:8080{artwork_url}"
-                resp = requests.get(full_url, timeout=3)
-                if resp.status_code == 200:
-                    art_img = Image.open(io.BytesIO(resp.content))
-                    art_img = art_img.resize((art_size, art_size), Image.LANCZOS)
-                    img.paste(art_img, (art_x, art_y))
-            except Exception:
-                pass
+    is_playing = meta and meta.get("playing") and meta.get("title")
 
-        # Track info
-        title_y = art_y + int(art_size * 0.15)
-        draw.text((text_x, title_y), meta.get("title", ""),
+    if is_playing:
+        artwork_url = meta.get("artwork") or meta.get("artist_image") or ""
+        if artwork_url:
+            art_img = fetch_artwork(artwork_url)
+            if art_img:
+                resized = art_img.resize((panel_size, panel_size), Image.LANCZOS)
+                img.paste(resized, (art_x, art_y))
+    # (When no artwork, the dark panel shows — matching browser vinyl placeholder)
+
+    # Right panel: spectrum background
+    draw.rounded_rectangle(
+        [spec_x, spec_y, spec_x + panel_size, spec_y + panel_size],
+        radius=8, fill=(10, 10, 15)
+    )
+
+    # Draw spectrum bars inside right panel
+    pad = int(panel_size * 0.06)
+    bar_area_w = panel_size - pad * 2
+    bar_area_h = panel_size - pad * 2
+    bar_gap = max(1, bar_area_w // (NUM_BANDS * 8))
+    bar_w = (bar_area_w - bar_gap * (NUM_BANDS - 1)) // NUM_BANDS
+    bar_base_y = spec_y + panel_size - pad
+
+    for i in range(NUM_BANDS):
+        display_bands[i] += (bands[i] - display_bands[i]) * 0.3
+        val = display_bands[i] / 100.0
+        bar_h = max(1, int(val * bar_area_h))
+
+        bx = spec_x + pad + i * (bar_w + bar_gap)
+        by = bar_base_y - bar_h
+
+        color = rainbow_color(i, NUM_BANDS)
+        draw.rectangle([bx, by, bx + bar_w, bar_base_y], fill=color)
+
+        # Rounded top
+        if bar_h > 3:
+            r = min(bar_w // 2, 3)
+            draw.ellipse([bx, by - r, bx + bar_w, by + r], fill=color)
+
+    # Track info below panels
+    info_y = start_y + panel_size + int(gap * 1.5)
+
+    if is_playing:
+        title = meta.get("title", "")
+        artist = meta.get("artist", "")
+        album = meta.get("album", "")
+
+        # Title centered
+        bbox = draw.textbbox((0, 0), title, font=font_title)
+        tw = bbox[2] - bbox[0]
+        draw.text(((WIDTH - tw) // 2, info_y), title,
                   fill=TEXT_COLOR, font=font_title)
 
-        artist = meta.get("artist", "")
-        if artist:
-            draw.text((text_x, title_y + font_title.size + 10), artist,
-                      fill=ARTIST_COLOR, font=font_artist)
+        # Artist — Album on second line
+        details = ""
+        if artist and album:
+            details = f"{artist} \u2014 {album}"
+        elif artist:
+            details = artist
+        elif album:
+            details = album
 
-        album = meta.get("album", "")
-        if album:
-            draw.text((text_x, title_y + font_title.size + font_artist.size + 20),
-                      album, fill=ALBUM_COLOR, font=font_album)
+        if details:
+            bbox2 = draw.textbbox((0, 0), details, font=font_details)
+            dw = bbox2[2] - bbox2[0]
+            draw.text(((WIDTH - dw) // 2, info_y + font_title.size + 4),
+                      details, fill=ARTIST_COLOR, font=font_details)
     else:
-        # No music playing
         msg = "No Music Playing"
         bbox = draw.textbbox((0, 0), msg, font=font_title)
         tw = bbox[2] - bbox[0]
-        draw.text(((WIDTH - tw) // 2, HEIGHT // 2 - font_title.size),
-                  msg, fill=(102, 102, 102), font=font_title)
-
-    # Draw spectrum bars
-    bar_area_w = int(WIDTH * 0.84)
-    bar_area_x = int(WIDTH * 0.08)
-    gap = max(1, bar_area_w // (NUM_BANDS * 8))
-    bar_w = (bar_area_w - gap * (NUM_BANDS - 1)) // NUM_BANDS
-    max_bar_h = spectrum_h
-
-    for i in range(NUM_BANDS):
-        # Smooth interpolation
-        display_bands[i] += (bands[i] - display_bands[i]) * 0.3
-        val = display_bands[i] / 100.0
-        bar_h = max(1, int(val * max_bar_h))
-
-        x = bar_area_x + i * (bar_w + gap)
-        y = spectrum_y + spectrum_h - bar_h
-
-        # Gradient bar (approximate with a single color per bar based on height ratio)
-        t = val
-        color = get_bar_color(t)
-        draw.rectangle([x, y, x + bar_w, spectrum_y + spectrum_h], fill=color)
-
-        # Rounded top (small circle)
-        if bar_h > 3:
-            r = min(bar_w // 2, 3)
-            draw.ellipse([x, y - r, x + bar_w, y + r], fill=color)
+        draw.text(((WIDTH - tw) // 2, info_y), msg,
+                  fill=DIM_COLOR, font=font_title)
 
     return img
 
@@ -267,7 +307,7 @@ async def spectrum_ws_reader() -> None:
 
 async def metadata_poller() -> None:
     """Poll metadata endpoint periodically."""
-    global current_metadata, metadata_changed
+    global current_metadata
     while True:
         try:
             resp = await asyncio.get_event_loop().run_in_executor(
@@ -277,14 +317,13 @@ async def metadata_poller() -> None:
                 data = resp.json()
                 if data != current_metadata:
                     current_metadata = data
-                    metadata_changed = True
         except Exception:
             pass
         await asyncio.sleep(2)
 
 
 async def render_loop() -> None:
-    """Main render loop at ~30 FPS for spectrum, slower for static content."""
+    """Main render loop at ~30 FPS."""
     frame_interval = 1.0 / 30
     while True:
         start = time.monotonic()
