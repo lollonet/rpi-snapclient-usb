@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Framebuffer display renderer for Raspberry Pi.
 
-Renders two side-by-side panels (album art + rainbow spectrum)
-with slim track info below, directly to /dev/fb0.
+Renders album art (left), track info (top-right), and spectrum bars
+(bottom-right, 55% height) directly to /dev/fb0.
+
+Spectrum: 19 half-octave bands in dBFS, matching visualizer.py output.
+
+Performance: static content (art, text) is cached and only redrawn on
+metadata change. Only the spectrum region is redrawn each frame (~20 FPS).
 """
 
 import asyncio
@@ -12,6 +17,7 @@ import logging
 import mmap
 import os
 import signal
+import struct
 import sys
 import time
 
@@ -24,13 +30,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Display configuration
-DISPLAY_RESOLUTION = os.environ.get("DISPLAY_RESOLUTION", "1024x600")
 METADATA_URL = "http://localhost:8080/metadata.json"
 WS_PORT = int(os.environ.get("VISUALIZER_WS_PORT", "8081"))
 FB_DEVICE = "/dev/fb0"
+TARGET_FPS = 20
 
-# Parse resolution
-WIDTH, HEIGHT = (int(x) for x in DISPLAY_RESOLUTION.split("x"))
+# Resolution: read from FB sysfs at startup, env var is fallback only
+_fallback_res = os.environ.get("DISPLAY_RESOLUTION", "1024x600")
+WIDTH, HEIGHT = (int(x) for x in _fallback_res.split("x"))
 
 # Colors
 BG_TOP = (10, 10, 10)
@@ -41,13 +48,26 @@ ALBUM_COLOR = (153, 153, 153)
 DIM_COLOR = (85, 85, 85)
 PANEL_BG = (17, 17, 17)
 
-# Spectrum state
-NUM_BANDS = 32
-bands = np.zeros(NUM_BANDS, dtype=np.float32)
-display_bands = np.zeros(NUM_BANDS, dtype=np.float32)
+# Spectrum state — must match visualizer.py
+NUM_BANDS = 19
+NOISE_FLOOR = -72.0  # dBFS
+REF_LEVEL = 0.0  # dBFS
+DB_RANGE = REF_LEVEL - NOISE_FLOOR  # 72 dB
+
+bands = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
+display_bands = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
+peak_bands = np.zeros(NUM_BANDS, dtype=np.float64)
+peak_time = np.zeros(NUM_BANDS, dtype=np.float64)
+
+# Smoothing coefficients
+ATTACK_COEFF = 0.6  # fast attack (higher = faster)
+DECAY_COEFF = 0.15  # slow decay (lower = slower)
+PEAK_HOLD_S = 2.0
+PEAK_FALL_DB = 0.5  # dB per frame
 
 # Metadata state
 current_metadata: dict | None = None
+metadata_version: int = 0  # bumped on change
 cached_artwork: Image.Image | None = None
 cached_artwork_url: str = ""
 
@@ -56,6 +76,14 @@ fb_fd = None
 fb_mmap = None
 fb_stride = 0
 fb_bpp = 32
+
+# Cached frames: base_frame has bg+art+text, spectrum_bg has just the spectrum area background
+base_frame: Image.Image | None = None
+base_frame_version: int = -1
+spectrum_bg: Image.Image | None = None
+
+# Layout geometry (computed once in compute_layout)
+layout: dict = {}
 
 
 def get_fb_info() -> tuple[int, int, int, int]:
@@ -75,10 +103,11 @@ def get_fb_info() -> tuple[int, int, int, int]:
 
 def open_framebuffer() -> None:
     """Open and memory-map the framebuffer device."""
-    global fb_fd, fb_mmap, fb_stride, fb_bpp
+    global fb_fd, fb_mmap, fb_stride, fb_bpp, WIDTH, HEIGHT
 
     fb_w, fb_h, fb_bpp, fb_stride = get_fb_info()
-    logger.info(f"Framebuffer: {fb_w}x{fb_h}, {fb_bpp}bpp, stride={fb_stride}")
+    WIDTH, HEIGHT = fb_w, fb_h
+    logger.info(f"Framebuffer: {WIDTH}x{HEIGHT}, {fb_bpp}bpp, stride={fb_stride}")
 
     fd = os.open(FB_DEVICE, os.O_RDWR)
     size = fb_stride * fb_h
@@ -86,8 +115,40 @@ def open_framebuffer() -> None:
     fb_fd = fd
 
 
-def write_frame(img: Image.Image) -> None:
-    """Write a Pillow Image to the framebuffer."""
+def write_region_to_fb(img: Image.Image, x: int, y: int) -> None:
+    """Write a sub-image to the framebuffer at position (x, y).
+
+    Only writes the lines covered by the image, not the full screen.
+    """
+    if fb_mmap is None:
+        return
+
+    w, h = img.size
+    bpp_bytes = fb_bpp // 8
+
+    if fb_bpp == 16:
+        rgb = np.array(img.convert("RGB"), dtype=np.uint16)
+        r_ch = (rgb[:, :, 0] >> 3) & 0x1F
+        g_ch = (rgb[:, :, 1] >> 2) & 0x3F
+        b_ch = (rgb[:, :, 2] >> 3) & 0x1F
+        pixels = ((r_ch << 11) | (g_ch << 5) | b_ch).astype(np.uint16)
+        for row in range(h):
+            offset = (y + row) * fb_stride + x * bpp_bytes
+            fb_mmap.seek(offset)
+            fb_mmap.write(pixels[row].tobytes())
+    elif fb_bpp == 32:
+        rgba = img.convert("RGBA")
+        r, g, b, a = rgba.split()
+        bgra = Image.merge("RGBA", (b, g, r, a))
+        raw = np.array(bgra)
+        for row in range(h):
+            offset = (y + row) * fb_stride + x * bpp_bytes
+            fb_mmap.seek(offset)
+            fb_mmap.write(raw[row].tobytes())
+
+
+def write_full_frame(img: Image.Image) -> None:
+    """Write a full-screen image to the framebuffer."""
     if fb_mmap is None:
         return
 
@@ -147,6 +208,22 @@ def rainbow_color(i: int, total: int) -> tuple[int, int, int]:
     return (int(r * 255), int(g * 255), int(b * 255))
 
 
+# Pre-computed rainbow colors
+BAR_COLORS: list[tuple[int, int, int]] = []
+PEAK_COLORS: list[tuple[int, int, int]] = []
+
+
+def precompute_colors() -> None:
+    """Pre-compute rainbow colors for all bands."""
+    global BAR_COLORS, PEAK_COLORS
+    BAR_COLORS = [rainbow_color(i, NUM_BANDS) for i in range(NUM_BANDS)]
+    PEAK_COLORS = []
+    for i in range(NUM_BANDS):
+        hue = (i / NUM_BANDS) * (300 / 360)
+        r, g, b = colorsys.hsv_to_rgb(hue, 0.95, 0.95)
+        PEAK_COLORS.append((int(r * 255), int(g * 255), int(b * 255)))
+
+
 def create_background() -> Image.Image:
     """Create gradient background image."""
     img = Image.new("RGB", (WIDTH, HEIGHT))
@@ -158,10 +235,45 @@ def create_background() -> Image.Image:
     return img
 
 
-# Pre-create background and fonts
-background = create_background()
-font_title = load_bold_font(max(16, HEIGHT // 18))
-font_details = load_font(max(12, HEIGHT // 24))
+def compute_layout() -> dict:
+    """Compute all layout geometry once."""
+    outer_gap = int(min(WIDTH, HEIGHT) * 0.025)
+    container_w = int(WIDTH * 0.92)
+    container_h = int(HEIGHT * 0.85)
+    start_x = (WIDTH - container_w) // 2
+    start_y = (HEIGHT - container_h) // 2
+
+    art_size = min(int(container_w * 0.46), container_h)
+    art_x = start_x
+    art_y = start_y + (container_h - art_size) // 2
+
+    right_x = art_x + art_size + outer_gap
+    right_w = container_w - art_size - outer_gap
+    right_y = art_y
+    right_h = art_size
+
+    spec_h = int(right_h * 0.55)
+    spec_y = right_y + right_h - spec_h
+    info_h = right_h - spec_h - outer_gap
+    info_y = right_y
+
+    pad = int(right_w * 0.06)
+    bar_area_w = right_w - pad * 2
+    bar_area_h = spec_h - pad * 2
+    bar_gap = max(1, int(bar_area_w * 0.008))
+    bar_w = (bar_area_w - bar_gap * (NUM_BANDS - 1)) // NUM_BANDS
+    bar_base_y = spec_y + spec_h - pad
+
+    return {
+        "art_x": art_x, "art_y": art_y, "art_size": art_size,
+        "right_x": right_x, "right_w": right_w,
+        "right_y": right_y, "right_h": right_h,
+        "spec_y": spec_y, "spec_h": spec_h,
+        "info_y": info_y, "info_h": info_h,
+        "outer_gap": outer_gap,
+        "pad": pad, "bar_area_w": bar_area_w, "bar_area_h": bar_area_h,
+        "bar_gap": bar_gap, "bar_w": bar_w, "bar_base_y": bar_base_y,
+    }
 
 
 def fetch_artwork(url: str) -> Image.Image | None:
@@ -183,27 +295,22 @@ def fetch_artwork(url: str) -> Image.Image | None:
     return None
 
 
-def render_frame() -> Image.Image:
-    """Render a complete frame: two panels + slim track info."""
-    img = background.copy()
-    draw = ImageDraw.Draw(img)
+def render_base_frame() -> Image.Image:
+    """Render static content: background, album art, track info.
 
-    # Layout: two equal squares side by side, centered
-    gap = int(WIDTH * 0.02)
-    info_h = int(HEIGHT * 0.12)
-    available_h = HEIGHT - info_h - gap
-    panel_size = min(int((WIDTH - gap * 3) / 2), available_h - gap)
-    total_w = panel_size * 2 + gap
-    start_x = (WIDTH - total_w) // 2
-    start_y = (available_h - panel_size) // 2
+    Called only when metadata changes.
+    """
+    bg = create_background()
+    draw = ImageDraw.Draw(bg)
+    L = layout
+    font_title = load_bold_font(max(16, HEIGHT // 18))
+    font_details = load_font(max(12, HEIGHT // 24))
 
-    art_x, art_y = start_x, start_y
-    spec_x, spec_y = start_x + panel_size + gap, start_y
-
-    # Left panel: album art background
+    # Left panel: album art
     draw.rounded_rectangle(
-        [art_x, art_y, art_x + panel_size, art_y + panel_size],
-        radius=8, fill=PANEL_BG
+        [L["art_x"], L["art_y"],
+         L["art_x"] + L["art_size"], L["art_y"] + L["art_size"]],
+        radius=8, fill=PANEL_BG,
     )
 
     meta = current_metadata
@@ -214,80 +321,133 @@ def render_frame() -> Image.Image:
         if artwork_url:
             art_img = fetch_artwork(artwork_url)
             if art_img:
-                resized = art_img.resize((panel_size, panel_size), Image.LANCZOS)
-                img.paste(resized, (art_x, art_y))
-    # (When no artwork, the dark panel shows — matching browser vinyl placeholder)
+                resized = art_img.resize(
+                    (L["art_size"], L["art_size"]), Image.LANCZOS
+                )
+                bg.paste(resized, (L["art_x"], L["art_y"]))
 
-    # Right panel: spectrum background
-    draw.rounded_rectangle(
-        [spec_x, spec_y, spec_x + panel_size, spec_y + panel_size],
-        radius=8, fill=(10, 10, 15)
-    )
-
-    # Draw spectrum bars inside right panel
-    pad = int(panel_size * 0.06)
-    bar_area_w = panel_size - pad * 2
-    bar_area_h = panel_size - pad * 2
-    bar_gap = max(1, bar_area_w // (NUM_BANDS * 8))
-    bar_w = (bar_area_w - bar_gap * (NUM_BANDS - 1)) // NUM_BANDS
-    bar_base_y = spec_y + panel_size - pad
-
-    for i in range(NUM_BANDS):
-        display_bands[i] += (bands[i] - display_bands[i]) * 0.3
-        val = display_bands[i] / 100.0
-        bar_h = max(1, int(val * bar_area_h))
-
-        bx = spec_x + pad + i * (bar_w + bar_gap)
-        by = bar_base_y - bar_h
-
-        color = rainbow_color(i, NUM_BANDS)
-        draw.rectangle([bx, by, bx + bar_w, bar_base_y], fill=color)
-
-        # Rounded top
-        if bar_h > 3:
-            r = min(bar_w // 2, 3)
-            draw.ellipse([bx, by - r, bx + bar_w, by + r], fill=color)
-
-    # Track info below panels
-    info_y = start_y + panel_size + int(gap * 1.5)
-
+    # Right top: track info (right-aligned)
+    text_right = L["right_x"] + L["right_w"]
     if is_playing:
         title = meta.get("title", "")
         artist = meta.get("artist", "")
         album = meta.get("album", "")
 
-        # Title centered
-        bbox = draw.textbbox((0, 0), title, font=font_title)
-        tw = bbox[2] - bbox[0]
-        draw.text(((WIDTH - tw) // 2, info_y), title,
-                  fill=TEXT_COLOR, font=font_title)
+        text_y = L["info_y"] + L["info_h"] // 2 - font_title.size
 
-        # Artist — Album on second line
-        details = ""
-        if artist and album:
-            details = f"{artist} \u2014 {album}"
-        elif artist:
-            details = artist
-        elif album:
-            details = album
+        if title:
+            bbox = draw.textbbox((0, 0), title, font=font_title)
+            tw = bbox[2] - bbox[0]
+            draw.text((text_right - tw, text_y), title,
+                      fill=TEXT_COLOR, font=font_title)
+            text_y += font_title.size + 4
 
-        if details:
-            bbox2 = draw.textbbox((0, 0), details, font=font_details)
-            dw = bbox2[2] - bbox2[0]
-            draw.text(((WIDTH - dw) // 2, info_y + font_title.size + 4),
-                      details, fill=ARTIST_COLOR, font=font_details)
+        if artist:
+            bbox = draw.textbbox((0, 0), artist, font=font_details)
+            tw = bbox[2] - bbox[0]
+            draw.text((text_right - tw, text_y), artist,
+                      fill=ARTIST_COLOR, font=font_details)
+            text_y += font_details.size + 2
+
+        if album:
+            bbox = draw.textbbox((0, 0), album, font=font_details)
+            tw = bbox[2] - bbox[0]
+            draw.text((text_right - tw, text_y), album,
+                      fill=ALBUM_COLOR, font=font_details)
     else:
         msg = "No Music Playing"
+        text_y = L["info_y"] + L["info_h"] // 2 - font_title.size // 2
         bbox = draw.textbbox((0, 0), msg, font=font_title)
         tw = bbox[2] - bbox[0]
-        draw.text(((WIDTH - tw) // 2, info_y), msg,
+        draw.text((text_right - tw, text_y), msg,
                   fill=DIM_COLOR, font=font_title)
+
+    # Spectrum panel background (will be overwritten each frame)
+    draw.rounded_rectangle(
+        [L["right_x"], L["spec_y"],
+         L["right_x"] + L["right_w"], L["spec_y"] + L["spec_h"]],
+        radius=6, fill=(10, 10, 15),
+    )
+
+    return bg
+
+
+def extract_spectrum_bg() -> Image.Image:
+    """Extract the spectrum region from the base frame as a clean background."""
+    L = layout
+    return base_frame.crop((
+        L["right_x"], L["spec_y"],
+        L["right_x"] + L["right_w"], L["spec_y"] + L["spec_h"],
+    ))
+
+
+def render_spectrum() -> Image.Image:
+    """Render only the spectrum bars region. Returns a cropped image."""
+    L = layout
+    now = time.monotonic()
+
+    # Start from clean spectrum background
+    img = spectrum_bg.copy()
+    draw = ImageDraw.Draw(img)
+
+    # Coordinates are relative to spectrum region (0,0 = top-left of region)
+    pad = L["pad"]
+    bar_area_h = L["bar_area_h"]
+    bar_gap = L["bar_gap"]
+    bar_w = L["bar_w"]
+    bar_base_y = L["spec_h"] - pad  # relative to region
+
+    for i in range(NUM_BANDS):
+        # Asymmetric smoothing in dB domain
+        target = bands[i]
+        if target > display_bands[i]:
+            display_bands[i] += (target - display_bands[i]) * ATTACK_COEFF
+        else:
+            display_bands[i] += (target - display_bands[i]) * DECAY_COEFF
+
+        # Map dBFS to 0..1
+        db_val = max(display_bands[i], NOISE_FLOOR)
+        fraction = (db_val - NOISE_FLOOR) / DB_RANGE
+
+        # Peak hold
+        if fraction >= peak_bands[i]:
+            peak_bands[i] = fraction
+            peak_time[i] = now
+        elif now - peak_time[i] > PEAK_HOLD_S:
+            peak_bands[i] -= PEAK_FALL_DB / DB_RANGE
+            if peak_bands[i] < 0:
+                peak_bands[i] = 0
+
+        bar_h = 0 if fraction < 0.01 else max(2, int(fraction * bar_area_h))
+        bx = pad + i * (bar_w + bar_gap)
+        by = bar_base_y - bar_h
+
+        if bar_h == 0 and peak_bands[i] < 0.01:
+            continue
+
+        color = BAR_COLORS[i]
+
+        # Bar
+        if bar_h > 0:
+            draw.rectangle([bx, by, bx + bar_w, bar_base_y], fill=color)
+            # Rounded top
+            if bar_h > 3:
+                r = min(bar_w // 2, 3)
+                draw.ellipse([bx, by - r, bx + bar_w, by + r], fill=color)
+
+        # Peak marker
+        if peak_bands[i] > 0.01:
+            peak_h = int(peak_bands[i] * bar_area_h)
+            peak_y = bar_base_y - peak_h
+            marker_h = max(2, bar_w // 12)
+            draw.rectangle([bx, peak_y, bx + bar_w, peak_y + marker_h],
+                           fill=PEAK_COLORS[i])
 
     return img
 
 
 async def spectrum_ws_reader() -> None:
-    """Connect to spectrum WebSocket and update band values."""
+    """Connect to spectrum WebSocket and update band dBFS values."""
     ws_url = f"ws://localhost:{WS_PORT}"
     while True:
         try:
@@ -297,17 +457,19 @@ async def spectrum_ws_reader() -> None:
                     values = message.split(";")
                     for i in range(min(NUM_BANDS, len(values))):
                         try:
-                            bands[i] = float(values[i])
+                            v = float(values[i])
+                            bands[i] = v if not np.isnan(v) else NOISE_FLOOR
                         except ValueError:
-                            pass
+                            bands[i] = NOISE_FLOOR
         except Exception as e:
             logger.debug(f"Spectrum WS error: {e}")
+            bands[:] = NOISE_FLOOR
             await asyncio.sleep(5)
 
 
 async def metadata_poller() -> None:
     """Poll metadata endpoint periodically."""
-    global current_metadata
+    global current_metadata, metadata_version
     while True:
         try:
             resp = await asyncio.get_event_loop().run_in_executor(
@@ -317,22 +479,50 @@ async def metadata_poller() -> None:
                 data = resp.json()
                 if data != current_metadata:
                     current_metadata = data
+                    metadata_version += 1
         except Exception:
             pass
         await asyncio.sleep(2)
 
 
 async def render_loop() -> None:
-    """Main render loop at ~30 FPS."""
-    frame_interval = 1.0 / 30
+    """Main render loop.
+
+    Full frame redrawn only on metadata change.
+    Spectrum region redrawn each tick (~20 FPS).
+    """
+    global base_frame, base_frame_version, spectrum_bg
+
+    frame_interval = 1.0 / TARGET_FPS
+
     while True:
         start = time.monotonic()
 
-        frame = await asyncio.get_event_loop().run_in_executor(
-            None, render_frame
+        # Rebuild base frame if metadata changed
+        if base_frame_version != metadata_version:
+            base_frame = await asyncio.get_event_loop().run_in_executor(
+                None, render_base_frame
+            )
+            spectrum_bg = extract_spectrum_bg()
+            base_frame_version = metadata_version
+            # Write full frame once
+            await asyncio.get_event_loop().run_in_executor(
+                None, write_full_frame, base_frame
+            )
+            logger.info("Base frame updated (metadata changed)")
+
+        if spectrum_bg is None:
+            await asyncio.sleep(0.1)
+            continue
+
+        # Render only spectrum region
+        spec_img = await asyncio.get_event_loop().run_in_executor(
+            None, render_spectrum
         )
+        # Write only the spectrum region to FB
         await asyncio.get_event_loop().run_in_executor(
-            None, write_frame, frame
+            None, write_region_to_fb,
+            spec_img, layout["right_x"], layout["spec_y"],
         )
 
         elapsed = time.monotonic() - start
@@ -343,12 +533,22 @@ async def render_loop() -> None:
 
 async def main() -> None:
     """Start all tasks."""
+    global layout
+
     logger.info(f"Starting framebuffer display: {WIDTH}x{HEIGHT}")
     logger.info(f"  Metadata: {METADATA_URL}")
     logger.info(f"  Spectrum WS port: {WS_PORT}")
     logger.info(f"  Framebuffer: {FB_DEVICE}")
 
     open_framebuffer()
+    layout = compute_layout()
+    precompute_colors()
+
+    logger.info(
+        f"  Layout: art={layout['art_size']}px, "
+        f"spectrum={layout['right_w']}x{layout['spec_h']}px, "
+        f"FPS={TARGET_FPS}"
+    )
 
     await asyncio.gather(
         render_loop(),

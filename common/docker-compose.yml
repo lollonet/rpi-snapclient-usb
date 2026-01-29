@@ -1,11 +1,11 @@
 services:
-  # Init service: creates the FIFO pipe in the shared volume
+  # Init service: creates the FIFO pipe on the host
   fifo-init:
     image: busybox:latest
     container_name: fifo-init
     volumes:
-      - audio-fifo:/tmp/audio
-    command: sh -c "[ -p /tmp/audio/stream.fifo ] || mkfifo /tmp/audio/stream.fifo; chmod 666 /tmp/audio/stream.fifo"
+      - /tmp/audio:/tmp/audio
+    command: sh -c "rm -f /tmp/audio/stream.fifo; mkfifo /tmp/audio/stream.fifo; chmod 666 /tmp/audio/stream.fifo"
     restart: "no"
 
   snapclient:
@@ -22,7 +22,7 @@ services:
       - /var/run/dbus:/var/run/dbus
       - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
       - /etc/asound.conf:/etc/asound.conf:ro
-      - audio-fifo:/tmp/audio
+      - /tmp/audio:/tmp/audio
     environment:
       - SNAPSERVER_HOST=${SNAPSERVER_HOST:-}
       - SNAPSERVER_PORT=${SNAPSERVER_PORT:-1704}
@@ -59,7 +59,7 @@ services:
       fifo-init:
         condition: service_completed_successfully
     volumes:
-      - audio-fifo:/tmp/audio
+      - /tmp/audio:/tmp/audio:ro
     ports:
       - "8081:8081"
     environment:
@@ -80,10 +80,3 @@ services:
     environment:
       - DISPLAY_RESOLUTION=${DISPLAY_RESOLUTION:-1024x600}
       - VISUALIZER_WS_PORT=8081
-
-volumes:
-  audio-fifo:
-    driver: local
-    driver_opts:
-      type: tmpfs
-      device: tmpfs
