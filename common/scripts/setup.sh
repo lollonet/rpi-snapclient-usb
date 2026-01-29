@@ -147,6 +147,22 @@ echo "Display mode: $DISPLAY_MODE"
 echo ""
 
 # ============================================
+# Step 3b: Select Spectrum Band Resolution
+# ============================================
+echo "Select spectrum analyzer band resolution:"
+echo "1) Half-octave (19 bands) — recommended"
+echo "2) Third-octave (31 bands)"
+read -rp "Enter choice [1-2]: " band_mode_choice
+
+case "${band_mode_choice:-1}" in
+    2) BAND_MODE="third-octave" ;;
+    *) BAND_MODE="half-octave" ;;
+esac
+
+echo "Band mode: $BAND_MODE"
+echo ""
+
+# ============================================
 # Step 4: Auto-generate Client ID from hostname
 # ============================================
 CLIENT_ID="snapclient-$(hostname)"
@@ -441,6 +457,7 @@ declare -A env_vars=(
     ["SOUNDCARD"]="$SOUNDCARD_VALUE"
     ["DISPLAY_RESOLUTION"]="$DISPLAY_RESOLUTION"
     ["DISPLAY_MODE"]="$DISPLAY_MODE"
+    ["BAND_MODE"]="$BAND_MODE"
     ["COMPOSE_PROFILES"]="$DOCKER_COMPOSE_PROFILES"
 )
 
@@ -454,6 +471,7 @@ echo "  - Client ID: $CLIENT_ID"
 echo "  - Soundcard: $SOUNDCARD_VALUE"
 echo "  - Resolution: $DISPLAY_RESOLUTION"
 echo "  - Display mode: $DISPLAY_MODE"
+echo "  - Band mode: $BAND_MODE"
 echo ""
 
 # ============================================
@@ -576,6 +594,7 @@ echo "Configuration Summary:"
 echo "  - Audio HAT: $HAT_NAME"
 echo "  - Resolution: $DISPLAY_RESOLUTION"
 echo "  - Display mode: $DISPLAY_MODE"
+echo "  - Band mode: $BAND_MODE"
 echo "  - Client ID: $CLIENT_ID"
 echo "  - Snapserver: ${snapserver_ip:-autodiscovery (mDNS)}"
 echo "  - Install dir: $INSTALL_DIR"
