@@ -276,6 +276,17 @@ def compute_layout() -> dict:
     }
 
 
+def fit_font(text: str, max_width: int, base_size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+    """Return the largest font size (down to 10px) that fits text within max_width."""
+    loader = load_bold_font if bold else load_font
+    for size in range(base_size, 9, -1):
+        font = loader(size)
+        bbox = font.getbbox(text)
+        if (bbox[2] - bbox[0]) <= max_width:
+            return font
+    return loader(10)
+
+
 def fetch_artwork(url: str) -> Image.Image | None:
     """Fetch and cache artwork image."""
     global cached_artwork, cached_artwork_url
@@ -303,8 +314,9 @@ def render_base_frame() -> Image.Image:
     bg = create_background()
     draw = ImageDraw.Draw(bg)
     L = layout
-    font_title = load_bold_font(max(16, HEIGHT // 18))
-    font_details = load_font(max(12, HEIGHT // 24))
+    max_text_w = L["right_w"]
+    base_title_size = max(16, HEIGHT // 18)
+    base_detail_size = max(12, HEIGHT // 24)
 
     # Left panel: album art
     draw.rounded_rectangle(
@@ -326,41 +338,57 @@ def render_base_frame() -> Image.Image:
                 )
                 bg.paste(resized, (L["art_x"], L["art_y"]))
 
-    # Right top: track info (right-aligned)
+    # Right top: track info (right-aligned, font shrinks to fit)
     text_right = L["right_x"] + L["right_w"]
     if is_playing:
         title = meta.get("title", "")
         artist = meta.get("artist", "")
         album = meta.get("album", "")
 
-        text_y = L["info_y"] + L["info_h"] // 2 - font_title.size
+        # Fit fonts to available width
+        ft_title = fit_font(title, max_text_w, base_title_size, bold=True) if title else None
+        ft_artist = fit_font(artist, max_text_w, base_detail_size) if artist else None
+        ft_album = fit_font(album, max_text_w, base_detail_size) if album else None
 
-        if title:
-            bbox = draw.textbbox((0, 0), title, font=font_title)
+        # Compute total text height for vertical centering
+        line_gap = 4
+        total_h = 0
+        if ft_title:
+            total_h += ft_title.size
+        if ft_artist:
+            total_h += ft_artist.size + line_gap
+        if ft_album:
+            total_h += ft_album.size + line_gap // 2
+
+        text_y = L["info_y"] + (L["info_h"] - total_h) // 2
+
+        if ft_title:
+            bbox = draw.textbbox((0, 0), title, font=ft_title)
             tw = bbox[2] - bbox[0]
             draw.text((text_right - tw, text_y), title,
-                      fill=TEXT_COLOR, font=font_title)
-            text_y += font_title.size + 4
+                      fill=TEXT_COLOR, font=ft_title)
+            text_y += ft_title.size + line_gap
 
-        if artist:
-            bbox = draw.textbbox((0, 0), artist, font=font_details)
+        if ft_artist:
+            bbox = draw.textbbox((0, 0), artist, font=ft_artist)
             tw = bbox[2] - bbox[0]
             draw.text((text_right - tw, text_y), artist,
-                      fill=ARTIST_COLOR, font=font_details)
-            text_y += font_details.size + 2
+                      fill=ARTIST_COLOR, font=ft_artist)
+            text_y += ft_artist.size + line_gap // 2
 
-        if album:
-            bbox = draw.textbbox((0, 0), album, font=font_details)
+        if ft_album:
+            bbox = draw.textbbox((0, 0), album, font=ft_album)
             tw = bbox[2] - bbox[0]
             draw.text((text_right - tw, text_y), album,
-                      fill=ALBUM_COLOR, font=font_details)
+                      fill=ALBUM_COLOR, font=ft_album)
     else:
         msg = "No Music Playing"
-        text_y = L["info_y"] + L["info_h"] // 2 - font_title.size // 2
-        bbox = draw.textbbox((0, 0), msg, font=font_title)
+        ft = load_bold_font(base_title_size)
+        text_y = L["info_y"] + L["info_h"] // 2 - ft.size // 2
+        bbox = draw.textbbox((0, 0), msg, font=ft)
         tw = bbox[2] - bbox[0]
         draw.text((text_right - tw, text_y), msg,
-                  fill=DIM_COLOR, font=font_title)
+                  fill=DIM_COLOR, font=ft)
 
     # Spectrum panel background (will be overwritten each frame)
     draw.rounded_rectangle(

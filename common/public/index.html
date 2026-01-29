@@ -148,11 +148,16 @@
             display: flex;
             flex-direction: column;
             justify-content: center;
+            overflow: hidden;
+            min-width: 0;
         }
 
         .track-line {
             font-size: clamp(1.1rem, 3vw, 2.8rem);
             line-height: 1.4;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .track-line.title {
