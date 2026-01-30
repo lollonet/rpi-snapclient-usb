@@ -513,15 +513,28 @@ async def metadata_poller() -> None:
         await asyncio.sleep(2)
 
 
+def is_spectrum_active() -> bool:
+    """Check if any spectrum band has meaningful signal above noise floor."""
+    threshold = NOISE_FLOOR + 3.0  # 3 dB above noise floor
+    return bool(np.any(bands > threshold))
+
+
 async def render_loop() -> None:
-    """Main render loop.
+    """Main render loop with adaptive FPS.
 
     Full frame redrawn only on metadata change.
-    Spectrum region redrawn each tick (~20 FPS).
+    Spectrum region redrawn each tick at adaptive rate:
+      - 20 FPS: music playing with active spectrum
+      -  5 FPS: music playing, no spectrum data
+      -  1 FPS: no music playing (static screen)
     """
     global base_frame, base_frame_version, spectrum_bg
 
-    frame_interval = 1.0 / TARGET_FPS
+    FPS_ACTIVE = 20    # spectrum animating
+    FPS_QUIET = 5      # playing but silent/no spectrum
+    FPS_IDLE = 1       # no music at all
+
+    prev_spectrum_active = False
 
     while True:
         start = time.monotonic()
@@ -543,6 +556,29 @@ async def render_loop() -> None:
             await asyncio.sleep(0.1)
             continue
 
+        # Determine adaptive FPS
+        is_playing = (
+            current_metadata
+            and current_metadata.get("playing")
+            and current_metadata.get("title")
+        )
+        spectrum_active = is_spectrum_active()
+
+        if is_playing and spectrum_active:
+            fps = FPS_ACTIVE
+        elif is_playing:
+            fps = FPS_QUIET
+        else:
+            fps = FPS_IDLE
+
+        # Skip spectrum write entirely when idle and nothing is animating
+        if not is_playing and not spectrum_active and not prev_spectrum_active:
+            await asyncio.sleep(1.0 / fps)
+            prev_spectrum_active = False
+            continue
+
+        prev_spectrum_active = spectrum_active
+
         # Render only spectrum region
         spec_img = await asyncio.get_event_loop().run_in_executor(
             None, render_spectrum
@@ -554,7 +590,7 @@ async def render_loop() -> None:
         )
 
         elapsed = time.monotonic() - start
-        sleep_time = frame_interval - elapsed
+        sleep_time = (1.0 / fps) - elapsed
         if sleep_time > 0:
             await asyncio.sleep(sleep_time)
 
