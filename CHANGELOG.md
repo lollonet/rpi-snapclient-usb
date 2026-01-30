@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **ALSA FIFO tee causes continuous XRUN** ([#7](https://github.com/lollonet/rpi-snapclient-usb/issues/7))
+  - Replaced blocking ALSA `type file` plugin with `type multi` + `snd-aloop` loopback
+  - Audio now sent to both DAC and loopback simultaneously — visualizer reads from loopback capture side
+  - DAC output is fully decoupled from spectrum analyzer — stalls or pauses in the visualizer cannot cause XRUN
+  - Removed `fifo-init` service and `/tmp/audio` FIFO volume from docker-compose
+  - Audio-visualizer now reads from ALSA loopback capture (`hw:Loopback,1,0`) via libasound ctypes
+  - setup.sh loads `snd-aloop` kernel module and persists via `/etc/modules-load.d/snapclient.conf`
+
+- **fb-display burns 30% CPU** ([#8](https://github.com/lollonet/rpi-snapclient-usb/issues/8))
+  - Added adaptive FPS: 20 FPS (spectrum active), 5 FPS (playing, no spectrum), 1 FPS (idle)
+  - Skip framebuffer writes entirely when idle and spectrum is not animating
+  - Expected CPU reduction: ~95% when idle, ~60-70% during playback
+
 ### Added
 - **Unified Setup Flow** ([#1](https://github.com/lollonet/rpi-snapclient-usb/pull/1)) - Jan 27
   - Separate HAT selection from display resolution (no longer coupled)
