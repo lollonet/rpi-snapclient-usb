@@ -1,28 +1,15 @@
 services:
-  # Init service: creates the FIFO pipe on the host
-  fifo-init:
-    image: busybox:latest
-    container_name: fifo-init
-    volumes:
-      - /tmp/audio:/tmp/audio
-    command: sh -c "rm -f /tmp/audio/stream.fifo; mkfifo /tmp/audio/stream.fifo; chmod 666 /tmp/audio/stream.fifo"
-    restart: "no"
-
   snapclient:
     image: ghcr.io/lollonet/rpi-snapclient-usb:latest
     container_name: snapclient
     network_mode: host
     restart: unless-stopped
-    depends_on:
-      fifo-init:
-        condition: service_completed_successfully
     devices:
       - /dev/snd:/dev/snd
     volumes:
       - /var/run/dbus:/var/run/dbus
       - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
       - /etc/asound.conf:/etc/asound.conf:ro
-      - /tmp/audio:/tmp/audio
     environment:
       - SNAPSERVER_HOST=${SNAPSERVER_HOST:-}
       - SNAPSERVER_PORT=${SNAPSERVER_PORT:-1704}
@@ -55,16 +42,13 @@ services:
     build: ./docker/audio-visualizer
     container_name: audio-visualizer
     restart: unless-stopped
-    depends_on:
-      fifo-init:
-        condition: service_completed_successfully
-    volumes:
-      - /tmp/audio:/tmp/audio:ro
+    devices:
+      - /dev/snd:/dev/snd
     ports:
       - "8081:8081"
     environment:
       - VISUALIZER_WS_PORT=8081
-      - AUDIO_FIFO=/tmp/audio/stream.fifo
+      - LOOPBACK_DEVICE=hw:Loopback,1,0
 
   fb-display:
     build: ./docker/fb-display

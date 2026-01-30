@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Real-time octave-band spectrum analyzer.
 
-Reads raw PCM from ALSA FIFO, computes FFT, groups into octave bands,
-outputs dBFS values via WebSocket. No autosens, no normalization —
-absolute levels referenced to 0 dBFS (16-bit full scale = 32768).
+Reads raw PCM from ALSA loopback capture device, computes FFT, groups into
+octave bands, outputs dBFS values via WebSocket. No autosens, no
+normalization — absolute levels referenced to 0 dBFS (16-bit full scale = 32768).
 
 Output format: "dBFS_1;dBFS_2;...;dBFS_N" per frame.
 Values are in dBFS (negative, e.g. -12;-25;-40;...).
@@ -11,7 +11,8 @@ Silence = -inf, clamped to NOISE_FLOOR.
 """
 
 import asyncio
-import fcntl
+import ctypes
+import ctypes.util
 import logging
 import os
 import signal
@@ -47,11 +48,9 @@ NUM_BANDS = len(BAND_CENTERS)
 NOISE_FLOOR = -72.0  # dBFS — below this = silence (16-bit theoretical = -96)
 REF_LEVEL = 0.0  # dBFS — top of display
 
-# FIFO
-AUDIO_FIFO = os.environ.get("AUDIO_FIFO", "/tmp/audio/stream.fifo")
+# ALSA loopback capture device
+LOOPBACK_DEVICE = os.environ.get("LOOPBACK_DEVICE", "hw:Loopback,1,0")
 WS_PORT = int(os.environ.get("VISUALIZER_WS_PORT", "8081"))
-F_SETPIPE_SZ = 1031
-PIPE_BUF_SIZE = 65536  # 64KB — ~0.3s buffer, keeps latency low
 
 # Smoothing: fast attack, slow decay (in dB domain)
 ATTACK_COEFF = 0.4  # lower = faster attack (0 = instant)
@@ -163,32 +162,110 @@ async def broadcast(data: str) -> None:
     clients.difference_update(dead)
 
 
-async def read_fifo_and_broadcast() -> None:
-    """Read raw PCM from ALSA FIFO, compute spectrum, broadcast."""
+def open_alsa_capture():
+    """Open ALSA loopback capture device for reading raw PCM.
+
+    Uses ctypes to call libasound directly — avoids pyalsaaudio dependency.
+    Returns the PCM handle and libasound library reference.
+    """
+    libasound_path = ctypes.util.find_library("asound")
+    if not libasound_path:
+        raise RuntimeError("libasound not found — install libasound2")
+
+    libasound = ctypes.CDLL(libasound_path)
+
+    # Opaque pointer types
+    class snd_pcm_t(ctypes.Structure):
+        pass
+
+    class snd_pcm_hw_params_t(ctypes.Structure):
+        pass
+
+    pcm_p = ctypes.POINTER(snd_pcm_t)
+    hw_p = ctypes.POINTER(snd_pcm_hw_params_t)
+
+    SND_PCM_STREAM_CAPTURE = 1
+    SND_PCM_FORMAT_S16_LE = 2
+    SND_PCM_ACCESS_RW_INTERLEAVED = 3
+
+    # Open device
+    handle = pcm_p()
+    device = LOOPBACK_DEVICE.encode()
+    rc = libasound.snd_pcm_open(
+        ctypes.byref(handle), device, SND_PCM_STREAM_CAPTURE, 0
+    )
+    if rc < 0:
+        raise RuntimeError(
+            f"Cannot open ALSA device {LOOPBACK_DEVICE}: error {rc}"
+        )
+
+    # Allocate and configure hw_params
+    hw_params = hw_p()
+    libasound.snd_pcm_hw_params_malloc(ctypes.byref(hw_params))
+    libasound.snd_pcm_hw_params_any(handle, hw_params)
+    libasound.snd_pcm_hw_params_set_access(
+        handle, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED
+    )
+    libasound.snd_pcm_hw_params_set_format(
+        handle, hw_params, SND_PCM_FORMAT_S16_LE
+    )
+
+    rate = ctypes.c_uint(SAMPLE_RATE)
+    libasound.snd_pcm_hw_params_set_rate_near(
+        handle, hw_params, ctypes.byref(rate), None
+    )
+
+    libasound.snd_pcm_hw_params_set_channels(handle, hw_params, CHANNELS)
+
+    # Set buffer/period for low latency
+    period_size = ctypes.c_ulong(HOP_SIZE)
+    libasound.snd_pcm_hw_params_set_period_size_near(
+        handle, hw_params, ctypes.byref(period_size), None
+    )
+
+    rc = libasound.snd_pcm_hw_params(handle, hw_params)
+    if rc < 0:
+        raise RuntimeError(f"Cannot set ALSA hw params: error {rc}")
+
+    libasound.snd_pcm_hw_params_free(hw_params)
+    libasound.snd_pcm_prepare(handle)
+
+    return handle, libasound
+
+
+def alsa_read_frames(handle, libasound, num_frames: int) -> bytes | None:
+    """Read num_frames from ALSA capture handle. Returns raw bytes or None."""
+    buf = ctypes.create_string_buffer(num_frames * FRAME_SIZE)
+    frames_read = libasound.snd_pcm_readi(handle, buf, num_frames)
+    if frames_read < 0:
+        # Try to recover from XRUN or other errors
+        libasound.snd_pcm_prepare(handle)
+        frames_read = libasound.snd_pcm_readi(handle, buf, num_frames)
+        if frames_read < 0:
+            return None
+    return buf.raw[: frames_read * FRAME_SIZE]
+
+
+async def read_loopback_and_broadcast() -> None:
+    """Read raw PCM from ALSA loopback capture, compute spectrum, broadcast."""
     frame_interval = 1.0 / TARGET_FPS
 
     while True:
         try:
-            logger.info(f"Opening FIFO: {AUDIO_FIFO}")
-            fd = os.open(AUDIO_FIFO, os.O_RDONLY)
+            logger.info(f"Opening ALSA loopback capture: {LOOPBACK_DEVICE}")
+            handle, libasound = open_alsa_capture()
+            logger.info("ALSA capture opened, reading audio data...")
 
             try:
-                fcntl.fcntl(fd, F_SETPIPE_SZ, PIPE_BUF_SIZE)
-            except OSError:
-                logger.warning("Could not set pipe buffer size")
-
-            logger.info("FIFO opened, reading audio data...")
-
-            with os.fdopen(fd, "rb", buffering=0) as fifo:
                 while True:
                     start = asyncio.get_event_loop().time()
 
                     data = await asyncio.get_event_loop().run_in_executor(
-                        None, fifo.read, BYTES_PER_READ
+                        None, alsa_read_frames, handle, libasound, HOP_SIZE
                     )
 
                     if not data:
-                        logger.warning("FIFO closed (EOF), reopening...")
+                        logger.warning("ALSA read failed, reopening...")
                         prev_db[:] = NOISE_FLOOR
                         zero_msg = ";".join(
                             str(NOISE_FLOOR) for _ in range(NUM_BANDS)
@@ -213,12 +290,11 @@ async def read_fifo_and_broadcast() -> None:
                     sleep_time = frame_interval - elapsed
                     if sleep_time > 0:
                         await asyncio.sleep(sleep_time)
+            finally:
+                libasound.snd_pcm_close(handle)
 
-        except FileNotFoundError:
-            logger.warning(f"FIFO not found: {AUDIO_FIFO}, retrying in 2s...")
-            await asyncio.sleep(2)
         except Exception as e:
-            logger.error(f"Error reading FIFO: {e}, retrying in 2s...")
+            logger.error(f"Error reading ALSA loopback: {e}, retrying in 2s...")
             await asyncio.sleep(2)
 
 
@@ -237,16 +313,16 @@ async def websocket_handler(websocket) -> None:
 
 
 async def main() -> None:
-    """Start WebSocket server and FIFO reader."""
+    """Start WebSocket server and ALSA loopback reader."""
     logger.info(f"Starting spectrum analyzer on port {WS_PORT}")
-    logger.info(f"  FIFO: {AUDIO_FIFO}")
+    logger.info(f"  ALSA capture: {LOOPBACK_DEVICE}")
     logger.info(f"  FFT size: {FFT_SIZE} ({FFT_SIZE / SAMPLE_RATE * 1000:.0f}ms)")
     logger.info(f"  Bands: {NUM_BANDS} half-octave ({BAND_CENTERS[0]}-{BAND_CENTERS[-1]} Hz)")
     logger.info(f"  Range: {NOISE_FLOOR} to {REF_LEVEL} dBFS")
     logger.info(f"  Target FPS: {TARGET_FPS}")
 
     async with websockets.serve(websocket_handler, "0.0.0.0", WS_PORT):
-        await read_fifo_and_broadcast()
+        await read_loopback_and_broadcast()
 
 
 def cleanup(signum=None, frame=None):
