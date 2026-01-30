@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Framebuffer Display Fixes** ([#6](https://github.com/lollonet/rpi-snapclient-usb/pull/6))
+  - Recompute layout on band count change in `fb_display.py`
+  - Disable fbcon via `fbcon=map:9` kernel parameter to prevent console overwriting framebuffer
+
 - **ALSA FIFO tee causes continuous XRUN** ([#7](https://github.com/lollonet/rpi-snapclient-usb/issues/7))
   - Replaced blocking ALSA `type file` plugin with `type multi` + `snd-aloop` loopback
   - Audio now sent to both DAC and loopback simultaneously — visualizer reads from loopback capture side
@@ -22,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Expected CPU reduction: ~95% when idle, ~60-70% during playback
 
 ### Added
+- **Zero-Touch Auto-Install** ([#6](https://github.com/lollonet/rpi-snapclient-usb/pull/6))
+  - `prepare-sd.sh` copies project files to boot partition and patches Pi Imager's `firstrun.sh`
+  - `install/firstboot.sh` runs once on first boot, chains `setup.sh --auto`
+  - `install/snapclient.conf` with sensible defaults (`AUDIO_HAT=auto`, 1080p, framebuffer, half-octave)
+  - `install/README.txt` with 5-line noob instructions
+  - `setup.sh --auto` mode skips all interactive prompts, reads config from file
+  - HAT auto-detection via EEPROM (`/proc/device-tree/hat/product`) with ALSA and USB fallbacks
+
+- **Configurable Band Resolution** ([#6](https://github.com/lollonet/rpi-snapclient-usb/pull/6))
+  - Half-octave (19 bands) and third-octave (31 bands) spectrum modes
+  - Selectable via `BAND_MODE` in `.env` or `snapclient.conf`
+
 - **Unified Setup Flow** ([#1](https://github.com/lollonet/rpi-snapclient-usb/pull/1)) - Jan 27
   - Separate HAT selection from display resolution (no longer coupled)
   - Add 6 resolution presets (800x480 to 3840x2160) plus custom option
