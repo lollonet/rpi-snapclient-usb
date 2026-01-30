@@ -61,8 +61,8 @@ peak_time = np.zeros(NUM_BANDS, dtype=np.float64)
 
 
 def resize_bands(n: int) -> None:
-    """Resize all band arrays when NUM_BANDS changes."""
-    global NUM_BANDS, bands, display_bands, peak_bands, peak_time
+    """Resize all band arrays and recompute layout when NUM_BANDS changes."""
+    global NUM_BANDS, bands, display_bands, peak_bands, peak_time, layout
     if n == NUM_BANDS:
         return
     NUM_BANDS = n
@@ -71,6 +71,7 @@ def resize_bands(n: int) -> None:
     peak_bands = np.zeros(n, dtype=np.float64)
     peak_time = np.zeros(n, dtype=np.float64)
     precompute_colors()
+    layout = compute_layout()
     logger.info(f"Band count changed to {n}")
 
 # Smoothing coefficients

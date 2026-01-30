@@ -405,6 +405,19 @@ if [ -n "$BOOT_CONFIG" ]; then
     } >> "$BOOT_CONFIG"
 
     echo "Boot configuration updated"
+
+    # Disable fbcon on fb0 so the kernel console doesn't overwrite
+    # the framebuffer display (maps console to nonexistent vt9)
+    CMDLINE=""
+    if [ -f /boot/firmware/cmdline.txt ]; then
+        CMDLINE="/boot/firmware/cmdline.txt"
+    elif [ -f /boot/cmdline.txt ]; then
+        CMDLINE="/boot/cmdline.txt"
+    fi
+    if [ -n "$CMDLINE" ] && ! grep -q "fbcon=map:9" "$CMDLINE"; then
+        sed -i 's/$/ fbcon=map:9/' "$CMDLINE"
+        echo "Disabled fbcon on fb0 (cmdline.txt updated)"
+    fi
 else
     echo "Warning: Could not find boot config file"
 fi
