@@ -109,6 +109,10 @@ WINDOW = np.hanning(FFT_SIZE).astype(np.float32)
 # Window correction factor for power (Hanning window)
 WINDOW_POWER_CORR = 1.0 / np.mean(WINDOW ** 2)
 
+# Pre-compute reduceat indices for vectorized band power summation
+_BAND_EDGES = np.array([lo for lo, _ in BAND_BINS], dtype=np.intp)
+_BAND_HI = np.array([hi for _, hi in BAND_BINS], dtype=np.intp)
+
 
 def analyze_pcm(new_samples: np.ndarray) -> str | None:
     """Compute octave-band levels in dBFS from PCM samples.
@@ -149,28 +153,34 @@ def analyze_pcm(new_samples: np.ndarray) -> str | None:
     # Normalize by FFT size² (Parseval's theorem)
     spectrum /= (FFT_SIZE ** 2)
 
-    # For each octave band: sum power across bins, convert to dBFS
-    band_db = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
-    for i, (lo, hi) in enumerate(BAND_BINS):
-        if lo < len(spectrum):
-            # Sum power in band (energy in bandwidth)
-            band_power = np.sum(spectrum[lo:hi])
-            if band_power > 0:
-                # Convert to dBFS (power): 10*log10 because it's already V²
-                db = 10.0 * np.log10(band_power)
-                band_db[i] = max(db, NOISE_FLOOR)
+    # Vectorized band power summation using reduceat
+    # Clamp edges to valid spectrum range
+    spec_len = len(spectrum)
+    edges = np.minimum(_BAND_EDGES, spec_len - 1)
+    hi = np.minimum(_BAND_HI, spec_len)
 
-    # Asymmetric smoothing in dB domain
-    for i in range(NUM_BANDS):
-        if band_db[i] > prev_db[i]:
-            # Attack: fast rise
-            prev_db[i] += (band_db[i] - prev_db[i]) * (1.0 - ATTACK_COEFF)
-        else:
-            # Decay: slow fall
-            prev_db[i] += (band_db[i] - prev_db[i]) * (1.0 - DECAY_COEFF)
+    # Use add.reduceat for all bands at once (replaces Python for-loop)
+    band_sums = np.add.reduceat(spectrum, edges)
+    # Mask out bands where hi <= lo (no valid bins)
+    valid = hi > edges
+    band_power = np.where(valid, band_sums, 0.0)
+
+    # Convert to dBFS: 10*log10(power), clamp to noise floor
+    with np.errstate(divide="ignore"):
+        band_db = np.where(
+            band_power > 0,
+            np.maximum(10.0 * np.log10(band_power), NOISE_FLOOR),
+            NOISE_FLOOR,
+        )
+
+    # Vectorized asymmetric smoothing
+    attack_mask = band_db > prev_db
+    alpha = np.where(attack_mask, 1.0 - ATTACK_COEFF, 1.0 - DECAY_COEFF)
+    prev_db += (band_db - prev_db) * alpha
 
     # Format: dBFS values rounded to 1 decimal
-    return ";".join(str(round(v, 1)) for v in prev_db)
+    rounded = np.round(prev_db, 1)
+    return ";".join(str(v) for v in rounded)
 
 
 async def broadcast(data: str) -> None:

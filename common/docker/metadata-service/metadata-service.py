@@ -99,6 +99,53 @@ class SnapcastMetadataService:
             for key, value in [line.split(': ', 1)]
         }
 
+    @staticmethod
+    def _detect_codec(file_path: str, audio_fmt: str) -> str:
+        """Detect codec from file extension or audio format string."""
+        codec_map = {
+            "flac": "FLAC", "wav": "WAV", "aiff": "AIFF", "aif": "AIFF",
+            "mp3": "MP3", "ogg": "OGG", "opus": "OPUS",
+            "m4a": "AAC", "aac": "AAC", "mp4": "AAC",
+            "wma": "WMA", "ape": "APE", "wv": "WV", "dsf": "DSD", "dff": "DSD",
+        }
+        # For URLs, strip query params before extracting extension
+        path = file_path.split("?")[0] if "?" in file_path else file_path
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        if ext in codec_map:
+            return codec_map[ext]
+        # For radio streams (URLs), codec is often unknown — return empty
+        if file_path.startswith(("http://", "https://")):
+            return "RADIO"
+        # Fallback: check if floating-point PCM (MPD 'f' format)
+        if audio_fmt and ":f:" in audio_fmt:
+            return "PCM"
+        return ext.upper() if ext else ""
+
+    @staticmethod
+    def _parse_audio_format(audio_fmt: str) -> tuple[int, int]:
+        """Parse MPD audio format string like '48000:16:2' or '48000:f:2'.
+
+        Returns (sample_rate_hz, bit_depth). bit_depth=0 for float.
+        """
+        if not audio_fmt:
+            return 0, 0
+        parts = audio_fmt.split(":")
+        if len(parts) < 2:
+            return 0, 0
+        try:
+            sample_rate = int(parts[0])
+        except ValueError:
+            sample_rate = 0
+        bits_str = parts[1]
+        if bits_str == "f":
+            bit_depth = 32  # float = 32-bit
+        else:
+            try:
+                bit_depth = int(bits_str)
+            except ValueError:
+                bit_depth = 0
+        return sample_rate, bit_depth
+
     def _extract_radio_metadata(self, title: str, artist: str, song: dict[str, str]) -> tuple[str, str, str]:
         """Extract artist/title from radio stream format and determine album"""
         if not artist and ' - ' in title:
@@ -143,6 +190,13 @@ class SnapcastMetadataService:
                 song
             )
 
+            # Extract audio format info
+            audio_fmt = status.get('audio', '') or song.get('Format', '')
+            file_path = song.get('file', '')
+            bitrate = int(status['bitrate']) if status.get('bitrate') else 0
+            codec = self._detect_codec(file_path, audio_fmt)
+            sample_rate, bit_depth = self._parse_audio_format(audio_fmt)
+
             return {
                 "playing": True,
                 "title": title,
@@ -150,7 +204,11 @@ class SnapcastMetadataService:
                 "album": album,
                 "artwork": "",
                 "stream_id": "MPD",
-                "source": "MPD"
+                "source": "MPD",
+                "codec": codec,
+                "bitrate": bitrate,
+                "sample_rate": sample_rate,
+                "bit_depth": bit_depth,
             }
 
         except Exception as e:
@@ -224,6 +282,12 @@ class SnapcastMetadataService:
                     if artwork and "://snapcast:" in artwork:
                         artwork = artwork.replace("://snapcast:", f"://{self.snapserver_host}:")
 
+                    # Extract audio format from stream URI query params
+                    uri_query = stream.get("uri", {}).get("query", {})
+                    snap_codec = uri_query.get("codec", "")
+                    snap_fmt = uri_query.get("sampleformat", "")
+                    sample_rate, bit_depth = self._parse_audio_format(snap_fmt)
+
                     return {
                         "playing": stream.get("status") == "playing",
                         "title": meta.get("title", ""),
@@ -234,6 +298,9 @@ class SnapcastMetadataService:
                         "source": stream.get("id", ""),
                         "volume": volume_info.get("percent", 100),
                         "muted": volume_info.get("muted", False),
+                        "codec": snap_codec.upper() if snap_codec else "",
+                        "sample_rate": sample_rate,
+                        "bit_depth": bit_depth,
                     }
 
             return {"playing": False}
@@ -488,6 +555,7 @@ class SnapcastMetadataService:
                         # Preserve volume from Snapserver when using MPD metadata
                         mpd_meta["volume"] = metadata.get("volume", 100)
                         mpd_meta["muted"] = metadata.get("muted", False)
+                        # MPD has better codec info (from file ext), keep it
                         metadata = mpd_meta
                         logger.debug("Using MPD metadata (Snapserver had none)")
 

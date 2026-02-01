@@ -103,7 +103,7 @@ spectrum_bg_np: np.ndarray | None = None  # numpy RGB array for alpha blending
 spectrum_bg_fb: np.ndarray | None = None  # native FB format (RGB565 or BGRA32)
 
 # Cached volume knob overlay (re-rendered only when volume changes)
-_vol_knob_cache: dict = {"vol": None, "muted": None, "img": None}
+_vol_knob_cache: dict = {"vol": None, "muted": None, "img": None, "np": None}
 
 # Cached fonts (loaded once)
 _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
@@ -353,6 +353,57 @@ def fit_font(text: str, max_width: int, base_size: int, bold: bool = False) -> I
     return _get_font(10, bold)
 
 
+def _format_audio_badge(meta: dict) -> str:
+    """Build audio format badge text from metadata."""
+    codec = meta.get("codec", "")
+    if not codec:
+        return ""
+
+    sample_rate = meta.get("sample_rate", 0)
+    bit_depth = meta.get("bit_depth", 0)
+    bitrate = meta.get("bitrate", 0)
+
+    # Lossless codecs: show sample rate and bit depth
+    lossless = codec in ("FLAC", "WAV", "AIFF", "APE", "WV", "PCM", "DSD")
+
+    parts = [codec]
+    if lossless and sample_rate:
+        if sample_rate >= 1000:
+            parts.append(f"{sample_rate / 1000:.0f}kHz" if sample_rate % 1000 == 0
+                         else f"{sample_rate / 1000:.1f}kHz")
+        else:
+            parts.append(f"{sample_rate}Hz")
+        if bit_depth:
+            parts.append(f"{bit_depth}bit")
+    elif bitrate:
+        parts.append(f"{bitrate}kbps")
+    elif sample_rate:
+        if sample_rate >= 1000:
+            parts.append(f"{sample_rate / 1000:.0f}kHz" if sample_rate % 1000 == 0
+                         else f"{sample_rate / 1000:.1f}kHz")
+
+    return " ".join(parts)
+
+
+# Badge colors by quality tier
+_BADGE_COLOR_LOSSLESS = (100, 200, 120)   # green — lossless
+_BADGE_COLOR_HD = (120, 160, 255)          # blue — hi-res
+_BADGE_COLOR_LOSSY = (170, 140, 100)       # amber — lossy
+
+
+def _format_badge_color(meta: dict) -> tuple[int, int, int]:
+    """Pick badge color based on codec quality tier."""
+    codec = meta.get("codec", "")
+    sample_rate = meta.get("sample_rate", 0)
+    lossless = codec in ("FLAC", "WAV", "AIFF", "APE", "WV", "PCM", "DSD")
+
+    if lossless and sample_rate > 48000:
+        return _BADGE_COLOR_HD  # hi-res
+    if lossless:
+        return _BADGE_COLOR_LOSSLESS
+    return _BADGE_COLOR_LOSSY
+
+
 def fetch_artwork(url: str) -> Image.Image | None:
     """Fetch and cache artwork image."""
     global cached_artwork, cached_artwork_url
@@ -415,6 +466,10 @@ def render_base_frame() -> Image.Image:
         ft_artist = fit_font(artist, max_text_w, base_detail_size) if artist else None
         ft_album = fit_font(album, max_text_w, base_detail_size) if album else None
 
+        # Audio format badge
+        fmt_text = _format_audio_badge(meta) if meta else ""
+        badge_size = max(10, HEIGHT // 36)
+
         line_gap = 4
         total_h = 0
         if ft_title:
@@ -423,6 +478,8 @@ def render_base_frame() -> Image.Image:
             total_h += ft_artist.size + line_gap
         if ft_album:
             total_h += ft_album.size + line_gap // 2
+        if fmt_text:
+            total_h += badge_size + line_gap
 
         text_y = L["info_y"] + (L["info_h"] - total_h) // 2
 
@@ -445,6 +502,15 @@ def render_base_frame() -> Image.Image:
             tw = bbox[2] - bbox[0]
             draw.text((text_right - tw, text_y), album,
                       fill=ALBUM_COLOR, font=ft_album)
+            text_y += ft_album.size + line_gap
+
+        # Audio format badge (e.g. "FLAC 48kHz/16bit" or "MP3 320kbps")
+        if fmt_text:
+            ft_badge = _get_font(badge_size)
+            bbox = draw.textbbox((0, 0), fmt_text, font=ft_badge)
+            tw = bbox[2] - bbox[0]
+            draw.text((text_right - tw, text_y), fmt_text,
+                      fill=_format_badge_color(meta), font=ft_badge)
     else:
         msg = "No Music Playing"
         ft = load_bold_font(base_title_size)
@@ -527,13 +593,15 @@ def _get_volume_knob() -> Image.Image | None:
         return None
 
     if vol == _vol_knob_cache["vol"] and muted == _vol_knob_cache["muted"]:
-        return _vol_knob_cache["img"]
+        return _vol_knob_cache["np"]
 
     img = _render_volume_knob(vol, muted)
+    knob_np = np.array(img)
     _vol_knob_cache["vol"] = vol
     _vol_knob_cache["muted"] = muted
     _vol_knob_cache["img"] = img
-    return img
+    _vol_knob_cache["np"] = knob_np
+    return knob_np
 
 
 def render_spectrum() -> np.ndarray:
@@ -542,7 +610,7 @@ def render_spectrum() -> np.ndarray:
     Works directly in framebuffer pixel format to avoid per-frame RGB→RGB565
     conversion (~10ms saved on Pi 4).
     """
-    global auto_gain_ref
+    global auto_gain_ref, display_bands, peak_bands, peak_time
 
     L = layout
     now = time.monotonic()
@@ -566,47 +634,45 @@ def render_spectrum() -> np.ndarray:
     auto_gain_ref = max(auto_gain_ref, min_ref)
     gain_range = auto_gain_ref - NOISE_FLOOR
 
+    # Vectorized asymmetric smoothing
+    attack_mask = bands > display_bands
+    alpha = np.where(attack_mask, ATTACK_COEFF, DECAY_COEFF)
+    display_bands += (bands - display_bands) * alpha
+
+    # Map dBFS to 0..1 (vectorized)
+    db_vals = np.maximum(display_bands, NOISE_FLOOR)
+    fractions = np.clip((db_vals - NOISE_FLOOR) / gain_range, 0.0, 1.0)
+
+    # Peak hold — vectorized
+    new_peak_mask = fractions >= peak_bands
+    peak_bands[new_peak_mask] = fractions[new_peak_mask]
+    peak_time[new_peak_mask] = now
+    expired_mask = (~new_peak_mask) & ((now - peak_time) > PEAK_HOLD_S)
+    peak_bands[expired_mask] = 0
+
+    marker_h = max(2, bar_w // 12)
+
+    # Draw bars (this loop is necessary for array slice writes but body is minimal)
     for i in range(NUM_BANDS):
-        # Asymmetric smoothing
-        target = bands[i]
-        if target > display_bands[i]:
-            display_bands[i] += (target - display_bands[i]) * ATTACK_COEFF
-        else:
-            display_bands[i] += (target - display_bands[i]) * DECAY_COEFF
-
-        # Map dBFS to 0..1
-        db_val = max(display_bands[i], NOISE_FLOOR)
-        fraction = min((db_val - NOISE_FLOOR) / gain_range, 1.0)
-
-        # Peak hold — vanish instantly after hold time
-        if fraction >= peak_bands[i]:
-            peak_bands[i] = fraction
-            peak_time[i] = now
-        elif now - peak_time[i] > PEAK_HOLD_S:
-            peak_bands[i] = 0
-
-        bar_h = 0 if fraction < 0.01 else max(2, int(fraction * bar_area_h))
+        fraction = fractions[i]
         bx = pad + i * (bar_w + bar_gap)
 
-        if bar_h == 0 and peak_bands[i] < 0.01:
+        if fraction < 0.01 and peak_bands[i] < 0.01:
             continue
 
-        # Draw bar in native FB format
-        if bar_h > 0:
+        if fraction >= 0.01:
+            bar_h = max(2, int(fraction * bar_area_h))
             by = bar_base_y - bar_h
             buf[by:bar_base_y, bx:bx + bar_w] = BAR_COLORS_FB[i]
 
-        # Peak marker
         if peak_bands[i] > 0.01:
             peak_h = int(peak_bands[i] * bar_area_h)
             peak_y = bar_base_y - peak_h
-            marker_h = max(2, bar_w // 12)
             buf[peak_y:peak_y + marker_h, bx:bx + bar_w] = PEAK_COLORS_FB[i]
 
     # Composite volume knob — blend in RGB, convert only the small knob region
-    knob = _get_volume_knob()
-    if knob is not None:
-        knob_np = np.array(knob)
+    knob_np = _get_volume_knob()
+    if knob_np is not None:
         kh, kw = knob_np.shape[:2]
         kx = L["right_w"] - pad // 2 - kw
         ky = max(0, pad // 2 - kh // 4)
