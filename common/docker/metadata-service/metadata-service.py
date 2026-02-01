@@ -5,6 +5,7 @@ Fetches metadata from Snapserver JSON-RPC and serves it as JSON for cover displa
 Supports all sources: MPD, AirPlay, Spotify, etc.
 """
 
+import html
 import json
 import time
 import socket
@@ -154,7 +155,7 @@ class SnapcastMetadataService:
             artist = parts[0].strip()
             title = parts[1].strip() if len(parts) > 1 else title
 
-        album = song.get('Album', '') or song.get('Name', '')
+        album = html.unescape(song.get('Album', '') or song.get('Name', ''))
         return title, artist, album
 
     def get_mpd_metadata(self) -> dict[str, Any]:
@@ -186,8 +187,8 @@ class SnapcastMetadataService:
             song = self._parse_mpd_response(self._read_mpd_response(sock))
 
             title, artist, album = self._extract_radio_metadata(
-                song.get('Title', ''),
-                song.get('Artist', ''),
+                html.unescape(song.get('Title', '')),
+                html.unescape(song.get('Artist', '')),
                 song
             )
 
@@ -540,6 +541,7 @@ class SnapcastMetadataService:
         artwork_url = data['results'][0].get('artworkUrl100', '')
         return artwork_url.replace('100x100', '600x600') if artwork_url else ""
 
+
     def download_artwork(self, url: str) -> str:
         """Download artwork and save locally, return local path"""
         if not url:
@@ -588,7 +590,7 @@ class SnapcastMetadataService:
             return ""  # Don't fall back to broken URL
 
     # Fields that fluctuate and should not trigger a "metadata changed" event
-    _VOLATILE_FIELDS = {"bitrate"}
+    _VOLATILE_FIELDS = {"bitrate", "artwork", "artist_image"}
 
     def _metadata_changed(self, new: dict, old: dict) -> bool:
         """Check if metadata changed, ignoring volatile fields like bitrate."""
@@ -624,7 +626,12 @@ class SnapcastMetadataService:
             with open(self.output_file, 'w') as f:
                 json.dump(self._output_metadata(metadata), f, indent=2)
 
-            logger.info(f"Updated: {metadata.get('title', 'N/A')} - {metadata.get('artist', 'N/A')} [{metadata.get('source', 'N/A')}]")
+            title = metadata.get('title', '')
+            artist = metadata.get('artist', '')
+            if title or artist:
+                logger.info(f"Updated: {title or 'N/A'} - {artist or 'N/A'} [{metadata.get('source', 'N/A')}]")
+            else:
+                logger.debug(f"Updated metadata (no track info) [{metadata.get('source', 'N/A')}]")
 
         except Exception as e:
             logger.error(f"Failed to write metadata: {e}")
@@ -682,13 +689,22 @@ class SnapcastMetadataService:
                         metadata['artist_image'] = artist_image
 
                 if self._metadata_changed(metadata, self.current_metadata):
-                    self._failed_downloads.clear()
+                    # Clear failed download cache when the track changes
+                    old_track = (self.current_metadata.get("title"), self.current_metadata.get("artist"))
+                    new_track = (metadata.get("title"), metadata.get("artist"))
+                    if new_track != old_track:
+                        self._failed_downloads.clear()
                     self.current_metadata = metadata
                     self.write_metadata(metadata)
-                elif metadata.get("bitrate") != self.current_metadata.get("bitrate"):
-                    # Bitrate changed but nothing else — update file silently
-                    self.current_metadata = metadata
-                    self._write_metadata_quiet(metadata)
+                else:
+                    # Check if any volatile field changed — update file silently
+                    volatile_changed = any(
+                        metadata.get(f) != self.current_metadata.get(f)
+                        for f in self._VOLATILE_FIELDS
+                    )
+                    if volatile_changed:
+                        self.current_metadata = metadata
+                        self._write_metadata_quiet(metadata)
 
             except Exception as e:
                 logger.error(f"Error in main loop: {e}")
