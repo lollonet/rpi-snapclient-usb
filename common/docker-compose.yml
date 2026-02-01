@@ -18,6 +18,7 @@ services:
     privileged: true
 
   metadata-service:
+    image: ghcr.io/lollonet/rpi-snapclient-usb-metadata:latest
     build: ./docker/metadata-service
     container_name: metadata-service
     restart: unless-stopped
@@ -39,6 +40,7 @@ services:
       - ./public:/usr/share/nginx/html:ro
 
   audio-visualizer:
+    image: ghcr.io/lollonet/rpi-snapclient-usb-visualizer:latest
     build: ./docker/audio-visualizer
     container_name: audio-visualizer
     restart: unless-stopped
@@ -49,8 +51,11 @@ services:
     environment:
       - VISUALIZER_WS_PORT=8081
       - LOOPBACK_DEVICE=hw:Loopback,1,0
+      - AUDIO_FIFO=/tmp/audio/stream.fifo
+      - BAND_MODE=${BAND_MODE:-half-octave}
 
   fb-display:
+    image: ghcr.io/lollonet/rpi-snapclient-usb-fb-display:latest
     build: ./docker/fb-display
     container_name: fb-display
     restart: unless-stopped

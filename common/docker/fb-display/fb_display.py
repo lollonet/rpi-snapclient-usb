@@ -48,8 +48,8 @@ ALBUM_COLOR = (153, 153, 153)
 DIM_COLOR = (85, 85, 85)
 PANEL_BG = (17, 17, 17)
 
-# Spectrum state — must match visualizer.py
-NUM_BANDS = 19
+# Spectrum state — NUM_BANDS auto-detected from first WS message
+NUM_BANDS = 19  # default, updated on first WS message
 NOISE_FLOOR = -72.0  # dBFS
 REF_LEVEL = 0.0  # dBFS
 DB_RANGE = REF_LEVEL - NOISE_FLOOR  # 72 dB
@@ -58,6 +58,21 @@ bands = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
 display_bands = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
 peak_bands = np.zeros(NUM_BANDS, dtype=np.float64)
 peak_time = np.zeros(NUM_BANDS, dtype=np.float64)
+
+
+def resize_bands(n: int) -> None:
+    """Resize all band arrays and recompute layout when NUM_BANDS changes."""
+    global NUM_BANDS, bands, display_bands, peak_bands, peak_time, layout
+    if n == NUM_BANDS:
+        return
+    NUM_BANDS = n
+    bands = np.full(n, NOISE_FLOOR, dtype=np.float64)
+    display_bands = np.full(n, NOISE_FLOOR, dtype=np.float64)
+    peak_bands = np.zeros(n, dtype=np.float64)
+    peak_time = np.zeros(n, dtype=np.float64)
+    precompute_colors()
+    layout = compute_layout()
+    logger.info(f"Band count changed to {n}")
 
 # Smoothing coefficients
 ATTACK_COEFF = 0.6  # fast attack (higher = faster)
@@ -483,7 +498,8 @@ async def spectrum_ws_reader() -> None:
                 logger.info(f"Connected to spectrum WebSocket: {ws_url}")
                 async for message in ws:
                     values = message.split(";")
-                    for i in range(min(NUM_BANDS, len(values))):
+                    resize_bands(len(values))
+                    for i in range(NUM_BANDS):
                         try:
                             v = float(values[i])
                             bands[i] = v if not np.isnan(v) else NOISE_FLOOR

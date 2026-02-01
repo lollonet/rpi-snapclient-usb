@@ -1,6 +1,8 @@
-# Quick Start Guide
+# Quick Start Guide (Manual Setup)
 
 Get your Raspberry Pi Snapcast client running in 5 minutes.
+
+> **Prefer zero-touch?** See the [Zero-Touch Auto-Install](README.md#zero-touch-auto-install-recommended) in the README — no SSH or terminal needed.
 
 ## Prerequisites
 

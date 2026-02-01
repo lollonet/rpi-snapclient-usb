@@ -85,9 +85,31 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 - Display: 9" touchscreen (1024x600) or 4K HDMI TV (3840x2160)
 - One of the supported audio HATs listed above, or a USB audio device
 
-## Quick Setup
+## Zero-Touch Auto-Install (Recommended)
 
-See **[QUICKSTART.md](QUICKSTART.md)** for detailed 5-minute setup instructions.
+The easiest way to get started — no SSH, no terminal needed.
+
+1. Flash **Raspberry Pi OS Lite (64-bit)** with Raspberry Pi Imager
+   - Configure WiFi and hostname in the Imager settings
+2. Re-insert SD card in your computer
+3. Run `./prepare-sd.sh` (auto-detects boot partition), or manually copy `install/` folder as `snapclient/` to the boot partition
+4. Eject SD card, insert in Pi, power on
+5. Wait ~5 minutes — Pi auto-detects your audio HAT, installs everything, and reboots
+
+> **HAT auto-detection**: The Pi reads your HAT's EEPROM at boot (`/proc/device-tree/hat/product`) — no configuration needed for any of the 11 supported HATs. Falls back to USB audio if no HAT is found.
+
+> **Custom settings**: Edit `snapclient/snapclient.conf` on the boot partition before step 4 to override defaults (resolution, display mode, band mode, snapserver host).
+
+| File | Purpose |
+|------|---------|
+| `prepare-sd.sh` | Copies files to boot partition, patches `firstrun.sh` |
+| `install/snapclient.conf` | Config with sensible defaults (`AUDIO_HAT=auto`) |
+| `install/firstboot.sh` | Auto-runs on first boot, chains `setup.sh --auto` |
+| `install/README.txt` | 5-line quick reference |
+
+## Manual Setup
+
+For advanced users who prefer interactive control, see **[QUICKSTART.md](QUICKSTART.md)**.
 
 ### Summary
 
@@ -104,8 +126,15 @@ The setup script installs Docker CE, automatically configures your audio HAT and
 
 ```
 rpi-snapclient-usb/
+├── install/                    # Zero-touch auto-install files
+│   ├── snapclient.conf         # Config defaults (AUDIO_HAT=auto)
+│   ├── firstboot.sh            # First-boot installer (runs once)
+│   └── README.txt              # 5-line quick reference
+│
+├── prepare-sd.sh               # Copy files to SD boot partition
+│
 ├── common/
-│   ├── scripts/setup.sh        # Main installation script
+│   ├── scripts/setup.sh        # Main installation script (--auto mode)
 │   ├── docker-compose.yml      # Unified Docker services
 │   ├── .env.example            # Environment template
 │   ├── audio-hats/             # Audio HAT configurations (11 files)
@@ -118,6 +147,8 @@ rpi-snapclient-usb/
 │   │   └── usb-audio.conf
 │   └── docker/
 │       ├── snapclient/         # Snapclient Docker image
+│       ├── audio-visualizer/   # Spectrum analyzer (dBFS)
+│       ├── fb-display/         # Framebuffer display renderer
 │       └── metadata-service/   # Cover display metadata service
 │
 ├── scripts/                    # Development scripts

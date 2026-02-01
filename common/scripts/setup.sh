@@ -1,9 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ============================================
+# Auto mode: --auto [config_file]
+# Reads settings from config file, skips all prompts.
+# HAT auto-detection via EEPROM when AUDIO_HAT=auto.
+# ============================================
+AUTO_MODE=false
+AUTO_CONFIG=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --auto)
+            AUTO_MODE=true
+            AUTO_CONFIG="${2:-}"
+            shift 2 || shift
+            ;;
+        *) shift ;;
+    esac
+done
+
+if [ "$AUTO_MODE" = true ]; then
+    if [ -n "$AUTO_CONFIG" ] && [ -f "$AUTO_CONFIG" ]; then
+        # shellcheck source=/dev/null
+        source "$AUTO_CONFIG"
+    fi
+    # Defaults for auto mode (can be overridden by config file)
+    AUDIO_HAT="${AUDIO_HAT:-auto}"
+    DISPLAY_RESOLUTION="${DISPLAY_RESOLUTION:-1920x1080}"
+    DISPLAY_MODE="${DISPLAY_MODE:-framebuffer}"
+    BAND_MODE="${BAND_MODE:-half-octave}"
+    SNAPSERVER_HOST="${SNAPSERVER_HOST:-}"
+fi
+
 echo "========================================="
 echo "Raspberry Pi Snapclient Setup Script"
 echo "With Audio HAT and Cover Display Support"
+if [ "$AUTO_MODE" = true ]; then
+    echo "  Mode: AUTO (non-interactive)"
+fi
 echo "========================================="
 echo ""
 
@@ -17,6 +52,10 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 COMMON_DIR="$PROJECT_DIR/common"
+# Fallback: if common/ doesn't exist, project dir IS the install dir
+if [ ! -d "$COMMON_DIR" ] && [ -d "$PROJECT_DIR/audio-hats" ]; then
+    COMMON_DIR="$PROJECT_DIR"
+fi
 
 # Markers for idempotent config.txt edits
 CONFIG_MARKER_START="# --- SNAPCLIENT SETUP START ---"
@@ -67,10 +106,67 @@ get_hat_config() {
     esac
 }
 
-show_hat_options
-read -rp "Enter choice [1-11]: " hat_choice
-validate_choice "$hat_choice" 11
-HAT_CONFIG=$(get_hat_config "$hat_choice")
+detect_hat() {
+    # Detect audio HAT automatically.
+    # 1. Pi firmware reads HAT EEPROM at boot → /proc/device-tree/hat/product
+    # 2. Fallback: check ALSA card names via aplay -l
+    # 3. Final fallback: USB audio
+    local hat_product=""
+
+    if [ -f /proc/device-tree/hat/product ]; then
+        hat_product=$(tr -d '\0' < /proc/device-tree/hat/product)
+        case "$hat_product" in
+            *HiFiBerry*DAC*HD*|*DAC2*HD*)   echo "hifiberry-dac2hd" ; return ;;
+            *HiFiBerry*Digi*)               echo "hifiberry-digi"   ; return ;;
+            *HiFiBerry*DAC*)                echo "hifiberry-dac"    ; return ;;
+            *IQaudio*DigiAMP*|*DigiAMP*)    echo "iqaudio-digiamp"  ; return ;;
+            *IQaudio*Codec*|*Codec*Zero*)   echo "iqaudio-codec"    ; return ;;
+            *IQaudio*DAC*|*IQaudIO*)        echo "iqaudio-dac"      ; return ;;
+            *Boss*DAC*|*Allo*Boss*)         echo "allo-boss"        ; return ;;
+            *DigiOne*|*Allo*Digi*)          echo "allo-digione"     ; return ;;
+            *JustBoom*DAC*)                 echo "justboom-dac"     ; return ;;
+            *JustBoom*Digi*)                echo "justboom-digi"    ; return ;;
+        esac
+    fi
+
+    if command -v aplay &>/dev/null; then
+        local cards
+        cards=$(aplay -l 2>/dev/null || true)
+        case "$cards" in
+            *sndrpihifiberry*)  echo "hifiberry-dac"  ; return ;;
+            *IQaudIODAC*)       echo "iqaudio-dac"    ; return ;;
+            *IQaudIOCODEC*)     echo "iqaudio-codec"  ; return ;;
+            *BossDAC*)          echo "allo-boss"      ; return ;;
+            *sndallodigione*)   echo "allo-digione"   ; return ;;
+            *sndrpijustboom*)   echo "justboom-dac"   ; return ;;
+        esac
+    fi
+
+    echo "usb-audio"
+}
+
+# Map AUDIO_HAT config name (e.g. "usb") to .conf filename
+resolve_hat_config_name() {
+    local name="$1"
+    case "$name" in
+        usb|usb-audio)  echo "usb-audio" ;;
+        *)              echo "$name" ;;
+    esac
+}
+
+if [ "$AUTO_MODE" = true ]; then
+    # Auto mode: detect or use configured HAT
+    if [ "$AUDIO_HAT" = "auto" ]; then
+        AUDIO_HAT=$(detect_hat)
+        echo "Auto-detected HAT: $AUDIO_HAT"
+    fi
+    HAT_CONFIG=$(resolve_hat_config_name "$AUDIO_HAT")
+else
+    show_hat_options
+    read -rp "Enter choice [1-11]: " hat_choice
+    validate_choice "$hat_choice" 11
+    HAT_CONFIG=$(get_hat_config "$hat_choice")
+fi
 
 # Load HAT configuration
 # shellcheck source=/dev/null
@@ -122,28 +218,55 @@ get_resolution() {
     esac
 }
 
-show_resolution_options
-read -rp "Enter choice [1-7]: " resolution_choice
-validate_choice "$resolution_choice" 7
-DISPLAY_RESOLUTION=$(get_resolution "$resolution_choice")
-
-echo "Selected resolution: $DISPLAY_RESOLUTION"
+if [ "$AUTO_MODE" = true ]; then
+    echo "Resolution: $DISPLAY_RESOLUTION"
+else
+    show_resolution_options
+    read -rp "Enter choice [1-7]: " resolution_choice
+    validate_choice "$resolution_choice" 7
+    DISPLAY_RESOLUTION=$(get_resolution "$resolution_choice")
+    echo "Selected resolution: $DISPLAY_RESOLUTION"
+fi
 echo ""
 
 # ============================================
 # Step 3: Select Display Mode
 # ============================================
-echo "Select display mode:"
-echo "1) Browser (X11 + Chromium) — recommended"
-echo "2) Framebuffer (direct rendering, no X11)"
-read -rp "Enter choice [1-2]: " display_mode_choice
+if [ "$AUTO_MODE" = true ]; then
+    echo "Display mode: $DISPLAY_MODE"
+else
+    echo "Select display mode:"
+    echo "1) Browser (X11 + Chromium) — recommended"
+    echo "2) Framebuffer (direct rendering, no X11)"
+    read -rp "Enter choice [1-2]: " display_mode_choice
 
-case "${display_mode_choice:-1}" in
-    2) DISPLAY_MODE="framebuffer" ;;
-    *) DISPLAY_MODE="browser" ;;
-esac
+    case "${display_mode_choice:-1}" in
+        2) DISPLAY_MODE="framebuffer" ;;
+        *) DISPLAY_MODE="browser" ;;
+    esac
 
-echo "Display mode: $DISPLAY_MODE"
+    echo "Display mode: $DISPLAY_MODE"
+fi
+echo ""
+
+# ============================================
+# Step 3b: Select Spectrum Band Resolution
+# ============================================
+if [ "$AUTO_MODE" = true ]; then
+    echo "Band mode: $BAND_MODE"
+else
+    echo "Select spectrum analyzer band resolution:"
+    echo "1) Half-octave (19 bands) — recommended"
+    echo "2) Third-octave (31 bands)"
+    read -rp "Enter choice [1-2]: " band_mode_choice
+
+    case "${band_mode_choice:-1}" in
+        2) BAND_MODE="third-octave" ;;
+        *) BAND_MODE="half-octave" ;;
+    esac
+
+    echo "Band mode: $BAND_MODE"
+fi
 echo ""
 
 # ============================================
@@ -389,6 +512,19 @@ if [ -n "$BOOT_CONFIG" ]; then
     } >> "$BOOT_CONFIG"
 
     echo "Boot configuration updated"
+
+    # Disable fbcon on fb0 so the kernel console doesn't overwrite
+    # the framebuffer display (maps console to nonexistent vt9)
+    CMDLINE=""
+    if [ -f /boot/firmware/cmdline.txt ]; then
+        CMDLINE="/boot/firmware/cmdline.txt"
+    elif [ -f /boot/cmdline.txt ]; then
+        CMDLINE="/boot/cmdline.txt"
+    fi
+    if [ -n "$CMDLINE" ] && ! grep -q "fbcon=map:9" "$CMDLINE"; then
+        sed -i 's/$/ fbcon=map:9/' "$CMDLINE"
+        echo "Disabled fbcon on fb0 (cmdline.txt updated)"
+    fi
 else
     echo "Warning: Could not find boot config file"
 fi
@@ -402,11 +538,16 @@ cd "$INSTALL_DIR"
 
 # Read current snapserver from .env if exists (empty = autodiscovery)
 current_snapserver=$(grep "^SNAPSERVER_HOST=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "")
-[ -z "$current_snapserver" ] && echo "Current: mDNS autodiscovery" || echo "Current Snapserver: $current_snapserver"
 
-# Configure snapserver host (empty = autodiscovery via mDNS)
-read -rp "Enter Snapserver IP/hostname (or press Enter for autodiscovery): " snapserver_ip
-snapserver_ip=${snapserver_ip:-$current_snapserver}
+if [ "$AUTO_MODE" = true ]; then
+    snapserver_ip="${SNAPSERVER_HOST:-$current_snapserver}"
+    echo "Snapserver: ${snapserver_ip:-autodiscovery (mDNS)}"
+else
+    [ -z "$current_snapserver" ] && echo "Current: mDNS autodiscovery" || echo "Current Snapserver: $current_snapserver"
+    # Configure snapserver host (empty = autodiscovery via mDNS)
+    read -rp "Enter Snapserver IP/hostname (or press Enter for autodiscovery): " snapserver_ip
+    snapserver_ip=${snapserver_ip:-$current_snapserver}
+fi
 
 # Update SOUNDCARD value based on HAT
 if [ "$HAT_CARD_NAME" = "USB" ]; then
@@ -441,6 +582,7 @@ declare -A env_vars=(
     ["SOUNDCARD"]="$SOUNDCARD_VALUE"
     ["DISPLAY_RESOLUTION"]="$DISPLAY_RESOLUTION"
     ["DISPLAY_MODE"]="$DISPLAY_MODE"
+    ["BAND_MODE"]="$BAND_MODE"
     ["COMPOSE_PROFILES"]="$DOCKER_COMPOSE_PROFILES"
 )
 
@@ -454,6 +596,7 @@ echo "  - Client ID: $CLIENT_ID"
 echo "  - Soundcard: $SOUNDCARD_VALUE"
 echo "  - Resolution: $DISPLAY_RESOLUTION"
 echo "  - Display mode: $DISPLAY_MODE"
+echo "  - Band mode: $BAND_MODE"
 echo ""
 
 # ============================================
@@ -576,6 +719,7 @@ echo "Configuration Summary:"
 echo "  - Audio HAT: $HAT_NAME"
 echo "  - Resolution: $DISPLAY_RESOLUTION"
 echo "  - Display mode: $DISPLAY_MODE"
+echo "  - Band mode: $BAND_MODE"
 echo "  - Client ID: $CLIENT_ID"
 echo "  - Snapserver: ${snapserver_ip:-autodiscovery (mDNS)}"
 echo "  - Install dir: $INSTALL_DIR"

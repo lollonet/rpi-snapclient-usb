@@ -36,12 +36,33 @@ HOP_SIZE = 1600  # ~33ms hop = 30 FPS update rate
 BYTES_PER_READ = HOP_SIZE * FRAME_SIZE
 TARGET_FPS = 30
 
-# Half-octave bands: center frequencies
-# 19 bands from 20 Hz to 10 kHz, each spanning center/2^(1/4) to center*2^(1/4)
-BAND_CENTERS = [
-    20, 28, 40, 57, 80, 113, 160, 226, 320, 453,
-    640, 894, 1250, 1768, 2500, 3536, 5000, 7071, 10000,
-]
+# Band mode: "half-octave" (19 bands) or "third-octave" (31 bands)
+BAND_MODE = os.environ.get("BAND_MODE", "half-octave")
+
+
+def generate_band_centers(mode: str) -> list[float]:
+    """Generate center frequencies for the given band mode.
+
+    half-octave:  step = 2^(1/2), edges = center / 2^(1/4) to center * 2^(1/4)
+                  19 bands from 20 Hz to 10 kHz
+    third-octave: step = 2^(1/3), edges = center / 2^(1/6) to center * 2^(1/6)
+                  31 bands from 20 Hz to 20 kHz (ISO 266 standard)
+    """
+    if mode == "third-octave":
+        # ISO 266 preferred 1/3-octave centers (20 Hz to 20 kHz)
+        return [
+            20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160,
+            200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
+            2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000,
+        ]
+    # Default: half-octave (19 bands, 20 Hz to 10 kHz)
+    return [
+        20, 28, 40, 57, 80, 113, 160, 226, 320, 453,
+        640, 894, 1250, 1768, 2500, 3536, 5000, 7071, 10000,
+    ]
+
+
+BAND_CENTERS = generate_band_centers(BAND_MODE)
 NUM_BANDS = len(BAND_CENTERS)
 
 # Display range
@@ -62,17 +83,20 @@ audio_ring: np.ndarray = np.zeros(FFT_SIZE, dtype=np.float32)
 
 
 def compute_band_bins() -> list[tuple[int, int]]:
-    """Compute FFT bin ranges for each half-octave band.
+    """Compute FFT bin ranges for each band.
 
-    Each half-octave band spans [center/2^(1/4), center*2^(1/4)].
-    Bins are combined (summed power) within each band.
+    half-octave:  edges = center / 2^(1/4) to center * 2^(1/4)
+    third-octave: edges = center / 2^(1/6) to center * 2^(1/6)
     """
     freq_bins = np.fft.rfftfreq(FFT_SIZE, d=1.0 / SAMPLE_RATE)
-    quarter_octave = 2.0 ** 0.25  # ≈ 1.1892
+    if BAND_MODE == "third-octave":
+        edge_ratio = 2.0 ** (1.0 / 6.0)  # ≈ 1.1225
+    else:
+        edge_ratio = 2.0 ** 0.25  # ≈ 1.1892
     edges = []
     for center in BAND_CENTERS:
-        lo_freq = center / quarter_octave
-        hi_freq = center * quarter_octave
+        lo_freq = center / edge_ratio
+        hi_freq = center * edge_ratio
         lo_bin = int(np.searchsorted(freq_bins, lo_freq))
         hi_bin = int(np.searchsorted(freq_bins, hi_freq))
         hi_bin = max(hi_bin, lo_bin + 1)  # at least 1 bin
@@ -317,7 +341,7 @@ async def main() -> None:
     logger.info(f"Starting spectrum analyzer on port {WS_PORT}")
     logger.info(f"  ALSA capture: {LOOPBACK_DEVICE}")
     logger.info(f"  FFT size: {FFT_SIZE} ({FFT_SIZE / SAMPLE_RATE * 1000:.0f}ms)")
-    logger.info(f"  Bands: {NUM_BANDS} half-octave ({BAND_CENTERS[0]}-{BAND_CENTERS[-1]} Hz)")
+    logger.info(f"  Bands: {NUM_BANDS} {BAND_MODE} ({BAND_CENTERS[0]}-{BAND_CENTERS[-1]} Hz)")
     logger.info(f"  Range: {NOISE_FLOOR} to {REF_LEVEL} dBFS")
     logger.info(f"  Target FPS: {TARGET_FPS}")
 

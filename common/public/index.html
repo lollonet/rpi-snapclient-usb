@@ -203,20 +203,29 @@
         let visualizerWs = null;
         let artworkCacheBust = Date.now();
 
-        // Spectrum state
-        const NUM_BANDS = 19;
+        // Spectrum state — NUM_BANDS auto-detected from first WS message
+        let NUM_BANDS = 19; // default, updated on first WS message
         const NOISE_FLOOR = -72.0; // dBFS — must match visualizer.py
         const REF_LEVEL = 0.0;     // dBFS — top of display
         const DB_RANGE = REF_LEVEL - NOISE_FLOOR; // 72 dB dynamic range
-        const bands = new Float32Array(NUM_BANDS).fill(NOISE_FLOOR);
-        const displayBands = new Float32Array(NUM_BANDS).fill(NOISE_FLOOR);
-        const peakBands = new Float32Array(NUM_BANDS);
-        const peakTime = new Float64Array(NUM_BANDS); // timestamp of last peak
+        let bands = new Float32Array(NUM_BANDS).fill(NOISE_FLOOR);
+        let displayBands = new Float32Array(NUM_BANDS).fill(NOISE_FLOOR);
+        let peakBands = new Float32Array(NUM_BANDS);
+        let peakTime = new Float64Array(NUM_BANDS);
         const PEAK_HOLD_MS = 2000;
         const PEAK_FALL_SPEED = 0.5; // dB per frame
         let isPlaying = false;
         let hasWsData = false;
         let lastWsMessage = 0;
+
+        function resizeBands(n) {
+            if (n === NUM_BANDS) return;
+            NUM_BANDS = n;
+            bands = new Float32Array(n).fill(NOISE_FLOOR);
+            displayBands = new Float32Array(n).fill(NOISE_FLOOR);
+            peakBands = new Float32Array(n);
+            peakTime = new Float64Array(n);
+        }
 
         // Canvas setup
         const canvas = document.getElementById('spectrumCanvas');
@@ -428,7 +437,8 @@
             visualizerWs.onmessage = (event) => {
                 lastWsMessage = Date.now();
                 const values = event.data.split(';');
-                for (let i = 0; i < NUM_BANDS && i < values.length; i++) {
+                resizeBands(values.length);
+                for (let i = 0; i < NUM_BANDS; i++) {
                     const v = parseFloat(values[i]);
                     bands[i] = isNaN(v) ? NOISE_FLOOR : v;
                 }
