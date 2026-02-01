@@ -591,6 +591,7 @@ def _get_volume_knob() -> Image.Image | None:
     muted = meta.get("muted", False)
     if vol is None:
         return None
+    vol = max(0, min(100, vol))
 
     if vol == _vol_knob_cache["vol"] and muted == _vol_knob_cache["muted"]:
         return _vol_knob_cache["np"]
@@ -662,7 +663,7 @@ def render_spectrum() -> np.ndarray:
 
         if fraction >= 0.01:
             bar_h = max(2, int(fraction * bar_area_h))
-            by = bar_base_y - bar_h
+            by = max(0, bar_base_y - bar_h)
             if fb_bpp == 16:
                 buf[by:bar_base_y, bx:bx + bar_w] = BAR_COLORS_FB[i]
             else:
@@ -670,7 +671,7 @@ def render_spectrum() -> np.ndarray:
 
         if peak_bands[i] > 0.01:
             peak_h = int(peak_bands[i] * bar_area_h)
-            peak_y = bar_base_y - peak_h
+            peak_y = max(0, bar_base_y - peak_h)
             if fb_bpp == 16:
                 buf[peak_y:peak_y + marker_h, bx:bx + bar_w] = PEAK_COLORS_FB[i]
             else:
