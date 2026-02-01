@@ -104,20 +104,21 @@ class SnapcastMetadataService:
     @staticmethod
     def _detect_codec(file_path: str, audio_fmt: str) -> str:
         """Detect codec from file extension or audio format string."""
+        is_url = file_path.startswith(("http://", "https://"))
+
+        # URLs are always radio/stream — return RADIO
+        if is_url:
+            return "RADIO"
+
         codec_map = {
             "flac": "FLAC", "wav": "WAV", "aiff": "AIFF", "aif": "AIFF",
             "mp3": "MP3", "ogg": "OGG", "opus": "OPUS",
             "m4a": "AAC", "aac": "AAC", "mp4": "AAC",
             "wma": "WMA", "ape": "APE", "wv": "WV", "dsf": "DSD", "dff": "DSD",
         }
-        # For URLs, strip query params before extracting extension
-        path = file_path.split("?")[0] if "?" in file_path else file_path
-        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
         if ext in codec_map:
             return codec_map[ext]
-        # For radio streams (URLs), codec is often unknown — return empty
-        if file_path.startswith(("http://", "https://")):
-            return "RADIO"
         # Fallback: check if floating-point PCM (MPD 'f' format)
         if audio_fmt and ":f:" in audio_fmt:
             return "PCM"
@@ -651,10 +652,13 @@ class SnapcastMetadataService:
                 # If stream is MPD, always query MPD for richer metadata
                 if metadata.get('source') == 'MPD':
                     mpd_meta = self.get_mpd_metadata()
-                    if mpd_meta.get('playing') and mpd_meta.get('title'):
+                    if mpd_meta.get('playing'):
                         # Preserve volume from Snapserver
                         mpd_meta["volume"] = metadata.get("volume", 100)
                         mpd_meta["muted"] = metadata.get("muted", False)
+                        # For radio without song title, use station name
+                        if not mpd_meta.get("title") and mpd_meta.get("station_name"):
+                            mpd_meta["title"] = mpd_meta["station_name"]
                         metadata = mpd_meta
                         logger.debug("Using MPD metadata")
 
