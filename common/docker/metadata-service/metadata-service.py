@@ -5,6 +5,8 @@ Fetches metadata from Snapserver JSON-RPC and serves it as JSON for cover displa
 Supports all sources: MPD, AirPlay, Spotify, etc.
 """
 
+import html
+import ipaddress
 import json
 import time
 import socket
@@ -63,6 +65,7 @@ class SnapcastMetadataService:
         self.artist_image_cache: dict[str, str] = {}
         self.user_agent = os.environ.get("USER_AGENT", "SnapcastMetadataService/1.0")
         self._mpd_was_connected = False
+        self._failed_downloads: set[str] = set()
 
     def _create_socket_connection(self, host: str, port: int, timeout: int = 5, log_errors: bool = True) -> socket.socket | None:
         """Create a socket connection with standard settings"""
@@ -99,6 +102,51 @@ class SnapcastMetadataService:
             for key, value in [line.split(': ', 1)]
         }
 
+    @staticmethod
+    def _detect_codec(file_path: str, audio_fmt: str) -> str:
+        """Detect codec from file extension or audio format string."""
+        is_url = file_path.startswith(("http://", "https://"))
+
+        # URLs are always radio/stream — return RADIO
+        if is_url:
+            return "RADIO"
+
+        codec_map = {
+            "flac": "FLAC", "wav": "WAV", "aiff": "AIFF", "aif": "AIFF",
+            "mp3": "MP3", "ogg": "OGG", "opus": "OPUS",
+            "m4a": "AAC", "aac": "AAC", "mp4": "AAC",
+            "wma": "WMA", "ape": "APE", "wv": "WV", "dsf": "DSD", "dff": "DSD",
+        }
+        ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
+        if ext in codec_map:
+            return codec_map[ext]
+        # Fallback: check if floating-point PCM (MPD 'f' format)
+        if audio_fmt and ":f:" in audio_fmt:
+            return "PCM"
+        return ext.upper() if ext else ""
+
+    @staticmethod
+    def _parse_audio_format(audio_fmt: str) -> tuple[int, int]:
+        """Parse MPD audio format string like '48000:16:2' or '48000:f:2'.
+
+        Returns (sample_rate_hz, bit_depth). bit_depth=0 for float.
+        """
+        if not audio_fmt:
+            return 0, 0
+        parts = audio_fmt.split(":")
+        if len(parts) < 2:
+            return 0, 0
+        try:
+            sample_rate = int(parts[0])
+            bits_str = parts[1]
+            if bits_str == "f":
+                bit_depth = 32  # float = 32-bit
+            else:
+                bit_depth = int(bits_str)
+        except (ValueError, IndexError):
+            return 0, 0
+        return sample_rate, bit_depth
+
     def _extract_radio_metadata(self, title: str, artist: str, song: dict[str, str]) -> tuple[str, str, str]:
         """Extract artist/title from radio stream format and determine album"""
         if not artist and ' - ' in title:
@@ -106,7 +154,7 @@ class SnapcastMetadataService:
             artist = parts[0].strip()
             title = parts[1].strip() if len(parts) > 1 else title
 
-        album = song.get('Album', '') or song.get('Name', '')
+        album = html.unescape(song.get('Album', '') or song.get('Name', ''))
         return title, artist, album
 
     def get_mpd_metadata(self) -> dict[str, Any]:
@@ -138,10 +186,18 @@ class SnapcastMetadataService:
             song = self._parse_mpd_response(self._read_mpd_response(sock))
 
             title, artist, album = self._extract_radio_metadata(
-                song.get('Title', ''),
-                song.get('Artist', ''),
+                html.unescape(song.get('Title', '')),
+                html.unescape(song.get('Artist', '')),
                 song
             )
+
+            # Extract audio format info
+            audio_fmt = status.get('audio', '') or song.get('Format', '')
+            file_path = song.get('file', '')
+            bitrate_str = status.get('bitrate', '')
+            bitrate = int(bitrate_str) if bitrate_str else 0
+            codec = self._detect_codec(file_path, audio_fmt)
+            sample_rate, bit_depth = self._parse_audio_format(audio_fmt)
 
             return {
                 "playing": True,
@@ -150,7 +206,13 @@ class SnapcastMetadataService:
                 "album": album,
                 "artwork": "",
                 "stream_id": "MPD",
-                "source": "MPD"
+                "source": "MPD",
+                "codec": codec,
+                "bitrate": bitrate,
+                "sample_rate": sample_rate,
+                "bit_depth": bit_depth,
+                "file": file_path,
+                "station_name": song.get("Name", ""),
             }
 
         except Exception as e:
@@ -201,7 +263,7 @@ class SnapcastMetadataService:
 
             # Find our client and its stream
             server = status.get("result", {}).get("server", {})
-            client_stream_id = self._find_client_stream(server)
+            client_stream_id, volume_info = self._find_client_stream(server)
 
             if not client_stream_id:
                 logger.warning(f"Client {self.client_id} not found in server status")
@@ -224,6 +286,12 @@ class SnapcastMetadataService:
                     if artwork and "://snapcast:" in artwork:
                         artwork = artwork.replace("://snapcast:", f"://{self.snapserver_host}:")
 
+                    # Extract audio format from stream URI query params
+                    uri_query = stream.get("uri", {}).get("query", {})
+                    snap_codec = uri_query.get("codec", "")
+                    snap_fmt = uri_query.get("sampleformat", "")
+                    sample_rate, bit_depth = self._parse_audio_format(snap_fmt)
+
                     return {
                         "playing": stream.get("status") == "playing",
                         "title": meta.get("title", ""),
@@ -231,7 +299,12 @@ class SnapcastMetadataService:
                         "album": meta.get("album", ""),
                         "artwork": artwork,
                         "stream_id": client_stream_id,
-                        "source": stream.get("id", "")
+                        "source": stream.get("id", ""),
+                        "volume": volume_info.get("percent", 100),
+                        "muted": volume_info.get("muted", False),
+                        "codec": snap_codec.upper() if snap_codec else "",
+                        "sample_rate": sample_rate,
+                        "bit_depth": bit_depth,
                     }
 
             return {"playing": False}
@@ -242,15 +315,20 @@ class SnapcastMetadataService:
         finally:
             sock.close()
 
-    def _find_client_stream(self, server: dict) -> str | None:
-        """Find the stream ID for our client"""
+    def _find_client_stream(self, server: dict) -> tuple[str | None, dict]:
+        """Find the stream ID and volume info for our client.
+
+        Returns (stream_id, volume_info) where volume_info has
+        'percent' (0-100) and 'muted' (bool) keys.
+        """
         for group in server.get("groups", []):
             for client in group.get("clients", []):
                 if self._is_matching_client(client):
                     stream_id = group.get("stream_id")
+                    volume = client.get("config", {}).get("volume", {"percent": 100, "muted": False})
                     logger.debug(f"Found client {self.client_id} on stream {stream_id}")
-                    return stream_id
-        return None
+                    return stream_id, volume
+        return None, {}
 
     def _is_matching_client(self, client: dict) -> bool:
         """Check if client matches our client ID"""
@@ -277,6 +355,67 @@ class SnapcastMetadataService:
         except Exception as e:
             logger.debug(f"API request failed for {url}: {e}")
             return None
+
+    def fetch_radio_logo(self, station_name: str, stream_url: str) -> str:
+        """Fetch radio station logo from Radio-Browser API.
+
+        Searches by station name, prefers entries with a favicon and
+        matching stream URL domain.
+        """
+        if not station_name or len(station_name) > 200:
+            return ""
+
+        cache_key = f"radio|{station_name}"
+        if cache_key in self.artwork_cache:
+            return self.artwork_cache[cache_key]
+
+        # Clean station name: strip bitrate/codec suffixes like "(320k aac)"
+        clean_name = station_name
+        for sep in ("(", "[", "-"):
+            if sep in clean_name:
+                candidate = clean_name.split(sep)[0].strip()
+                if len(candidate) >= 3:
+                    clean_name = candidate
+
+        query = urllib.parse.quote(clean_name)
+        url = f"https://de1.api.radio-browser.info/json/stations/byname/{query}?limit=20&order=votes&reverse=true"
+        data = self._make_api_request(url)
+        if not data or not isinstance(data, list):
+            self.artwork_cache[cache_key] = ""
+            return ""
+
+        # Extract domain from stream URL for matching
+        stream_domain = ""
+        if stream_url:
+            try:
+                stream_domain = urllib.parse.urlparse(stream_url).netloc.split(":")[0]
+                # Strip subdomain (stream-uk1.radioparadise.com -> radioparadise.com)
+                parts = stream_domain.split(".")
+                if len(parts) > 2:
+                    stream_domain = ".".join(parts[-2:])
+            except Exception:
+                pass
+
+        # Score entries: prefer favicon + URL domain match + votes
+        best_url = ""
+        best_score = -1
+        for entry in data:
+            favicon = entry.get("favicon", "")
+            if not favicon:
+                continue
+            score = entry.get("votes", 0)
+            # Bonus for matching stream domain
+            entry_url = entry.get("url_resolved", "") or entry.get("url", "")
+            if stream_domain and stream_domain in entry_url:
+                score += 10000
+            if score > best_score:
+                best_score = score
+                best_url = favicon
+
+        if best_url:
+            logger.info(f"Found radio logo for '{station_name}': {best_url}")
+        self.artwork_cache[cache_key] = best_url
+        return best_url
 
     def fetch_musicbrainz_artwork(self, artist: str, album: str) -> str:
         """Fetch album artwork from MusicBrainz/Cover Art Archive"""
@@ -405,9 +544,35 @@ class SnapcastMetadataService:
         artwork_url = data['results'][0].get('artworkUrl100', '')
         return artwork_url.replace('100x100', '600x600') if artwork_url else ""
 
+
+    _MAX_ARTWORK_BYTES = 10_000_000  # 10 MB
+
     def download_artwork(self, url: str) -> str:
         """Download artwork and save locally, return local path"""
         if not url:
+            return ""
+
+        if url in self._failed_downloads:
+            return ""
+
+        # Validate URL scheme to prevent SSRF (file://, ftp://, etc.)
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            logger.warning(f"Rejected artwork URL with scheme: {parsed.scheme}")
+            self._failed_downloads.add(url)
+            return ""
+
+        # Block private/loopback IPs to prevent SSRF to internal services
+        try:
+            addr = socket.gethostbyname(parsed.hostname or "")
+            ip = ipaddress.ip_address(addr)
+            if ip.is_private or ip.is_loopback or ip.is_link_local:
+                logger.warning(f"Blocked artwork download to private IP: {addr}")
+                self._failed_downloads.add(url)
+                return ""
+        except (socket.gaierror, ValueError):
+            logger.warning(f"Cannot resolve artwork host: {parsed.hostname}")
+            self._failed_downloads.add(url)
             return ""
 
         try:
@@ -419,15 +584,25 @@ class SnapcastMetadataService:
             if local_path.exists() and local_path.stat().st_size > 0:
                 return f"/artwork_{url_hash}.jpg"
 
-            # Download the image with chunked reading for reliability
+            # Download the image with chunked reading, size limit, and total timeout
             req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
-            with urllib.request.urlopen(req, timeout=15) as response:
+            with urllib.request.urlopen(req, timeout=5) as response:
                 data = b""
-                while True:
+                dl_start = time.monotonic()
+                while len(data) < self._MAX_ARTWORK_BYTES:
+                    if time.monotonic() - dl_start > 15:
+                        logger.warning("Artwork download total timeout (15s)")
+                        self._failed_downloads.add(url)
+                        return ""
                     chunk = response.read(8192)
                     if not chunk:
                         break
                     data += chunk
+
+                if len(data) >= self._MAX_ARTWORK_BYTES:
+                    logger.warning(f"Artwork exceeded size limit ({self._MAX_ARTWORK_BYTES} bytes)")
+                    self._failed_downloads.add(url)
+                    return ""
 
                 if len(data) > 0:
                     with open(local_path, 'wb') as f:
@@ -436,10 +611,12 @@ class SnapcastMetadataService:
                     return f"/artwork_{url_hash}.jpg"
                 else:
                     logger.warning("Downloaded empty artwork")
+                    self._failed_downloads.add(url)
                     return ""
 
         except Exception as e:
             logger.error(f"Failed to download artwork: {e}")
+            self._failed_downloads.add(url)
             # Remove incomplete file
             try:
                 local_path.unlink(missing_ok=True)
@@ -447,15 +624,49 @@ class SnapcastMetadataService:
                 logger.warning(f"Failed to clean up incomplete artwork file {local_path}: {cleanup_error}")
             return ""  # Don't fall back to broken URL
 
+    # Fields that fluctuate and should not trigger a "metadata changed" event
+    _VOLATILE_FIELDS = {"bitrate", "artwork", "artist_image"}
+
+    def _metadata_changed(self, new: dict, old: dict) -> bool:
+        """Check if metadata changed, ignoring volatile fields like bitrate."""
+        if not old:
+            return True
+        for key in set(new.keys()) | set(old.keys()):
+            if key in self._VOLATILE_FIELDS:
+                continue
+            if new.get(key) != old.get(key):
+                return True
+        return False
+
+    # Internal fields not written to output JSON
+    _INTERNAL_FIELDS = {"file", "station_name"}
+
+    def _output_metadata(self, metadata: dict) -> dict:
+        """Strip internal fields before writing to JSON."""
+        return {k: v for k, v in metadata.items() if k not in self._INTERNAL_FIELDS}
+
+    def _write_metadata_quiet(self, metadata: dict) -> None:
+        """Write metadata to JSON without logging (for volatile-only updates)."""
+        try:
+            with open(self.output_file, 'w') as f:
+                json.dump(self._output_metadata(metadata), f, indent=2)
+        except Exception:
+            pass
+
     def write_metadata(self, metadata: dict) -> None:
         """Write metadata to JSON file"""
         try:
             self.output_file.parent.mkdir(parents=True, exist_ok=True)
 
             with open(self.output_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
+                json.dump(self._output_metadata(metadata), f, indent=2)
 
-            logger.info(f"Updated: {metadata.get('title', 'N/A')} - {metadata.get('artist', 'N/A')} [{metadata.get('source', 'N/A')}]")
+            title = metadata.get('title', '')
+            artist = metadata.get('artist', '')
+            if title or artist:
+                logger.info(f"Updated: {title or 'N/A'} - {artist or 'N/A'} [{metadata.get('source', 'N/A')}]")
+            else:
+                logger.debug(f"Updated metadata (no track info) [{metadata.get('source', 'N/A')}]")
 
         except Exception as e:
             logger.error(f"Failed to write metadata: {e}")
@@ -472,34 +683,65 @@ class SnapcastMetadataService:
                 # Get metadata from Snapserver JSON-RPC
                 metadata = self.get_metadata_from_snapserver()
 
-                # If stream is MPD and has no metadata, query MPD directly
-                if (metadata.get('source') == 'MPD' and
-                    metadata.get('playing') and
-                    not metadata.get('title')):
+                # If stream is MPD, always query MPD for richer metadata
+                if metadata.get('source') == 'MPD':
                     mpd_meta = self.get_mpd_metadata()
-                    if mpd_meta.get('title'):
+                    if mpd_meta.get('playing'):
+                        # Preserve volume from Snapserver
+                        mpd_meta["volume"] = metadata.get("volume", 100)
+                        mpd_meta["muted"] = metadata.get("muted", False)
+                        # For radio without song title, use station name
+                        if not mpd_meta.get("title") and mpd_meta.get("station_name"):
+                            mpd_meta["title"] = mpd_meta["station_name"]
                         metadata = mpd_meta
-                        logger.debug("Using MPD metadata (Snapserver had none)")
+                        logger.debug("Using MPD metadata")
 
-                # Fetch and download album artwork if playing
-                if metadata.get('playing') and metadata.get('artist'):
+                # Fetch and download artwork if playing
+                if metadata.get('playing'):
                     artwork_url = metadata.get('artwork', '')
+                    is_radio = metadata.get('codec') == 'RADIO'
 
-                    # If no artwork from stream, fetch from external APIs
-                    if not artwork_url and metadata.get('album'):
-                        artwork_url = self.fetch_album_artwork(metadata['artist'], metadata['album'])
+                    if not artwork_url:
+                        if is_radio and metadata.get('station_name'):
+                            # Radio: fetch station logo
+                            artwork_url = self.fetch_radio_logo(
+                                metadata['station_name'],
+                                metadata.get('file', ''),
+                            )
+                        elif metadata.get('artist') and metadata.get('album'):
+                            # File/stream: fetch album artwork
+                            artwork_url = self.fetch_album_artwork(
+                                metadata['artist'], metadata['album']
+                            )
 
                     # Download artwork locally for reliable serving
                     if artwork_url:
                         metadata['artwork'] = self.download_artwork(artwork_url)
 
-                    # Fetch artist image for fallback
-                    artist_image = self.fetch_artist_image(metadata['artist'])
-                    metadata['artist_image'] = artist_image
+                    # Fetch artist image for fallback (not for radio)
+                    if not is_radio and metadata.get('artist'):
+                        artist_image = self.fetch_artist_image(metadata['artist'])
+                        metadata['artist_image'] = artist_image
 
-                if metadata != self.current_metadata:
+                if self._metadata_changed(metadata, self.current_metadata):
+                    # Clear failed download cache only on genuine new track
+                    new_title = metadata.get("title", "")
+                    new_artist = metadata.get("artist", "")
+                    old_title = self.current_metadata.get("title", "")
+                    old_artist = self.current_metadata.get("artist", "")
+                    if (new_title or new_artist) and (new_title, new_artist) != (old_title, old_artist):
+                        self._failed_downloads.clear()
                     self.current_metadata = metadata
                     self.write_metadata(metadata)
+                else:
+                    # Check if any volatile field changed — update file silently
+                    volatile_changed = any(
+                        metadata.get(f) != self.current_metadata.get(f)
+                        for f in self._VOLATILE_FIELDS
+                    )
+                    if volatile_changed:
+                        self.current_metadata = metadata
+                        self._write_metadata_quiet(metadata)
 
             except Exception as e:
                 logger.error(f"Error in main loop: {e}")
