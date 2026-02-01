@@ -69,6 +69,7 @@ def resize_bands(n: int) -> None:
     peak_bands = np.zeros(n, dtype=np.float64)
     peak_time = np.zeros(n, dtype=np.float64)
     precompute_colors()
+    precompute_fb_colors()
     layout = compute_layout()
     _init_spectrum_buffer()
     logger.info(f"Band count changed to {n}")
@@ -95,11 +96,11 @@ fb_mmap = None
 fb_stride = 0
 fb_bpp = 32
 
-# Cached frames: base_frame has bg+art+text, spectrum_bg is numpy array
+# Cached frames: base_frame has bg+art+text, spectrum_bg is native FB format
 base_frame: Image.Image | None = None
 base_frame_version: int = -1
-spectrum_bg_np: np.ndarray | None = None  # numpy RGB array of clean spectrum bg
-spectrum_fb_buf: np.ndarray | None = None  # pre-allocated FB write buffer (RGB565)
+spectrum_bg_np: np.ndarray | None = None  # numpy RGB array for alpha blending
+spectrum_bg_fb: np.ndarray | None = None  # native FB format (RGB565 or BGRA32)
 
 # Cached volume knob overlay (re-rendered only when volume changes)
 _vol_knob_cache: dict = {"vol": None, "muted": None, "img": None}
@@ -140,61 +141,23 @@ def open_framebuffer() -> None:
     fb_fd = fd
 
 
-def _rgb_to_fb_bytes(rgb_array: np.ndarray) -> bytes:
-    """Convert RGB numpy array to framebuffer format bytes."""
-    if fb_bpp == 16:
-        r = rgb_array[:, :, 0].astype(np.uint16)
-        g = rgb_array[:, :, 1].astype(np.uint16)
-        b = rgb_array[:, :, 2].astype(np.uint16)
-        rgb565 = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
-        return rgb565.tobytes()
-    else:  # 32bpp
-        h, w = rgb_array.shape[:2]
-        bgra = np.empty((h, w, 4), dtype=np.uint8)
-        bgra[:, :, 0] = rgb_array[:, :, 2]  # B
-        bgra[:, :, 1] = rgb_array[:, :, 1]  # G
-        bgra[:, :, 2] = rgb_array[:, :, 0]  # R
-        bgra[:, :, 3] = 255                  # A
-        return bgra.tobytes()
+def write_region_to_fb_fast(fb_pixels: np.ndarray, x: int, y: int) -> None:
+    """Write a native-format pixel array to the framebuffer at position (x, y).
 
-
-def write_region_to_fb_fast(rgb_array: np.ndarray, x: int, y: int) -> None:
-    """Write an RGB numpy array to the framebuffer at position (x, y).
-
-    Uses a single write per row with pre-computed pixel format.
+    Accepts pre-converted pixels: uint16 (h,w) for 16bpp or uint8 (h,w,4) for 32bpp.
+    No per-frame RGB→FB conversion needed.
     """
     if fb_mmap is None:
         return
 
-    h, w = rgb_array.shape[:2]
+    h, w = fb_pixels.shape[:2]
     bpp_bytes = fb_bpp // 8
+    row_bytes = w * bpp_bytes
 
-    if fb_bpp == 16:
-        r = rgb_array[:, :, 0].astype(np.uint16)
-        g = rgb_array[:, :, 1].astype(np.uint16)
-        b = rgb_array[:, :, 2].astype(np.uint16)
-        pixels = (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)).astype(np.uint16)
-        row_bytes = w * bpp_bytes
-        # Write all rows if stride matches width (contiguous)
-        if fb_stride == WIDTH * bpp_bytes and x == 0 and w == WIDTH:
-            offset = y * fb_stride
-            fb_mmap.seek(offset)
-            fb_mmap.write(pixels.tobytes())
-        else:
-            for row in range(h):
-                offset = (y + row) * fb_stride + x * bpp_bytes
-                fb_mmap.seek(offset)
-                fb_mmap.write(pixels[row].tobytes())
-    elif fb_bpp == 32:
-        bgra = np.empty((h, w, 4), dtype=np.uint8)
-        bgra[:, :, 0] = rgb_array[:, :, 2]
-        bgra[:, :, 1] = rgb_array[:, :, 1]
-        bgra[:, :, 2] = rgb_array[:, :, 0]
-        bgra[:, :, 3] = 255
-        for row in range(h):
-            offset = (y + row) * fb_stride + x * bpp_bytes
-            fb_mmap.seek(offset)
-            fb_mmap.write(bgra[row].tobytes())
+    for row in range(h):
+        offset = (y + row) * fb_stride + x * bpp_bytes
+        fb_mmap.seek(offset)
+        fb_mmap.write(fb_pixels[row].tobytes())
 
 
 def write_full_frame(img: Image.Image) -> None:
@@ -202,9 +165,18 @@ def write_full_frame(img: Image.Image) -> None:
     if fb_mmap is None:
         return
     rgb = np.array(img.convert("RGB"))
-    raw = _rgb_to_fb_bytes(rgb)
-    fb_mmap.seek(0)
-    fb_mmap.write(raw)
+    fb_pixels = _rgb_to_fb_native(rgb)
+    # Write row by row to handle stride
+    h = fb_pixels.shape[0]
+    bpp_bytes = fb_bpp // 8
+    row_bytes = fb_pixels.shape[1] * bpp_bytes if fb_bpp == 16 else fb_pixels.shape[1] * 4
+    if fb_stride == row_bytes:
+        fb_mmap.seek(0)
+        fb_mmap.write(fb_pixels.tobytes())
+    else:
+        for row in range(h):
+            fb_mmap.seek(row * fb_stride)
+            fb_mmap.write(fb_pixels[row].tobytes())
 
 
 def _get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -322,15 +294,53 @@ def compute_layout() -> dict:
     }
 
 
+def _rgb_to_fb_native(rgb_array: np.ndarray) -> np.ndarray:
+    """Convert RGB numpy array to native FB pixel format array.
+
+    Returns uint16 (h,w) for 16bpp or uint8 (h,w,4) for 32bpp.
+    """
+    if fb_bpp == 16:
+        r = rgb_array[:, :, 0].astype(np.uint16)
+        g = rgb_array[:, :, 1].astype(np.uint16)
+        b = rgb_array[:, :, 2].astype(np.uint16)
+        return (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)).astype(np.uint16)
+    else:
+        h, w = rgb_array.shape[:2]
+        bgra = np.empty((h, w, 4), dtype=np.uint8)
+        bgra[:, :, 0] = rgb_array[:, :, 2]
+        bgra[:, :, 1] = rgb_array[:, :, 1]
+        bgra[:, :, 2] = rgb_array[:, :, 0]
+        bgra[:, :, 3] = 255
+        return bgra
+
+
+def _rgb_tuple_to_fb(r: int, g: int, b: int) -> int | tuple:
+    """Convert a single RGB tuple to native FB pixel value."""
+    if fb_bpp == 16:
+        return int(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3))
+    return (b, g, r, 255)
+
+
+# Pre-computed bar/peak colors in native FB format (populated after FB init)
+BAR_COLORS_FB: list = []
+PEAK_COLORS_FB: list = []
+
+
+def precompute_fb_colors() -> None:
+    """Pre-compute bar/peak colors in native FB pixel format."""
+    global BAR_COLORS_FB, PEAK_COLORS_FB
+    BAR_COLORS_FB = [_rgb_tuple_to_fb(*c) for c in BAR_COLORS]
+    PEAK_COLORS_FB = [_rgb_tuple_to_fb(*c) for c in PEAK_COLORS]
+
+
 def _init_spectrum_buffer() -> None:
     """Initialize pre-allocated spectrum numpy buffer after layout is known."""
-    global spectrum_bg_np, spectrum_fb_buf
+    global spectrum_bg_np, spectrum_bg_fb
     L = layout
     if not L:
         return
-    h, w = L["spec_h"], L["right_w"]
     spectrum_bg_np = None  # will be set from base frame
-    spectrum_fb_buf = np.zeros((h, w, 3), dtype=np.uint8)
+    spectrum_bg_fb = None  # will be set from base frame
 
 
 def fit_font(text: str, max_width: int, base_size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -455,14 +465,15 @@ def render_base_frame() -> Image.Image:
 
 
 def extract_spectrum_bg() -> None:
-    """Extract the spectrum region from the base frame as numpy RGB array."""
-    global spectrum_bg_np
+    """Extract the spectrum region from base frame in both RGB and native FB format."""
+    global spectrum_bg_np, spectrum_bg_fb
     L = layout
     region = base_frame.crop((
         L["right_x"], L["spec_y"],
         L["right_x"] + L["right_w"], L["spec_y"] + L["spec_h"],
     ))
     spectrum_bg_np = np.array(region.convert("RGB"), dtype=np.uint8)
+    spectrum_bg_fb = _rgb_to_fb_native(spectrum_bg_np)
 
 
 def _render_volume_knob(vol: int, muted: bool) -> Image.Image:
@@ -526,14 +537,18 @@ def _get_volume_knob() -> Image.Image | None:
 
 
 def render_spectrum() -> np.ndarray:
-    """Render spectrum bars into a numpy RGB array."""
+    """Render spectrum bars in native FB format (RGB565 or BGRA32).
+
+    Works directly in framebuffer pixel format to avoid per-frame RGB→RGB565
+    conversion (~10ms saved on Pi 4).
+    """
     global auto_gain_ref
 
     L = layout
     now = time.monotonic()
 
-    # Start from clean spectrum background (numpy copy is faster than PIL copy)
-    buf = spectrum_bg_np.copy()
+    # Start from clean spectrum background in native FB format
+    buf = spectrum_bg_fb.copy()
 
     pad = L["pad"]
     bar_area_h = L["bar_area_h"]
@@ -576,39 +591,38 @@ def render_spectrum() -> np.ndarray:
         if bar_h == 0 and peak_bands[i] < 0.01:
             continue
 
-        color = BAR_COLORS[i]
-
-        # Draw bar directly into numpy array (much faster than PIL draw)
+        # Draw bar in native FB format
         if bar_h > 0:
             by = bar_base_y - bar_h
-            buf[by:bar_base_y, bx:bx + bar_w] = color
+            buf[by:bar_base_y, bx:bx + bar_w] = BAR_COLORS_FB[i]
 
         # Peak marker
         if peak_bands[i] > 0.01:
             peak_h = int(peak_bands[i] * bar_area_h)
             peak_y = bar_base_y - peak_h
             marker_h = max(2, bar_w // 12)
-            buf[peak_y:peak_y + marker_h, bx:bx + bar_w] = PEAK_COLORS[i]
+            buf[peak_y:peak_y + marker_h, bx:bx + bar_w] = PEAK_COLORS_FB[i]
 
-    # Composite volume knob (cached, only re-rendered when volume changes)
+    # Composite volume knob — blend in RGB, convert only the small knob region
     knob = _get_volume_knob()
     if knob is not None:
         knob_np = np.array(knob)
         kh, kw = knob_np.shape[:2]
-        # Position: top-right corner
         kx = L["right_w"] - pad // 2 - kw
         ky = max(0, pad // 2 - kh // 4)
-        # Clip to buffer bounds
         ky2 = min(ky + kh, buf.shape[0])
         kx2 = min(kx + kw, buf.shape[1])
         kh_clip = ky2 - ky
         kw_clip = kx2 - kx
         if kh_clip > 0 and kw_clip > 0:
+            # Alpha-blend in RGB space using the RGB background
             alpha = knob_np[:kh_clip, :kw_clip, 3:4].astype(np.float32) / 255.0
-            rgb = knob_np[:kh_clip, :kw_clip, :3].astype(np.float32)
-            bg_region = buf[ky:ky2, kx:kx2].astype(np.float32)
-            blended = (rgb * alpha + bg_region * (1.0 - alpha)).astype(np.uint8)
-            buf[ky:ky2, kx:kx2] = blended
+            rgb_k = knob_np[:kh_clip, :kw_clip, :3].astype(np.float32)
+            bg_rgb = spectrum_bg_np[ky:ky2, kx:kx2].astype(np.float32)
+            blended = (rgb_k * alpha + bg_rgb * (1.0 - alpha)).astype(np.uint8)
+            # Convert only the small knob region to native FB format
+            knob_fb = _rgb_to_fb_native(blended)
+            buf[ky:ky2, kx:kx2] = knob_fb
 
     return buf
 
@@ -684,7 +698,7 @@ async def render_loop() -> None:
             )
             logger.info("Base frame updated (metadata changed)")
 
-        if spectrum_bg_np is None:
+        if spectrum_bg_np is None or spectrum_bg_fb is None:
             await asyncio.sleep(0.1)
             continue
 
@@ -738,6 +752,7 @@ async def main() -> None:
     open_framebuffer()
     layout = compute_layout()
     precompute_colors()
+    precompute_fb_colors()
     _init_spectrum_buffer()
 
     logger.info(
