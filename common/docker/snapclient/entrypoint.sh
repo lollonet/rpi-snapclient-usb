@@ -8,6 +8,14 @@ SOUNDCARD="${SOUNDCARD:-default}"
 ALSA_BUFFER_TIME="${ALSA_BUFFER_TIME:-200}"
 ALSA_FRAGMENTS="${ALSA_FRAGMENTS:-6}"
 
+# Validate numeric values
+case "${ALSA_BUFFER_TIME}" in
+    ''|*[!0-9]*) echo "Invalid ALSA_BUFFER_TIME, using default 200"; ALSA_BUFFER_TIME=200 ;;
+esac
+case "${ALSA_FRAGMENTS}" in
+    ''|*[!0-9]*) echo "Invalid ALSA_FRAGMENTS, using default 6"; ALSA_FRAGMENTS=6 ;;
+esac
+
 echo "Starting snapclient..."
 if [ -n "${SNAPSERVER_HOST}" ]; then
     echo "  Server: ${SNAPSERVER_HOST}:${SNAPSERVER_PORT}"
