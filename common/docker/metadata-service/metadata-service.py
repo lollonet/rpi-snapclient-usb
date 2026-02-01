@@ -137,16 +137,13 @@ class SnapcastMetadataService:
             return 0, 0
         try:
             sample_rate = int(parts[0])
-        except ValueError:
-            sample_rate = 0
-        bits_str = parts[1]
-        if bits_str == "f":
-            bit_depth = 32  # float = 32-bit
-        else:
-            try:
+            bits_str = parts[1]
+            if bits_str == "f":
+                bit_depth = 32  # float = 32-bit
+            else:
                 bit_depth = int(bits_str)
-            except ValueError:
-                bit_depth = 0
+        except (ValueError, IndexError):
+            return 0, 0
         return sample_rate, bit_depth
 
     def _extract_radio_metadata(self, title: str, artist: str, song: dict[str, str]) -> tuple[str, str, str]:
@@ -327,7 +324,7 @@ class SnapcastMetadataService:
             for client in group.get("clients", []):
                 if self._is_matching_client(client):
                     stream_id = group.get("stream_id")
-                    volume = client.get("config", {}).get("volume", {})
+                    volume = client.get("config", {}).get("volume", {"percent": 100, "muted": False})
                     logger.debug(f"Found client {self.client_id} on stream {stream_id}")
                     return stream_id, volume
         return None, {}

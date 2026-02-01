@@ -154,10 +154,13 @@ def write_region_to_fb_fast(fb_pixels: np.ndarray, x: int, y: int) -> None:
     bpp_bytes = fb_bpp // 8
     row_bytes = w * bpp_bytes
 
-    for row in range(h):
-        offset = (y + row) * fb_stride + x * bpp_bytes
-        fb_mmap.seek(offset)
-        fb_mmap.write(fb_pixels[row].tobytes())
+    try:
+        for row in range(h):
+            offset = (y + row) * fb_stride + x * bpp_bytes
+            fb_mmap.seek(offset)
+            fb_mmap.write(fb_pixels[row].tobytes())
+    except (ValueError, OSError) as e:
+        logger.warning(f"Framebuffer write failed: {e}")
 
 
 def write_full_frame(img: Image.Image) -> None:
@@ -170,13 +173,16 @@ def write_full_frame(img: Image.Image) -> None:
     h = fb_pixels.shape[0]
     bpp_bytes = fb_bpp // 8
     row_bytes = fb_pixels.shape[1] * bpp_bytes if fb_bpp == 16 else fb_pixels.shape[1] * 4
-    if fb_stride == row_bytes:
-        fb_mmap.seek(0)
-        fb_mmap.write(fb_pixels.tobytes())
-    else:
-        for row in range(h):
-            fb_mmap.seek(row * fb_stride)
-            fb_mmap.write(fb_pixels[row].tobytes())
+    try:
+        if fb_stride == row_bytes:
+            fb_mmap.seek(0)
+            fb_mmap.write(fb_pixels.tobytes())
+        else:
+            for row in range(h):
+                fb_mmap.seek(row * fb_stride)
+                fb_mmap.write(fb_pixels[row].tobytes())
+    except (ValueError, OSError) as e:
+        logger.warning(f"Framebuffer full-frame write failed: {e}")
 
 
 def _get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
