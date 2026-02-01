@@ -15,6 +15,8 @@ services:
       - SNAPSERVER_PORT=${SNAPSERVER_PORT:-1704}
       - HOST_ID=${CLIENT_ID:?CLIENT_ID not set in .env}
       - SOUNDCARD=${SOUNDCARD:-default}
+      - ALSA_BUFFER_TIME=${ALSA_BUFFER_TIME:-200}
+      - ALSA_FRAGMENTS=${ALSA_FRAGMENTS:-6}
     privileged: true
 
   metadata-service:
