@@ -156,8 +156,11 @@ def write_region_to_fb_fast(fb_pixels: np.ndarray, x: int, y: int) -> None:
         return
 
     h, w = fb_pixels.shape[:2]
+    if x < 0 or y < 0 or x + w > WIDTH or y + h > HEIGHT:
+        logger.warning(f"Framebuffer write out of bounds: ({x},{y}) {w}x{h} on {WIDTH}x{HEIGHT}")
+        return
+
     bpp_bytes = fb_bpp // 8
-    row_bytes = w * bpp_bytes
 
     try:
         for row in range(h):
@@ -729,12 +732,15 @@ async def spectrum_ws_reader() -> None:
                 async for message in ws:
                     values = message.split(";")
                     resize_bands(len(values))
-                    for i in range(NUM_BANDS):
+                    new_vals = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
+                    for i in range(min(len(values), NUM_BANDS)):
                         try:
                             v = float(values[i])
-                            bands[i] = v if not np.isnan(v) else NOISE_FLOOR
+                            new_vals[i] = v if not np.isnan(v) else NOISE_FLOOR
                         except ValueError:
-                            bands[i] = NOISE_FLOOR
+                            pass
+                    with _band_lock:
+                        bands[:] = new_vals
         except Exception as e:
             logger.debug(f"Spectrum WS error: {e}")
             bands[:] = NOISE_FLOOR

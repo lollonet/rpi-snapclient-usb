@@ -249,15 +249,19 @@ def open_alsa_capture():
 
     # Set buffer/period for low latency
     period_size = ctypes.c_ulong(HOP_SIZE)
-    libasound.snd_pcm_hw_params_set_period_size_near(
+    rc = libasound.snd_pcm_hw_params_set_period_size_near(
         handle, hw_params, ctypes.byref(period_size), None
     )
+    if rc < 0:
+        logger.warning(f"Could not set ALSA period size: error {rc}")
 
     # Explicit buffer size: 4 periods (~133ms) to prevent multi-second backlog
     buffer_size = ctypes.c_ulong(HOP_SIZE * 4)
-    libasound.snd_pcm_hw_params_set_buffer_size_near(
+    rc = libasound.snd_pcm_hw_params_set_buffer_size_near(
         handle, hw_params, ctypes.byref(buffer_size),
     )
+    if rc < 0:
+        logger.warning(f"Could not set ALSA buffer size: error {rc}")
 
     rc = libasound.snd_pcm_hw_params(handle, hw_params)
     if rc < 0:

@@ -362,6 +362,9 @@ class SnapcastMetadataService:
         Searches by station name, prefers entries with a favicon and
         matching stream URL domain.
         """
+        if not station_name or len(station_name) > 200:
+            return ""
+
         cache_key = f"radio|{station_name}"
         if cache_key in self.artwork_cache:
             return self.artwork_cache[cache_key]
@@ -581,11 +584,16 @@ class SnapcastMetadataService:
             if local_path.exists() and local_path.stat().st_size > 0:
                 return f"/artwork_{url_hash}.jpg"
 
-            # Download the image with chunked reading and size limit
+            # Download the image with chunked reading, size limit, and total timeout
             req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
             with urllib.request.urlopen(req, timeout=5) as response:
                 data = b""
+                dl_start = time.monotonic()
                 while len(data) < self._MAX_ARTWORK_BYTES:
+                    if time.monotonic() - dl_start > 15:
+                        logger.warning("Artwork download total timeout (15s)")
+                        self._failed_downloads.add(url)
+                        return ""
                     chunk = response.read(8192)
                     if not chunk:
                         break
