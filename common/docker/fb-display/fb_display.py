@@ -76,9 +76,13 @@ def resize_bands(n: int) -> None:
 
 # Smoothing coefficients
 ATTACK_COEFF = 0.6  # fast attack (higher = faster)
-DECAY_COEFF = 0.15  # slow decay (lower = slower)
-PEAK_HOLD_S = 2.0
-PEAK_FALL_DB = 0.5  # dB per frame
+DECAY_COEFF = 0.35  # decay speed (higher = faster)
+PEAK_HOLD_S = 1.5   # seconds before peak marker vanishes
+
+# Auto-gain: track running maximum for volume-independent display
+AUTO_GAIN_ATTACK = 0.3   # how fast gain rises to new peaks
+AUTO_GAIN_DECAY = 0.005  # how slowly gain drops (very slow to avoid pumping)
+auto_gain_ref: float = NOISE_FLOOR + 30  # current auto-gain reference level (dBFS)
 
 # Metadata state
 current_metadata: dict | None = None
@@ -426,6 +430,8 @@ def extract_spectrum_bg() -> Image.Image:
 
 def render_spectrum() -> Image.Image:
     """Render only the spectrum bars region. Returns a cropped image."""
+    global auto_gain_ref
+
     L = layout
     now = time.monotonic()
 
@@ -440,6 +446,18 @@ def render_spectrum() -> Image.Image:
     bar_w = L["bar_w"]
     bar_base_y = L["spec_h"] - pad  # relative to region
 
+    # Auto-gain: find current peak across all bands
+    current_max = float(np.max(bands))
+    if current_max > auto_gain_ref:
+        auto_gain_ref += (current_max - auto_gain_ref) * AUTO_GAIN_ATTACK
+    else:
+        auto_gain_ref += (current_max - auto_gain_ref) * AUTO_GAIN_DECAY
+    # Clamp: don't let reference drop too low (avoids amplifying silence)
+    min_ref = NOISE_FLOOR + 20
+    auto_gain_ref = max(auto_gain_ref, min_ref)
+    # Dynamic range for normalization
+    gain_range = auto_gain_ref - NOISE_FLOOR
+
     for i in range(NUM_BANDS):
         # Asymmetric smoothing in dB domain
         target = bands[i]
@@ -448,18 +466,17 @@ def render_spectrum() -> Image.Image:
         else:
             display_bands[i] += (target - display_bands[i]) * DECAY_COEFF
 
-        # Map dBFS to 0..1
+        # Map dBFS to 0..1 using auto-gain reference
         db_val = max(display_bands[i], NOISE_FLOOR)
-        fraction = (db_val - NOISE_FLOOR) / DB_RANGE
+        fraction = (db_val - NOISE_FLOOR) / gain_range
+        fraction = min(fraction, 1.0)
 
-        # Peak hold
+        # Peak hold — vanish instantly after hold time
         if fraction >= peak_bands[i]:
             peak_bands[i] = fraction
             peak_time[i] = now
         elif now - peak_time[i] > PEAK_HOLD_S:
-            peak_bands[i] -= PEAK_FALL_DB / DB_RANGE
-            if peak_bands[i] < 0:
-                peak_bands[i] = 0
+            peak_bands[i] = 0
 
         bar_h = 0 if fraction < 0.01 else max(2, int(fraction * bar_area_h))
         bx = pad + i * (bar_w + bar_gap)
@@ -485,6 +502,20 @@ def render_spectrum() -> Image.Image:
             marker_h = max(2, bar_w // 12)
             draw.rectangle([bx, peak_y, bx + bar_w, peak_y + marker_h],
                            fill=PEAK_COLORS[i])
+
+    # Volume indicator (top-right of spectrum region, light gray)
+    meta = current_metadata
+    if meta:
+        vol = meta.get("volume")
+        muted = meta.get("muted", False)
+        if vol is not None:
+            vol_text = "MUTE" if muted else f"Vol {vol}%"
+            vol_font = load_font(max(10, L["spec_h"] // 12))
+            bbox = draw.textbbox((0, 0), vol_text, font=vol_font)
+            tw = bbox[2] - bbox[0]
+            vx = L["right_w"] - pad - tw
+            vy = pad + 2
+            draw.text((vx, vy), vol_text, fill=ARTIST_COLOR, font=vol_font)
 
     return img
 

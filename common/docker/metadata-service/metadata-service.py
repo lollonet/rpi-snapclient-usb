@@ -201,7 +201,7 @@ class SnapcastMetadataService:
 
             # Find our client and its stream
             server = status.get("result", {}).get("server", {})
-            client_stream_id = self._find_client_stream(server)
+            client_stream_id, volume_info = self._find_client_stream(server)
 
             if not client_stream_id:
                 logger.warning(f"Client {self.client_id} not found in server status")
@@ -231,7 +231,9 @@ class SnapcastMetadataService:
                         "album": meta.get("album", ""),
                         "artwork": artwork,
                         "stream_id": client_stream_id,
-                        "source": stream.get("id", "")
+                        "source": stream.get("id", ""),
+                        "volume": volume_info.get("percent", 100),
+                        "muted": volume_info.get("muted", False),
                     }
 
             return {"playing": False}
@@ -242,15 +244,20 @@ class SnapcastMetadataService:
         finally:
             sock.close()
 
-    def _find_client_stream(self, server: dict) -> str | None:
-        """Find the stream ID for our client"""
+    def _find_client_stream(self, server: dict) -> tuple[str | None, dict]:
+        """Find the stream ID and volume info for our client.
+
+        Returns (stream_id, volume_info) where volume_info has
+        'percent' (0-100) and 'muted' (bool) keys.
+        """
         for group in server.get("groups", []):
             for client in group.get("clients", []):
                 if self._is_matching_client(client):
                     stream_id = group.get("stream_id")
+                    volume = client.get("config", {}).get("volume", {})
                     logger.debug(f"Found client {self.client_id} on stream {stream_id}")
-                    return stream_id
-        return None
+                    return stream_id, volume
+        return None, {}
 
     def _is_matching_client(self, client: dict) -> bool:
         """Check if client matches our client ID"""
@@ -478,6 +485,9 @@ class SnapcastMetadataService:
                     not metadata.get('title')):
                     mpd_meta = self.get_mpd_metadata()
                     if mpd_meta.get('title'):
+                        # Preserve volume from Snapserver when using MPD metadata
+                        mpd_meta["volume"] = metadata.get("volume", 100)
+                        mpd_meta["muted"] = metadata.get("muted", False)
                         metadata = mpd_meta
                         logger.debug("Using MPD metadata (Snapserver had none)")
 
