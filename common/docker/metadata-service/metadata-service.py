@@ -561,7 +561,7 @@ class SnapcastMetadataService:
 
             # Download the image with chunked reading for reliability
             req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
-            with urllib.request.urlopen(req, timeout=15) as response:
+            with urllib.request.urlopen(req, timeout=5) as response:
                 data = b""
                 while True:
                     chunk = response.read(8192)
@@ -648,18 +648,15 @@ class SnapcastMetadataService:
                 # Get metadata from Snapserver JSON-RPC
                 metadata = self.get_metadata_from_snapserver()
 
-                # If stream is MPD and has no metadata, query MPD directly
-                if (metadata.get('source') == 'MPD' and
-                    metadata.get('playing') and
-                    not metadata.get('title')):
+                # If stream is MPD, always query MPD for richer metadata
+                if metadata.get('source') == 'MPD':
                     mpd_meta = self.get_mpd_metadata()
-                    if mpd_meta.get('title'):
-                        # Preserve volume from Snapserver when using MPD metadata
+                    if mpd_meta.get('playing') and mpd_meta.get('title'):
+                        # Preserve volume from Snapserver
                         mpd_meta["volume"] = metadata.get("volume", 100)
                         mpd_meta["muted"] = metadata.get("muted", False)
-                        # MPD has better codec info (from file ext), keep it
                         metadata = mpd_meta
-                        logger.debug("Using MPD metadata (Snapserver had none)")
+                        logger.debug("Using MPD metadata")
 
                 # Fetch and download artwork if playing
                 if metadata.get('playing'):
@@ -689,10 +686,12 @@ class SnapcastMetadataService:
                         metadata['artist_image'] = artist_image
 
                 if self._metadata_changed(metadata, self.current_metadata):
-                    # Clear failed download cache when the track changes
-                    old_track = (self.current_metadata.get("title"), self.current_metadata.get("artist"))
-                    new_track = (metadata.get("title"), metadata.get("artist"))
-                    if new_track != old_track:
+                    # Clear failed download cache only on genuine new track
+                    new_title = metadata.get("title", "")
+                    new_artist = metadata.get("artist", "")
+                    old_title = self.current_metadata.get("title", "")
+                    old_artist = self.current_metadata.get("artist", "")
+                    if (new_title or new_artist) and (new_title, new_artist) != (old_title, old_artist):
                         self._failed_downloads.clear()
                     self.current_metadata = metadata
                     self.write_metadata(metadata)
