@@ -63,6 +63,7 @@ class SnapcastMetadataService:
         self.artist_image_cache: dict[str, str] = {}
         self.user_agent = os.environ.get("USER_AGENT", "SnapcastMetadataService/1.0")
         self._mpd_was_connected = False
+        self._failed_downloads: set[str] = set()
 
     def _create_socket_connection(self, host: str, port: int, timeout: int = 5, log_errors: bool = True) -> socket.socket | None:
         """Create a socket connection with standard settings"""
@@ -544,6 +545,9 @@ class SnapcastMetadataService:
         if not url:
             return ""
 
+        if url in self._failed_downloads:
+            return ""
+
         try:
             # Generate filename from URL hash
             url_hash = hashlib.md5(url.encode()).hexdigest()
@@ -570,10 +574,12 @@ class SnapcastMetadataService:
                     return f"/artwork_{url_hash}.jpg"
                 else:
                     logger.warning("Downloaded empty artwork")
+                    self._failed_downloads.add(url)
                     return ""
 
         except Exception as e:
             logger.error(f"Failed to download artwork: {e}")
+            self._failed_downloads.add(url)
             # Remove incomplete file
             try:
                 local_path.unlink(missing_ok=True)
@@ -676,6 +682,7 @@ class SnapcastMetadataService:
                         metadata['artist_image'] = artist_image
 
                 if self._metadata_changed(metadata, self.current_metadata):
+                    self._failed_downloads.clear()
                     self.current_metadata = metadata
                     self.write_metadata(metadata)
                 elif metadata.get("bitrate") != self.current_metadata.get("bitrate"):
