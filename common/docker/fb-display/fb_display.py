@@ -725,9 +725,15 @@ async def metadata_poller() -> None:
             )
             if resp.status_code == 200:
                 data = resp.json()
-                if data != current_metadata:
+                # Ignore volatile fields (bitrate) for change detection
+                old_stable = {k: v for k, v in (current_metadata or {}).items()
+                              if k != "bitrate"}
+                new_stable = {k: v for k, v in data.items() if k != "bitrate"}
+                if new_stable != old_stable:
                     current_metadata = data
                     metadata_version += 1
+                else:
+                    current_metadata = data  # update bitrate silently
         except Exception:
             pass
         await asyncio.sleep(2)
