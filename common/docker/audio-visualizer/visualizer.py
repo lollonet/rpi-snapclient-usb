@@ -153,17 +153,13 @@ def analyze_pcm(new_samples: np.ndarray) -> str | None:
     # Normalize by FFT size² (Parseval's theorem)
     spectrum /= (FFT_SIZE ** 2)
 
-    # Vectorized band power summation using reduceat
-    # Clamp edges to valid spectrum range
+    # Band power summation using cumulative sum for O(1) per-band lookup
     spec_len = len(spectrum)
-    edges = np.minimum(_BAND_EDGES, spec_len - 1)
+    edges = np.minimum(_BAND_EDGES, spec_len)
     hi = np.minimum(_BAND_HI, spec_len)
 
-    # Use add.reduceat for all bands at once (replaces Python for-loop)
-    band_sums = np.add.reduceat(spectrum, edges)
-    # Mask out bands where hi <= lo (no valid bins)
-    valid = hi > edges
-    band_power = np.where(valid, band_sums, 0.0)
+    cumsum = np.concatenate(([0.0], np.cumsum(spectrum)))
+    band_power = np.maximum(cumsum[hi] - cumsum[edges], 0.0)
 
     # Convert to dBFS: 10*log10(power), clamp to noise floor
     with np.errstate(divide="ignore"):

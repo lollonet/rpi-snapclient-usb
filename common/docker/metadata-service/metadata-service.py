@@ -6,6 +6,7 @@ Supports all sources: MPD, AirPlay, Spotify, etc.
 """
 
 import html
+import ipaddress
 import json
 import time
 import socket
@@ -555,6 +556,19 @@ class SnapcastMetadataService:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
             logger.warning(f"Rejected artwork URL with scheme: {parsed.scheme}")
+            self._failed_downloads.add(url)
+            return ""
+
+        # Block private/loopback IPs to prevent SSRF to internal services
+        try:
+            addr = socket.gethostbyname(parsed.hostname or "")
+            ip = ipaddress.ip_address(addr)
+            if ip.is_private or ip.is_loopback or ip.is_link_local:
+                logger.warning(f"Blocked artwork download to private IP: {addr}")
+                self._failed_downloads.add(url)
+                return ""
+        except (socket.gaierror, ValueError):
+            logger.warning(f"Cannot resolve artwork host: {parsed.hostname}")
             self._failed_downloads.add(url)
             return ""
 

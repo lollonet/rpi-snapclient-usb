@@ -17,6 +17,7 @@ import mmap
 import os
 import signal
 import sys
+import threading
 import time
 
 import numpy as np
@@ -57,21 +58,25 @@ display_bands = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
 peak_bands = np.zeros(NUM_BANDS, dtype=np.float64)
 peak_time = np.zeros(NUM_BANDS, dtype=np.float64)
 
+# Lock protecting band arrays against concurrent resize/render access
+_band_lock = threading.Lock()
+
 
 def resize_bands(n: int) -> None:
     """Resize all band arrays and recompute layout when NUM_BANDS changes."""
     global NUM_BANDS, bands, display_bands, peak_bands, peak_time, layout
     if n == NUM_BANDS:
         return
-    NUM_BANDS = n
-    bands = np.full(n, NOISE_FLOOR, dtype=np.float64)
-    display_bands = np.full(n, NOISE_FLOOR, dtype=np.float64)
-    peak_bands = np.zeros(n, dtype=np.float64)
-    peak_time = np.zeros(n, dtype=np.float64)
-    precompute_colors()
-    precompute_fb_colors()
-    layout = compute_layout()
-    _init_spectrum_buffer()
+    with _band_lock:
+        NUM_BANDS = n
+        bands = np.full(n, NOISE_FLOOR, dtype=np.float64)
+        display_bands = np.full(n, NOISE_FLOOR, dtype=np.float64)
+        peak_bands = np.zeros(n, dtype=np.float64)
+        peak_time = np.zeros(n, dtype=np.float64)
+        precompute_colors()
+        precompute_fb_colors()
+        layout = compute_layout()
+        _init_spectrum_buffer()
     logger.info(f"Band count changed to {n}")
 
 # Smoothing coefficients
@@ -306,10 +311,10 @@ def _rgb_to_fb_native(rgb_array: np.ndarray) -> np.ndarray:
     Returns uint16 (h,w) for 16bpp or uint8 (h,w,4) for 32bpp.
     """
     if fb_bpp == 16:
-        r = rgb_array[:, :, 0].astype(np.uint16)
-        g = rgb_array[:, :, 1].astype(np.uint16)
-        b = rgb_array[:, :, 2].astype(np.uint16)
-        return (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)).astype(np.uint16)
+        r5 = (rgb_array[:, :, 0] >> 3).astype(np.uint16)
+        g6 = (rgb_array[:, :, 1] >> 2).astype(np.uint16)
+        b5 = (rgb_array[:, :, 2] >> 3).astype(np.uint16)
+        return (r5 << 11) | (g6 << 5) | b5
     else:
         h, w = rgb_array.shape[:2]
         bgra = np.empty((h, w, 4), dtype=np.uint8)
@@ -617,6 +622,14 @@ def render_spectrum() -> np.ndarray:
     Works directly in framebuffer pixel format to avoid per-frame RGB→RGB565
     conversion (~10ms saved on Pi 4).
     """
+    global auto_gain_ref, display_bands, peak_bands, peak_time
+
+    with _band_lock:
+        return _render_spectrum_locked()
+
+
+def _render_spectrum_locked() -> np.ndarray:
+    """Inner render, called with _band_lock held."""
     global auto_gain_ref, display_bands, peak_bands, peak_time
 
     L = layout
