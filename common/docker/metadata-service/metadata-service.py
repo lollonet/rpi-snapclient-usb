@@ -196,7 +196,8 @@ class SnapcastMetadataService:
             # Extract audio format info
             audio_fmt = status.get('audio', '') or song.get('Format', '')
             file_path = song.get('file', '')
-            bitrate = int(status['bitrate']) if status.get('bitrate') else 0
+            bitrate_str = status.get('bitrate', '')
+            bitrate = int(bitrate_str) if bitrate_str else 0
             codec = self._detect_codec(file_path, audio_fmt)
             sample_rate, bit_depth = self._parse_audio_format(audio_fmt)
 
@@ -543,12 +544,21 @@ class SnapcastMetadataService:
         return artwork_url.replace('100x100', '600x600') if artwork_url else ""
 
 
+    _MAX_ARTWORK_BYTES = 10_000_000  # 10 MB
+
     def download_artwork(self, url: str) -> str:
         """Download artwork and save locally, return local path"""
         if not url:
             return ""
 
         if url in self._failed_downloads:
+            return ""
+
+        # Validate URL scheme to prevent SSRF (file://, ftp://, etc.)
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            logger.warning(f"Rejected artwork URL with scheme: {parsed.scheme}")
+            self._failed_downloads.add(url)
             return ""
 
         try:
@@ -560,15 +570,20 @@ class SnapcastMetadataService:
             if local_path.exists() and local_path.stat().st_size > 0:
                 return f"/artwork_{url_hash}.jpg"
 
-            # Download the image with chunked reading for reliability
+            # Download the image with chunked reading and size limit
             req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
             with urllib.request.urlopen(req, timeout=5) as response:
                 data = b""
-                while True:
+                while len(data) < self._MAX_ARTWORK_BYTES:
                     chunk = response.read(8192)
                     if not chunk:
                         break
                     data += chunk
+
+                if len(data) >= self._MAX_ARTWORK_BYTES:
+                    logger.warning(f"Artwork exceeded size limit ({self._MAX_ARTWORK_BYTES} bytes)")
+                    self._failed_downloads.add(url)
+                    return ""
 
                 if len(data) > 0:
                     with open(local_path, 'wb') as f:

@@ -632,7 +632,7 @@ def render_spectrum() -> np.ndarray:
         auto_gain_ref += (current_max - auto_gain_ref) * AUTO_GAIN_DECAY
     min_ref = NOISE_FLOOR + 20
     auto_gain_ref = max(auto_gain_ref, min_ref)
-    gain_range = auto_gain_ref - NOISE_FLOOR
+    gain_range = max(auto_gain_ref - NOISE_FLOOR, 1.0)
 
     # Vectorized asymmetric smoothing
     attack_mask = bands > display_bands
@@ -663,12 +663,18 @@ def render_spectrum() -> np.ndarray:
         if fraction >= 0.01:
             bar_h = max(2, int(fraction * bar_area_h))
             by = bar_base_y - bar_h
-            buf[by:bar_base_y, bx:bx + bar_w] = BAR_COLORS_FB[i]
+            if fb_bpp == 16:
+                buf[by:bar_base_y, bx:bx + bar_w] = BAR_COLORS_FB[i]
+            else:
+                buf[by:bar_base_y, bx:bx + bar_w, :] = BAR_COLORS_FB[i]
 
         if peak_bands[i] > 0.01:
             peak_h = int(peak_bands[i] * bar_area_h)
             peak_y = bar_base_y - peak_h
-            buf[peak_y:peak_y + marker_h, bx:bx + bar_w] = PEAK_COLORS_FB[i]
+            if fb_bpp == 16:
+                buf[peak_y:peak_y + marker_h, bx:bx + bar_w] = PEAK_COLORS_FB[i]
+            else:
+                buf[peak_y:peak_y + marker_h, bx:bx + bar_w, :] = PEAK_COLORS_FB[i]
 
     # Composite volume knob — blend in RGB, convert only the small knob region
     knob_np = _get_volume_knob()
