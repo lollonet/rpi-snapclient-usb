@@ -718,6 +718,15 @@ class SnapcastMetadataService:
                     if artwork_url:
                         metadata['artwork'] = self.download_artwork(artwork_url)
 
+                    # Fallback: if stream-provided artwork failed, try Radio-Browser API
+                    if not metadata.get('artwork') and is_radio and metadata.get('station_name'):
+                        logo_url = self.fetch_radio_logo(
+                            metadata['station_name'],
+                            metadata.get('file', ''),
+                        )
+                        if logo_url:
+                            metadata['artwork'] = self.download_artwork(logo_url)
+
                     # Fetch artist image for fallback (not for radio)
                     if not is_radio and metadata.get('artist'):
                         artist_image = self.fetch_artist_image(metadata['artist'])
