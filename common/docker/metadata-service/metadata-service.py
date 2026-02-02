@@ -264,8 +264,8 @@ class SnapcastMetadataService:
                 return ""
 
             # Escape per MPD protocol to prevent command injection
-            # Reject paths with control characters (newlines could inject commands)
-            if any(c in file_path for c in '\n\r'):
+            # Reject paths with control characters (newlines, tabs, nulls)
+            if any(c in file_path for c in '\n\r\t\x00'):
                 logger.warning("Rejected file path with control characters")
                 return ""
             safe_path = file_path.replace('\\', '\\\\').replace('"', '\\"')
@@ -337,7 +337,7 @@ class SnapcastMetadataService:
                 ext = self._image_extension(image_data)
                 local_path = self.output_file.parent / f"artwork_{art_hash}{ext}"
                 # Atomic write: temp file + rename to prevent partial reads
-                tmp_path = local_path.with_suffix(".tmp")
+                tmp_path = local_path.parent / (local_path.name + ".tmp")
                 with open(tmp_path, 'wb') as f:
                     f.write(image_data)
                 tmp_path.rename(local_path)
