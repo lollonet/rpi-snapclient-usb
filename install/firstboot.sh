@@ -29,8 +29,12 @@ if [ ! -d "$SNAP_BOOT" ]; then
     exit 1
 fi
 
-# Log everything
-exec > >(tee -a "$LOG") 2>&1
+# Log everything and mirror to HDMI console
+if [ -c /dev/tty1 ]; then
+    exec > >(tee -a "$LOG" /dev/tty1) 2>&1
+else
+    exec > >(tee -a "$LOG") 2>&1
+fi
 
 echo "========================================="
 echo "Snapclient Auto-Install"
