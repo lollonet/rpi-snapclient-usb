@@ -52,9 +52,15 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 COMMON_DIR="$PROJECT_DIR/common"
-# Fallback: if common/ doesn't exist, project dir IS the install dir
-if [ ! -d "$COMMON_DIR" ] && [ -d "$PROJECT_DIR/audio-hats" ]; then
-    COMMON_DIR="$PROJECT_DIR"
+# Fallback: if common/ doesn't exist, check if the install dir has audio-hats
+# (happens when running from /opt/snapclient/scripts/ via firstboot)
+INSTALL_DIR="$(dirname "$SCRIPT_DIR")"
+if [[ ! -d "$COMMON_DIR" ]]; then
+    if [[ -d "$INSTALL_DIR/audio-hats" ]]; then
+        COMMON_DIR="$INSTALL_DIR"
+    elif [[ -d "$PROJECT_DIR/audio-hats" ]]; then
+        COMMON_DIR="$PROJECT_DIR"
+    fi
 fi
 
 # Markers for idempotent config.txt edits
@@ -359,22 +365,20 @@ echo "Setting up installation directory..."
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/public"
 
-# Copy docker-compose.yml (always update to latest)
-cp "$COMMON_DIR/docker-compose.yml" "$INSTALL_DIR/"
+# Copy project files (skip if source == destination, e.g. firstboot installs)
+if [[ "$(realpath "$COMMON_DIR")" != "$(realpath "$INSTALL_DIR")" ]]; then
+    cp "$COMMON_DIR/docker-compose.yml" "$INSTALL_DIR/"
+    cp -r "$COMMON_DIR/docker" "$INSTALL_DIR/"
+    cp "$COMMON_DIR/public/index.html" "$INSTALL_DIR/public/"
+fi
 
 # Copy .env only if it doesn't exist (preserve user settings)
-if [ ! -f "$INSTALL_DIR/.env" ]; then
+if [[ ! -f "$INSTALL_DIR/.env" ]]; then
     echo "Creating new .env from template..."
     cp "$COMMON_DIR/.env.example" "$INSTALL_DIR/.env"
 else
     echo "Preserving existing .env configuration..."
 fi
-
-# Copy docker build files (always update to latest)
-cp -r "$COMMON_DIR/docker" "$INSTALL_DIR/"
-
-# Copy public files including index.html
-cp "$COMMON_DIR/public/index.html" "$INSTALL_DIR/public/"
 
 echo "Files copied to $INSTALL_DIR"
 echo ""
