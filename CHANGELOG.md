@@ -72,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Docker image builds triggered only on version tags
 
 ### Fixed
+- **ALSA Loopback Bypass** - Feb 2
+  - `setup.sh` was setting `SOUNDCARD=hw:<card>,0` which sends audio directly to DAC, bypassing the `multi_out` route and leaving the spectrum analyzer with silence
+  - Now always sets `SOUNDCARD=default` so audio routes through both DAC and loopback
+
+- **Radio Artwork Fallback** - Feb 2
+  - When a radio station's stream-provided artwork URL fails, now falls back to Radio-Browser API for the station's favicon
+  - Previously a broken `artUrl` in ICY metadata would block the fallback path
+
 - **ALSA Buffer Underrun** ([#13](https://github.com/lollonet/rpi-snapclient-usb/pull/13), closes [#9](https://github.com/lollonet/rpi-snapclient-usb/issues/9)) - Feb 1
   - Add `--player alsa:buffer_time=200:fragments=6` to snapclient launch command
   - Configurable via `ALSA_BUFFER_TIME` and `ALSA_FRAGMENTS` env vars
