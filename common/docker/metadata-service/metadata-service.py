@@ -223,6 +223,135 @@ class SnapcastMetadataService:
         finally:
             sock.close()
 
+    _MAX_MPD_ARTWORK_BYTES = 10_000_000  # 10 MB
+
+    @staticmethod
+    def _image_extension(data: bytes) -> str:
+        """Detect image format from magic bytes."""
+        if len(data) >= 8 and data[:8] == b'\x89PNG\r\n\x1a\n':
+            return ".png"
+        if len(data) >= 3 and data[:3] == b'GIF':
+            return ".gif"
+        if len(data) >= 12 and data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+            return ".webp"
+        return ".jpg"  # default (JPEG, or unknown)
+
+    def fetch_mpd_artwork(self, file_path: str) -> str:
+        """Fetch embedded cover art from MPD via readpicture command.
+
+        Returns local path (e.g. '/artwork_<hash>.ext') or empty string.
+        """
+        if not file_path:
+            return ""
+
+        # Check cache — use file_path as key (check all extensions)
+        art_hash = hashlib.md5(f"mpd:{file_path}".encode()).hexdigest()
+        for ext in (".jpg", ".png", ".gif", ".webp"):
+            cached = self.output_file.parent / f"artwork_{art_hash}{ext}"
+            if cached.exists() and cached.stat().st_size > 0:
+                return f"/artwork_{art_hash}{ext}"
+
+        sock = self._create_socket_connection(self.mpd_host, self.mpd_port, log_errors=False)
+        if not sock:
+            return ""
+
+        try:
+            sock.settimeout(10)  # 10s timeout for all recv() calls
+
+            # Read and validate MPD greeting
+            greeting = sock.recv(1024)
+            if not greeting.startswith(b"OK MPD"):
+                return ""
+
+            # Escape per MPD protocol to prevent command injection
+            # Reject paths with control characters (newlines, tabs, nulls)
+            if any(c in file_path for c in '\n\r\t\x00'):
+                logger.warning("Rejected file path with control characters")
+                return ""
+            safe_path = file_path.replace('\\', '\\\\').replace('"', '\\"')
+
+            image_data = b""
+            offset = 0
+
+            while True:
+                cmd = f'readpicture "{safe_path}" {offset}\n'
+                sock.sendall(cmd.encode())
+
+                # Read header lines until 'binary: N' or OK/ACK
+                header = b""
+                while b"binary:" not in header and b"OK\n" not in header and b"ACK" not in header:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        return ""  # connection closed
+                    header += chunk
+
+                if b"ACK" in header or b"binary:" not in header:
+                    break
+
+                # Parse binary size from header
+                bin_size = 0
+                for line in header.split(b"\n"):
+                    if line.startswith(b"binary: "):
+                        try:
+                            bin_size = int(line.split(b": ", 1)[1])
+                        except (ValueError, IndexError):
+                            pass
+                        break
+                else:
+                    break
+
+                if bin_size <= 0 or bin_size > self._MAX_MPD_ARTWORK_BYTES:
+                    break
+
+                # Locate binary data: find the 'binary: N\n' line end in raw bytes
+                bin_marker = f"binary: {bin_size}\n".encode()
+                marker_pos = header.find(bin_marker)
+                if marker_pos < 0:
+                    break
+                remaining = header[marker_pos + len(bin_marker):]
+
+                # Read exactly bin_size bytes of binary data
+                while len(remaining) < bin_size:
+                    chunk = sock.recv(min(8192, bin_size - len(remaining)))
+                    if not chunk:
+                        return ""  # connection closed mid-transfer
+                    remaining += chunk
+
+                # Enforce total size limit before appending
+                if len(image_data) + bin_size > self._MAX_MPD_ARTWORK_BYTES:
+                    logger.warning(f"MPD artwork exceeded size limit ({self._MAX_MPD_ARTWORK_BYTES} bytes)")
+                    return ""
+
+                image_data += remaining[:bin_size]
+                offset += bin_size
+
+                # Read trailing '\nOK\n'
+                trail = remaining[bin_size:]
+                while b"OK\n" not in trail:
+                    chunk = sock.recv(1024)
+                    if not chunk:
+                        return ""  # connection lost
+                    trail += chunk
+
+            if len(image_data) > 0:
+                ext = self._image_extension(image_data)
+                local_path = self.output_file.parent / f"artwork_{art_hash}{ext}"
+                # Atomic write: temp file + rename to prevent partial reads
+                tmp_path = local_path.parent / (local_path.name + ".tmp")
+                with open(tmp_path, 'wb') as f:
+                    f.write(image_data)
+                tmp_path.rename(local_path)
+                logger.info(f"Got MPD artwork ({len(image_data)} bytes) for {file_path}")
+                return f"/artwork_{art_hash}{ext}"
+
+            return ""
+
+        except Exception as e:
+            logger.warning(f"MPD readpicture failed: {e}")
+            return ""
+        finally:
+            sock.close()
+
     def send_rpc_request(self, sock: socket.socket, method: str, params: dict | None = None) -> dict | None:
         """Send JSON-RPC request and get response"""
         try:
@@ -535,14 +664,29 @@ class SnapcastMetadataService:
     def _fetch_itunes_artwork(self, artist: str, album: str) -> str:
         """Fetch artwork from iTunes Search API"""
         query = urllib.parse.quote(f"{artist} {album}")
-        url = f"https://itunes.apple.com/search?term={query}&media=music&entity=album&limit=1"
+        url = f"https://itunes.apple.com/search?term={query}&media=music&entity=album&limit=10"
 
         data = self._make_api_request(url)
         if not data or data.get('resultCount', 0) == 0:
             return ""
 
-        artwork_url = data['results'][0].get('artworkUrl100', '')
-        return artwork_url.replace('100x100', '600x600') if artwork_url else ""
+        # Find the result whose album name matches the requested album.
+        # Accept exact match or edition variants like "Ten (Remastered)".
+        album_lower = album.lower().strip()
+        artist_lower = artist.lower().strip()
+        for result in data['results']:
+            name = result.get('collectionName', '').lower().strip()
+            result_artist = result.get('artistName', '').lower().strip()
+            # Album must match exactly or start with the album name (edition suffix)
+            album_ok = name == album_lower or name.startswith(album_lower + " (")
+            # Artist must match exactly (case-insensitive)
+            artist_ok = artist_lower == result_artist
+            if album_ok and artist_ok:
+                artwork_url = result.get('artworkUrl100', '')
+                return artwork_url.replace('100x100', '600x600') if artwork_url else ""
+
+        # No match — skip iTunes, let MusicBrainz handle it
+        return ""
 
 
     _MAX_ARTWORK_BYTES = 10_000_000  # 10 MB
@@ -701,7 +845,14 @@ class SnapcastMetadataService:
                     artwork_url = metadata.get('artwork', '')
                     is_radio = metadata.get('codec') == 'RADIO'
 
-                    if not artwork_url:
+                    # For MPD files, try embedded cover art first (fastest, most accurate)
+                    if not artwork_url and metadata.get('source') == 'MPD' and not is_radio:
+                        mpd_art = self.fetch_mpd_artwork(metadata.get('file', ''))
+                        if mpd_art:
+                            metadata['artwork'] = mpd_art
+                            artwork_url = None  # skip further lookups
+
+                    if not artwork_url and not metadata.get('artwork'):
                         if is_radio and metadata.get('station_name'):
                             # Radio: fetch station logo
                             artwork_url = self.fetch_radio_logo(
