@@ -259,7 +259,11 @@ class SnapcastMetadataService:
             # Read MPD greeting
             sock.recv(1024)
 
-            # Escape quotes per MPD protocol to prevent command injection
+            # Escape per MPD protocol to prevent command injection
+            # Reject paths with control characters (newlines could inject commands)
+            if any(c in file_path for c in '\n\r'):
+                logger.warning("Rejected file path with control characters")
+                return ""
             safe_path = file_path.replace('\\', '\\\\').replace('"', '\\"')
 
             image_data = b""
@@ -284,17 +288,23 @@ class SnapcastMetadataService:
                 bin_size = 0
                 for line in header.split(b"\n"):
                     if line.startswith(b"binary: "):
-                        bin_size = int(line.split(b": ", 1)[1])
+                        try:
+                            bin_size = int(line.split(b": ", 1)[1])
+                        except (ValueError, IndexError):
+                            pass
                         break
                 else:
                     break
 
-                if bin_size == 0:
+                if bin_size <= 0 or bin_size > self._MAX_MPD_ARTWORK_BYTES:
                     break
 
-                # Everything after 'binary: N\n' is image data
-                header_end = header.index(b"binary: ") + len(f"binary: {bin_size}\n".encode())
-                remaining = header[header_end:]
+                # Locate binary data: find the 'binary: N\n' line end in raw bytes
+                bin_marker = f"binary: {bin_size}\n".encode()
+                marker_pos = header.find(bin_marker)
+                if marker_pos < 0:
+                    break
+                remaining = header[marker_pos + len(bin_marker):]
 
                 # Read exactly bin_size bytes of binary data
                 while len(remaining) < bin_size:
@@ -306,7 +316,7 @@ class SnapcastMetadataService:
                 image_data += remaining[:bin_size]
                 offset += bin_size
 
-                # Enforce size limit
+                # Enforce total size limit
                 if len(image_data) > self._MAX_MPD_ARTWORK_BYTES:
                     logger.warning(f"MPD artwork exceeded size limit ({self._MAX_MPD_ARTWORK_BYTES} bytes)")
                     return ""
@@ -316,7 +326,7 @@ class SnapcastMetadataService:
                 while b"OK\n" not in trail:
                     chunk = sock.recv(1024)
                     if not chunk:
-                        break  # OK not received, but we have the data
+                        return ""  # connection lost
                     trail += chunk
 
             if len(image_data) > 0:
@@ -662,7 +672,8 @@ class SnapcastMetadataService:
             result_artist = result.get('artistName', '').lower().strip()
             # Album must match exactly or start with the album name (edition suffix)
             album_ok = name == album_lower or name.startswith(album_lower + " (")
-            artist_ok = artist_lower in result_artist or result_artist in artist_lower
+            # Artist must match exactly (case-insensitive)
+            artist_ok = artist_lower == result_artist
             if album_ok and artist_ok:
                 artwork_url = result.get('artworkUrl100', '')
                 return artwork_url.replace('100x100', '600x600') if artwork_url else ""
