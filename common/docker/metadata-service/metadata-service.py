@@ -228,11 +228,11 @@ class SnapcastMetadataService:
     @staticmethod
     def _image_extension(data: bytes) -> str:
         """Detect image format from magic bytes."""
-        if data[:8] == b'\x89PNG\r\n\x1a\n':
+        if len(data) >= 8 and data[:8] == b'\x89PNG\r\n\x1a\n':
             return ".png"
-        if data[:3] == b'GIF':
+        if len(data) >= 3 and data[:3] == b'GIF':
             return ".gif"
-        if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        if len(data) >= 12 and data[:4] == b'RIFF' and data[8:12] == b'WEBP':
             return ".webp"
         return ".jpg"  # default (JPEG, or unknown)
 
@@ -256,8 +256,12 @@ class SnapcastMetadataService:
             return ""
 
         try:
-            # Read MPD greeting
-            sock.recv(1024)
+            sock.settimeout(10)  # 10s timeout for all recv() calls
+
+            # Read and validate MPD greeting
+            greeting = sock.recv(1024)
+            if not greeting.startswith(b"OK MPD"):
+                return ""
 
             # Escape per MPD protocol to prevent command injection
             # Reject paths with control characters (newlines could inject commands)
@@ -313,13 +317,13 @@ class SnapcastMetadataService:
                         return ""  # connection closed mid-transfer
                     remaining += chunk
 
-                image_data += remaining[:bin_size]
-                offset += bin_size
-
-                # Enforce total size limit
-                if len(image_data) > self._MAX_MPD_ARTWORK_BYTES:
+                # Enforce total size limit before appending
+                if len(image_data) + bin_size > self._MAX_MPD_ARTWORK_BYTES:
                     logger.warning(f"MPD artwork exceeded size limit ({self._MAX_MPD_ARTWORK_BYTES} bytes)")
                     return ""
+
+                image_data += remaining[:bin_size]
+                offset += bin_size
 
                 # Read trailing '\nOK\n'
                 trail = remaining[bin_size:]
@@ -332,15 +336,18 @@ class SnapcastMetadataService:
             if len(image_data) > 0:
                 ext = self._image_extension(image_data)
                 local_path = self.output_file.parent / f"artwork_{art_hash}{ext}"
-                with open(local_path, 'wb') as f:
+                # Atomic write: temp file + rename to prevent partial reads
+                tmp_path = local_path.with_suffix(".tmp")
+                with open(tmp_path, 'wb') as f:
                     f.write(image_data)
+                tmp_path.rename(local_path)
                 logger.info(f"Got MPD artwork ({len(image_data)} bytes) for {file_path}")
                 return f"/artwork_{art_hash}{ext}"
 
             return ""
 
         except Exception as e:
-            logger.debug(f"MPD readpicture failed: {e}")
+            logger.warning(f"MPD readpicture failed: {e}")
             return ""
         finally:
             sock.close()
