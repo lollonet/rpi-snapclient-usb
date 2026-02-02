@@ -61,10 +61,12 @@ bash scripts/setup.sh --auto "$CONFIG"
 # Mark as installed
 touch "$MARKER"
 
-echo "========================================="
-echo "Auto-install complete!"
-echo "Rebooting in 5 seconds ..."
-echo "========================================="
-
-sleep 5
+echo ""
+echo "  ━━━ Installation complete! ━━━"
+echo ""
+for i in 5 4 3 2 1; do
+    printf "\r  Rebooting in %d..." "$i"
+    sleep 1
+done
+echo ""
 reboot

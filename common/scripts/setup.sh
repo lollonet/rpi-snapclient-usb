@@ -42,6 +42,30 @@ fi
 echo "========================================="
 echo ""
 
+# ============================================
+# Progress display (auto mode only)
+# ============================================
+PROGRESS_START=$(date +%s)
+STEP_NAMES=("System dependencies" "Docker CE" "Audio HAT config"
+            "ALSA loopback" "Boot settings" "Docker environment"
+            "Systemd service" "Pulling images")
+
+progress() {
+    [[ "$AUTO_MODE" != true ]] && return
+    local step=$1 msg="$2"
+    local total=${#STEP_NAMES[@]}
+    local elapsed=$(( $(date +%s) - PROGRESS_START ))
+    printf '\n  ━━━ Snapclient Install [%d/%d] %02d:%02d ━━━\n' \
+        "$step" "$total" $((elapsed/60)) $((elapsed%60))
+    for i in $(seq 1 "$total"); do
+        if (( i < step )); then   printf '  \033[32m✓\033[0m %s\n' "${STEP_NAMES[$((i-1))]}"
+        elif (( i == step )); then printf '  \033[33m▶\033[0m %s\n' "$msg"
+        else                       printf '  ○ %s\n' "${STEP_NAMES[$((i-1))]}"
+        fi
+    done
+    printf '\n'
+}
+
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
     echo "Please run as root: sudo bash setup.sh"
@@ -287,6 +311,7 @@ echo ""
 # ============================================
 INSTALL_DIR="/opt/snapclient"
 
+progress 1 "Installing system dependencies..."
 echo "Installing system dependencies..."
 
 # Base packages (always needed)
@@ -319,6 +344,7 @@ else
     apt-get install -y $BASE_PACKAGES
 fi
 
+progress 2 "Installing Docker CE..."
 # Install Docker CE (official repository) - skip if already installed
 if command -v docker &> /dev/null && docker --version | grep -q "Docker version"; then
     echo "Docker CE already installed, skipping installation..."
@@ -386,9 +412,11 @@ echo ""
 # ============================================
 # Step 7: Configure ALSA with Loopback for Spectrum Analyzer
 # ============================================
+progress 3 "Configuring audio HAT..."
 echo "Configuring ALSA for $HAT_NAME..."
 
 # Load snd-aloop kernel module for ALSA loopback device
+progress 4 "Setting up ALSA loopback..."
 echo "Setting up ALSA loopback for spectrum analyzer..."
 modprobe snd-aloop
 if ! grep -q "snd-aloop" /etc/modules-load.d/snapclient.conf 2>/dev/null; then
@@ -455,6 +483,7 @@ echo ""
 # ============================================
 # Step 8: Configure Boot Settings (Idempotent)
 # ============================================
+progress 5 "Updating boot settings..."
 echo "Configuring boot settings..."
 BOOT_CONFIG=""
 if [ -f /boot/firmware/config.txt ]; then
@@ -537,6 +566,7 @@ echo ""
 # ============================================
 # Step 9: Configure Docker Environment
 # ============================================
+progress 6 "Configuring Docker environment..."
 echo "Configuring Docker environment..."
 cd "$INSTALL_DIR"
 
@@ -681,6 +711,7 @@ echo ""
 # ============================================
 # Step 11: Create Systemd Service for Docker
 # ============================================
+progress 7 "Creating systemd service..."
 echo "Creating systemd service for Docker containers..."
 
 # Docker Compose profiles are handled via COMPOSE_PROFILES in .env
@@ -707,6 +738,15 @@ systemctl daemon-reload
 systemctl enable snapclient.service
 
 echo "Systemd service created and enabled"
+echo ""
+
+# ============================================
+# Step 12: Pre-pull container images
+# ============================================
+progress 8 "Pulling container images..."
+echo "Pulling container images..."
+cd "$INSTALL_DIR"
+docker compose pull 2>&1 || echo "  Image pull failed — will retry on first boot"
 echo ""
 
 # ============================================
