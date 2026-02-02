@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MPD Embedded Artwork** ([#14](https://github.com/lollonet/rpi-snapclient-usb/pull/14)) - Feb 2
+  - Fetch cover art directly from audio files via MPD `readpicture` protocol — fastest, most accurate source
+  - Artwork priority chain: MPD embedded → iTunes (validated) → MusicBrainz/Cover Art Archive → Radio-Browser
+  - Image format detection from magic bytes (JPEG, PNG, GIF, WEBP)
+
 - **Auto-Gain Spectrum with Volume Indicator** ([#12](https://github.com/lollonet/rpi-snapclient-usb/pull/12)) - Feb 1
   - Volume-independent bars: auto-gain normalization reflects spectral shape regardless of playback volume
   - Volume indicator (Vol NN% / MUTE) displayed top-right of spectrum panel
@@ -63,6 +68,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - GPU memory auto-scaled (256MB ≤1080p, 512MB >1080p)
 
 ### Changed
+- **iTunes Album Validation** ([#14](https://github.com/lollonet/rpi-snapclient-usb/pull/14)) - Feb 2
+  - Search with `limit=10` and require exact album+artist name match (previously `limit=1` with no validation)
+  - Fixes wrong cover art for albums with generic names (e.g., Pearl Jam "Ten" returning MTV Unplugged)
+
 - **Vanishing Peak Markers** ([#12](https://github.com/lollonet/rpi-snapclient-usb/pull/12)) - Feb 1
   - Faster decay (0.15 → 0.35): bars fall ~2x faster
   - Peaks vanish instantly after 1.5s hold instead of gradually falling
@@ -117,6 +126,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Preserve existing .env settings
 
 ### Security
+- **MPD Protocol Hardening** ([#14](https://github.com/lollonet/rpi-snapclient-usb/pull/14)) - Feb 2
+  - Command injection prevention: reject control chars (`\n\r\t\0`), escape `\` and `"` in file paths
+  - Socket timeout (10s), MPD greeting validation, binary size limits (10 MB)
+  - Atomic file writes (temp + rename) to prevent partial reads
+
 - **SSRF Hardening** ([#12](https://github.com/lollonet/rpi-snapclient-usb/pull/12)) - Feb 1
   - URL scheme validation + DNS resolution + private IP blocking for artwork downloads
   - Total transfer timeout (15s) for artwork downloads
