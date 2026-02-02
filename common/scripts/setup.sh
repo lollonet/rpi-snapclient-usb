@@ -549,12 +549,9 @@ else
     snapserver_ip=${snapserver_ip:-$current_snapserver}
 fi
 
-# Update SOUNDCARD value based on HAT
-if [ "$HAT_CARD_NAME" = "USB" ]; then
-    SOUNDCARD_VALUE="default"
-else
-    SOUNDCARD_VALUE="hw:$HAT_CARD_NAME,0"
-fi
+# Always use "default" ALSA device — asound.conf routes it through multi_out
+# (DAC + loopback for spectrum analyzer). Direct hw: would bypass the loopback.
+SOUNDCARD_VALUE="default"
 
 # Build Docker Compose profiles based on display mode
 if [ "$DISPLAY_MODE" = "framebuffer" ]; then
