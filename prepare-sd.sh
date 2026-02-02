@@ -2,7 +2,8 @@
 # prepare-sd.sh — Prepare an SD card for Snapclient auto-install.
 #
 # Copies project files to the Pi OS boot partition and patches
-# firstrun.sh so our installer runs automatically on first boot.
+# firstrun.sh (Bullseye) or user-data (Bookworm+) so our installer
+# runs automatically on first boot.
 #
 # Usage:
 #   ./prepare-sd.sh                        # auto-detect boot partition
@@ -75,21 +76,17 @@ done
 
 echo "  Copied $(du -sh "$DEST" | cut -f1) to boot partition."
 
-# ── Patch firstrun.sh ───────────────────────────────────────────────
+# ── Patch boot scripts ──────────────────────────────────────────────
 FIRSTRUN="$BOOT/firstrun.sh"
+USERDATA="$BOOT/user-data"
 HOOK='bash /boot/firmware/snapclient/firstboot.sh'
 
-if [ -f "$FIRSTRUN" ]; then
+if [[ -f "$FIRSTRUN" ]]; then
+    # Legacy Pi Imager (Bullseye): patch firstrun.sh
     if grep -qF "firstboot.sh" "$FIRSTRUN"; then
         echo "firstrun.sh already patched, skipping."
     else
         echo "Patching firstrun.sh to chain snapclient installer ..."
-        # Insert our hook before the final 'rm -f' cleanup line.
-        # Pi Imager's firstrun.sh ends with:
-        #   rm -f /boot/firmware/firstrun.sh
-        #   ...
-        #   exit 0
-        # We insert just before the rm line.
         if grep -q '^rm -f.*firstrun\.sh' "$FIRSTRUN"; then
             sed -i.bak '/^rm -f.*firstrun\.sh/i\
 # Snapclient auto-install\
@@ -97,7 +94,6 @@ if [ -f "$FIRSTRUN" ]; then
 ' "$FIRSTRUN"
             rm -f "${FIRSTRUN}.bak"
         else
-            # Fallback: append before exit 0
             sed -i.bak '/^exit 0/i\
 # Snapclient auto-install\
 '"$HOOK"'\
@@ -106,11 +102,24 @@ if [ -f "$FIRSTRUN" ]; then
         fi
         echo "  firstrun.sh patched."
     fi
+elif [[ -f "$USERDATA" ]]; then
+    # Modern Pi Imager (Bookworm+): patch cloud-init user-data
+    if grep -qF "firstboot.sh" "$USERDATA"; then
+        echo "user-data already patched, skipping."
+    else
+        echo "Patching user-data to run snapclient installer on first boot ..."
+        if grep -q '^runcmd:' "$USERDATA"; then
+            # Append to existing runcmd section
+            sed -i.bak '/^runcmd:/a\  - [bash, /boot/firmware/snapclient/firstboot.sh]' "$USERDATA"
+            rm -f "${USERDATA}.bak"
+        else
+            printf '\nruncmd:\n  - [bash, /boot/firmware/snapclient/firstboot.sh]\n' >> "$USERDATA"
+        fi
+        echo "  user-data patched."
+    fi
 else
     echo ""
-    echo "NOTE: No firstrun.sh found on boot partition."
-    echo "  This means Pi Imager was not used, or WiFi was configured differently."
-    echo ""
+    echo "NOTE: No firstrun.sh or user-data found on boot partition."
     echo "  After booting, SSH into the Pi and run:"
     echo "    sudo bash /boot/firmware/snapclient/firstboot.sh"
     echo ""
