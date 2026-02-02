@@ -42,7 +42,8 @@ echo "Copying files to $INSTALL_DIR ..."
 mkdir -p "$INSTALL_DIR"
 # Copy all files including dotfiles (.env.example)
 cp -r "$SNAP_BOOT/"* "$INSTALL_DIR/" 2>/dev/null || true
-cp -r "$SNAP_BOOT/".* "$INSTALL_DIR/" 2>/dev/null || true
+# .??* matches dotfiles without matching . and ..
+cp -r "$SNAP_BOOT/".??* "$INSTALL_DIR/" 2>/dev/null || true
 
 # Find config file (boot partition or install dir)
 CONFIG=""

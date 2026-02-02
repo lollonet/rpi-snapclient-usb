@@ -108,7 +108,13 @@ elif [[ -f "$USERDATA" ]]; then
         echo "user-data already patched, skipping."
     else
         echo "Patching user-data to run snapclient installer on first boot ..."
-        printf '\nruncmd:\n  - [bash, /boot/firmware/snapclient/firstboot.sh]\n' >> "$USERDATA"
+        if grep -q '^runcmd:' "$USERDATA"; then
+            # Append to existing runcmd section
+            sed -i.bak '/^runcmd:/a\  - [bash, /boot/firmware/snapclient/firstboot.sh]' "$USERDATA"
+            rm -f "${USERDATA}.bak"
+        else
+            printf '\nruncmd:\n  - [bash, /boot/firmware/snapclient/firstboot.sh]\n' >> "$USERDATA"
+        fi
         echo "  user-data patched."
     fi
 else

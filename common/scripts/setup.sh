@@ -366,7 +366,7 @@ mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/public"
 
 # Copy project files (skip if source == destination, e.g. firstboot installs)
-if [[ "$(realpath "$COMMON_DIR")" != "$(realpath "$INSTALL_DIR")" ]]; then
+if [[ "$(cd "$COMMON_DIR" 2>/dev/null && pwd)" != "$(cd "$INSTALL_DIR" 2>/dev/null && pwd)" ]]; then
     cp "$COMMON_DIR/docker-compose.yml" "$INSTALL_DIR/"
     cp -r "$COMMON_DIR/docker" "$INSTALL_DIR/"
     cp "$COMMON_DIR/public/index.html" "$INSTALL_DIR/public/"
