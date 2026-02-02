@@ -71,7 +71,7 @@ The script will:
    - 800x480, 1024x600, 1280x720, 1920x1080, 2560x1440, 3840x2160
    - Or enter custom resolution (e.g., 1366x768)
 3. Auto-generate CLIENT_ID from hostname
-4. Ask for your Snapserver IP address
+4. Optionally ask for your Snapserver IP (leave empty for mDNS autodiscovery)
 5. Install Docker CE and dependencies
 6. Configure audio HAT, ALSA, and boot settings
 7. Set up cover display with X11 at selected resolution
@@ -89,11 +89,11 @@ sudo nano /opt/snapclient/.env
 
 Example `.env` (automatically configured by setup script):
 ```bash
-SNAPSERVER_HOST=192.168.1.100
+SNAPSERVER_HOST=                     # Empty = mDNS autodiscovery
 SNAPSERVER_PORT=1704
 SNAPSERVER_RPC_PORT=1705
 CLIENT_ID=snapclient-raspberrypi    # Auto-generated from hostname
-SOUNDCARD=hw:sndrpihifiberry,0      # Auto-set based on selected HAT
+SOUNDCARD=default                   # Routes through DAC + loopback for spectrum
 DISPLAY_RESOLUTION=1920x1080        # Auto-set based on selection
 ```
 
@@ -109,10 +109,11 @@ After reboot (~30 seconds), verify everything is running:
 ```bash
 # Check Docker containers
 sudo docker ps
-# Should show: snapclient, metadata-service, cover-webserver
+# Should show: snapclient, metadata-service, cover-webserver, audio-visualizer
+# Plus fb-display if using framebuffer mode
 
 # Check services
-sudo systemctl status snapclient x11-autostart
+sudo systemctl status snapclient
 
 # View snapclient logs
 sudo docker logs -f snapclient

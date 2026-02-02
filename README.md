@@ -55,9 +55,12 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 ## Features
 
 - 🎵 **Synchronized Audio**: Multi-room playback via Snapcast
-- 🎨 **Cover Display**: Full-screen album art with track metadata
-- 🎛️ **Multiple Audio HATs**: Support for 11 popular Raspberry Pi audio HATs
-- 📺 **Flexible Resolution**: 6 presets (800x480 to 4K) plus custom resolution support
+- 🎨 **Cover Display**: Full-screen album art with track metadata (MPD embedded art → iTunes → MusicBrainz)
+- 📊 **Real-Time Spectrum Analyzer**: dBFS FFT visualizer with half/third-octave bands, auto-gain normalization
+- 🔍 **mDNS Autodiscovery**: Snapserver found automatically — no IP configuration needed
+- 🎛️ **Multiple Audio HATs**: Support for 11 popular Raspberry Pi audio HATs + USB audio
+- 📺 **Flexible Display**: Framebuffer or browser mode, 6 resolution presets (800x480 to 4K)
+- ⚡ **Zero-Touch Install**: Flash SD, power on, auto-detects HAT and configures everything
 - 🐳 **Docker-based**: Pre-built images for easy deployment
 - 🔄 **Auto-start**: Systemd services for automatic startup
 
@@ -118,7 +121,7 @@ For advanced users who prefer interactive control, see **[QUICKSTART.md](QUICKST
 3. Boot Pi with your audio HAT attached
 4. Copy project files and run `sudo bash common/scripts/setup.sh`
 5. Select your audio HAT (11 options) and display resolution (6 presets + custom)
-6. Enter Snapserver IP and reboot
+6. Optionally enter Snapserver IP (or leave empty for mDNS autodiscovery) and reboot
 
 The setup script installs Docker CE, automatically configures your audio HAT and ALSA, sets up the cover display for your chosen resolution, and creates systemd services for auto-start. Client ID is automatically generated from hostname.
 
@@ -163,22 +166,28 @@ rpi-snapclient-usb/
 
 ## Configuration
 
-After installation, configure your settings in `/opt/snapclient/.env`:
+After installation, configure your settings in `/opt/snapclient/.env` (or `common/.env` if running from the repo):
 
 ```bash
-# Snapserver connection
-SNAPSERVER_HOST=your.server.ip
+# Snapserver connection (leave empty for mDNS autodiscovery)
+SNAPSERVER_HOST=
 SNAPSERVER_PORT=1704
 SNAPSERVER_RPC_PORT=1705
 
 # Client identification (auto-generated from hostname)
 CLIENT_ID=snapclient-raspberrypi
 
-# Audio device (auto-configured based on HAT selection)
-SOUNDCARD=hw:sndrpihifiberry,0
+# Audio device — must be "default" to route through DAC + loopback for spectrum
+SOUNDCARD=default
 
 # Display resolution (auto-configured)
 DISPLAY_RESOLUTION=1920x1080
+
+# Display mode: browser (X11 + Chromium) or framebuffer (direct /dev/fb0)
+DISPLAY_MODE=framebuffer
+
+# Spectrum band resolution: half-octave (19 bands) or third-octave (31 bands)
+BAND_MODE=half-octave
 ```
 
 Then restart services:
@@ -194,20 +203,21 @@ Check that everything is running:
 ```bash
 # Check Docker containers
 sudo docker ps
-# Should show: snapclient, metadata-service, cover-webserver
+# Should show: snapclient, metadata-service, cover-webserver, audio-visualizer
+# Plus fb-display if using framebuffer mode
 
 # Check snapclient logs
 sudo docker logs -f snapclient
 
 # Check systemd services
-sudo systemctl status snapclient x11-autostart
+sudo systemctl status snapclient
+# Also x11-autostart if using browser display mode
 
 # Test audio device
 aplay -l
-# Should show: sndrpihifiberry
 
-# View cover display (on Pi)
-curl http://localhost:8080
+# View cover metadata
+curl http://localhost:8080/metadata.json
 ```
 
 ## Docker Image
@@ -215,7 +225,7 @@ curl http://localhost:8080
 This project uses a unified pre-built image:
 - **Image**: `ghcr.io/lollonet/rpi-snapclient-usb:latest`
 - **Platform**: ARM64 (Raspberry Pi 4)
-- **Services**: snapclient, metadata-service, nginx
+- **Services**: snapclient, metadata-service, nginx, audio-visualizer, fb-display
 
 Update to latest version:
 ```bash
@@ -251,7 +261,7 @@ To bypass: `git push --no-verify`
 
 ### Contributing
 
-1. Create a feature branch from `dev`
+1. Create a feature branch from `main`
 2. Make changes and commit
 3. Pre-push hook runs automatically
 4. Push and create a PR
