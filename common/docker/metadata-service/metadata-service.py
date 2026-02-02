@@ -223,19 +223,33 @@ class SnapcastMetadataService:
         finally:
             sock.close()
 
+    _MAX_MPD_ARTWORK_BYTES = 10_000_000  # 10 MB
+
+    @staticmethod
+    def _image_extension(data: bytes) -> str:
+        """Detect image format from magic bytes."""
+        if data[:8] == b'\x89PNG\r\n\x1a\n':
+            return ".png"
+        if data[:3] == b'GIF':
+            return ".gif"
+        if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+            return ".webp"
+        return ".jpg"  # default (JPEG, or unknown)
+
     def fetch_mpd_artwork(self, file_path: str) -> str:
         """Fetch embedded cover art from MPD via readpicture command.
 
-        Returns local path (e.g. '/artwork_<hash>.jpg') or empty string.
+        Returns local path (e.g. '/artwork_<hash>.ext') or empty string.
         """
         if not file_path:
             return ""
 
-        # Check cache — use file_path as key
+        # Check cache — use file_path as key (check all extensions)
         art_hash = hashlib.md5(f"mpd:{file_path}".encode()).hexdigest()
-        local_path = self.output_file.parent / f"artwork_{art_hash}.jpg"
-        if local_path.exists() and local_path.stat().st_size > 0:
-            return f"/artwork_{art_hash}.jpg"
+        for ext in (".jpg", ".png", ".gif", ".webp"):
+            cached = self.output_file.parent / f"artwork_{art_hash}{ext}"
+            if cached.exists() and cached.stat().st_size > 0:
+                return f"/artwork_{art_hash}{ext}"
 
         sock = self._create_socket_connection(self.mpd_host, self.mpd_port, log_errors=False)
         if not sock:
@@ -245,27 +259,29 @@ class SnapcastMetadataService:
             # Read MPD greeting
             sock.recv(1024)
 
+            # Escape quotes per MPD protocol to prevent command injection
+            safe_path = file_path.replace('\\', '\\\\').replace('"', '\\"')
+
             image_data = b""
             offset = 0
 
             while True:
-                cmd = f'readpicture "{file_path}" {offset}\n'
+                cmd = f'readpicture "{safe_path}" {offset}\n'
                 sock.sendall(cmd.encode())
 
                 # Read header lines until 'binary: N' or OK/ACK
                 header = b""
-                while b"\n" not in header or (
-                    b"binary:" not in header and b"OK\n" not in header and b"ACK" not in header
-                ):
+                while b"binary:" not in header and b"OK\n" not in header and b"ACK" not in header:
                     chunk = sock.recv(4096)
                     if not chunk:
-                        break
+                        return ""  # connection closed
                     header += chunk
 
                 if b"ACK" in header or b"binary:" not in header:
                     break
 
                 # Parse binary size from header
+                bin_size = 0
                 for line in header.split(b"\n"):
                     if line.startswith(b"binary: "):
                         bin_size = int(line.split(b": ", 1)[1])
@@ -284,25 +300,32 @@ class SnapcastMetadataService:
                 while len(remaining) < bin_size:
                     chunk = sock.recv(min(8192, bin_size - len(remaining)))
                     if not chunk:
-                        break
+                        return ""  # connection closed mid-transfer
                     remaining += chunk
 
                 image_data += remaining[:bin_size]
                 offset += bin_size
+
+                # Enforce size limit
+                if len(image_data) > self._MAX_MPD_ARTWORK_BYTES:
+                    logger.warning(f"MPD artwork exceeded size limit ({self._MAX_MPD_ARTWORK_BYTES} bytes)")
+                    return ""
 
                 # Read trailing '\nOK\n'
                 trail = remaining[bin_size:]
                 while b"OK\n" not in trail:
                     chunk = sock.recv(1024)
                     if not chunk:
-                        break
+                        break  # OK not received, but we have the data
                     trail += chunk
 
             if len(image_data) > 0:
+                ext = self._image_extension(image_data)
+                local_path = self.output_file.parent / f"artwork_{art_hash}{ext}"
                 with open(local_path, 'wb') as f:
                     f.write(image_data)
                 logger.info(f"Got MPD artwork ({len(image_data)} bytes) for {file_path}")
-                return f"/artwork_{art_hash}.jpg"
+                return f"/artwork_{art_hash}{ext}"
 
             return ""
 
@@ -630,15 +653,21 @@ class SnapcastMetadataService:
         if not data or data.get('resultCount', 0) == 0:
             return ""
 
-        # Find the result whose album name best matches the requested album
+        # Find the result whose album name matches the requested album.
+        # Accept exact match or edition variants like "Ten (Remastered)".
         album_lower = album.lower().strip()
+        artist_lower = artist.lower().strip()
         for result in data['results']:
             name = result.get('collectionName', '').lower().strip()
-            if name == album_lower:
+            result_artist = result.get('artistName', '').lower().strip()
+            # Album must match exactly or start with the album name (edition suffix)
+            album_ok = name == album_lower or name.startswith(album_lower + " (")
+            artist_ok = artist_lower in result_artist or result_artist in artist_lower
+            if album_ok and artist_ok:
                 artwork_url = result.get('artworkUrl100', '')
                 return artwork_url.replace('100x100', '600x600') if artwork_url else ""
 
-        # No exact match — skip iTunes, let MusicBrainz handle it
+        # No match — skip iTunes, let MusicBrainz handle it
         return ""
 
 
