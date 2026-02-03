@@ -80,14 +80,14 @@ echo "  Copied $(du -sh "$DEST" | cut -f1) to boot partition."
 # KMS driver ignores hdmi_group/hdmi_mode, so we use cmdline.txt video= param.
 # setup.sh will remove this after install completes.
 CMDLINE="$BOOT/cmdline.txt"
-SETUP_VIDEO="video=HDMI-A-1:1024x768@60"
+SETUP_VIDEO="video=HDMI-A-1:800x600@60"
 
-if [[ -f "$CMDLINE" ]] && ! grep -qF "$SETUP_VIDEO" "$CMDLINE"; then
-    echo "Setting 1024x768 resolution for setup progress screen ..."
+if [[ -f "$CMDLINE" ]] && ! grep -qF "video=HDMI-A-1:" "$CMDLINE"; then
+    echo "Setting 800x600 resolution for setup progress screen ..."
     # Append video= parameter to cmdline.txt (single line file)
     sed -i.bak "s/$/ $SETUP_VIDEO/" "$CMDLINE"
     rm -f "${CMDLINE}.bak"
-    echo "  cmdline.txt patched for 1024x768 setup display."
+    echo "  cmdline.txt patched for 800x600 setup display."
 fi
 
 # ── Patch boot scripts ──────────────────────────────────────────────

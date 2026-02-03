@@ -55,17 +55,31 @@ progress() {
     local step=$1 msg="$2"
     local total=${#STEP_NAMES[@]}
     local elapsed=$SECONDS
+    local pct=$(( (step - 1) * 100 / total ))
 
     # One-line summary to stdout (goes to log via firstboot redirect)
     echo "=== Step $step/$total: $msg ($((elapsed/60))m$((elapsed%60))s) ==="
 
     # Full ANSI progress block to HDMI console only
     [[ -c /dev/tty1 ]] || return
+
+    # Build progress bar (40 chars wide)
+    local bar_width=40
+    local filled=$(( pct * bar_width / 100 ))
+    local empty=$(( bar_width - filled ))
+    local bar=""
+    for ((i=0; i<filled; i++)); do bar+="█"; done
+    for ((i=0; i<empty; i++)); do bar+="░"; done
+
     {
         printf '\033[2J\033[H'
-        printf '\n\n'
-        printf '  ━━━ Snapclient Install [%d/%d] %02d:%02d ━━━\n\n' \
-            "$step" "$total" $((elapsed/60)) $((elapsed%60))
+        printf '\n'
+        printf '  ┌────────────────────────────────────────────────┐\n'
+        printf '  │         \033[1mSnapclient Auto-Install\033[0m              │\n'
+        printf '  └────────────────────────────────────────────────┘\n'
+        printf '\n'
+        printf '  \033[36m⏱  Elapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
+        printf '  \033[33m%s\033[0m %3d%%\n\n' "$bar" "$pct"
         for i in $(seq 1 "$total"); do
             local name="${STEP_NAMES[$((i-1))]}"
             if (( i < step )); then   printf '  \033[32m✓\033[0m %s\n' "$name"
@@ -526,9 +540,9 @@ if [ -n "$BOOT_CONFIG" ]; then
     elif [ -f /boot/cmdline.txt ]; then
         CMDLINE="/boot/cmdline.txt"
     fi
-    if [ -n "$CMDLINE" ] && grep -q "video=HDMI-A-1:1024x768" "$CMDLINE"; then
-        echo "Removing temporary 1024x768 video parameter..."
-        sed -i 's/ video=HDMI-A-1:1024x768@60//' "$CMDLINE"
+    if [ -n "$CMDLINE" ] && grep -q "video=HDMI-A-1:800x600" "$CMDLINE"; then
+        echo "Removing temporary 800x600 video parameter..."
+        sed -i 's/ video=HDMI-A-1:800x600@60//' "$CMDLINE"
     fi
 
     # Extract display width from resolution
