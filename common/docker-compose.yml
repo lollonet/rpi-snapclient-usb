@@ -31,6 +31,7 @@ services:
       - CLIENT_ID=${CLIENT_ID:?CLIENT_ID not set in .env}
     volumes:
       - ./public:/app/public
+      - ./docker/metadata-service/metadata-service.py:/app/metadata-service.py:ro
 
   nginx:
     image: nginx:alpine
