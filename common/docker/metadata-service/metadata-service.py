@@ -880,7 +880,7 @@ class SnapcastMetadataService:
 
                     # Final fallback for radio: use default radio icon
                     if not metadata.get('artwork') and is_radio:
-                        metadata['artwork'] = '/default-radio.svg'
+                        metadata['artwork'] = '/default-radio.png'
 
                     # Fetch artist image for fallback (not for radio)
                     if not is_radio and metadata.get('artist'):
