@@ -45,7 +45,7 @@ echo ""
 # ============================================
 # Progress display (auto mode only)
 # ============================================
-PROGRESS_START=$(date +%s)
+SECONDS=0
 STEP_NAMES=("System dependencies" "Docker CE" "Audio HAT config"
             "ALSA loopback" "Boot settings" "Docker environment"
             "Systemd service" "Pulling images")
@@ -54,16 +54,26 @@ progress() {
     [[ "$AUTO_MODE" != true ]] && return
     local step=$1 msg="$2"
     local total=${#STEP_NAMES[@]}
-    local elapsed=$(( $(date +%s) - PROGRESS_START ))
-    printf '\n  ━━━ Snapclient Install [%d/%d] %02d:%02d ━━━\n' \
-        "$step" "$total" $((elapsed/60)) $((elapsed%60))
-    for i in $(seq 1 "$total"); do
-        if (( i < step )); then   printf '  \033[32m✓\033[0m %s\n' "${STEP_NAMES[$((i-1))]}"
-        elif (( i == step )); then printf '  \033[33m▶\033[0m %s\n' "$msg"
-        else                       printf '  ○ %s\n' "${STEP_NAMES[$((i-1))]}"
-        fi
-    done
-    printf '\n'
+    local elapsed=$SECONDS
+
+    # One-line summary to stdout (goes to log via firstboot redirect)
+    echo "=== Step $step/$total: $msg ($((elapsed/60))m$((elapsed%60))s) ==="
+
+    # Full ANSI progress block to HDMI console only
+    [[ -c /dev/tty1 ]] || return
+    {
+        printf '\033[2J\033[H'
+        printf '\n\n'
+        printf '  ━━━ Snapclient Install [%d/%d] %02d:%02d ━━━\n\n' \
+            "$step" "$total" $((elapsed/60)) $((elapsed%60))
+        for i in $(seq 1 "$total"); do
+            if (( i < step )); then   printf '  \033[32m✓\033[0m %s\n' "${STEP_NAMES[$((i-1))]}"
+            elif (( i == step )); then printf '  \033[33m▶\033[0m %s\n' "$msg"
+            else                       printf '  ○ %s\n' "${STEP_NAMES[$((i-1))]}"
+            fi
+        done
+        printf '\n'
+    } > /dev/tty1
 }
 
 # Check if running as root
