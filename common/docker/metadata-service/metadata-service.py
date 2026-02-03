@@ -35,13 +35,13 @@ def discover_snapserver(timeout: int = 10) -> tuple[str, int] | None:
             info = zeroconf.get_service_info(service_type, name)
             if info and info.parsed_addresses():
                 host = info.parsed_addresses()[0]
-                port = info.port or 1705
-                logger.info(f"Discovered Snapserver via mDNS: {host}:{port}")
-                result = (host, port)
+                # Streaming port is advertised; RPC port is streaming + 1
+                rpc_port = (info.port or 1704) + 1
+                logger.info(f"Discovered Snapserver via mDNS: {host}:{rpc_port}")
+                result = (host, rpc_port)
 
     zc = Zeroconf()
-    # Snapserver advertises _snapcast-ctrl._tcp for the control/RPC interface
-    browser = ServiceBrowser(zc, "_snapcast-ctrl._tcp.local.", handlers=[on_service_state_change])
+    browser = ServiceBrowser(zc, "_snapcast._tcp.local.", handlers=[on_service_state_change])
 
     deadline = time.time() + timeout
     while result is None and time.time() < deadline:
