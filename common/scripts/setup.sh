@@ -513,6 +513,12 @@ if [ -n "$BOOT_CONFIG" ]; then
         sed -i "/$CONFIG_MARKER_START/,/$CONFIG_MARKER_END/d" "$BOOT_CONFIG"
     fi
 
+    # Remove temporary setup display section from prepare-sd.sh
+    if grep -q "SNAPCLIENT SETUP DISPLAY" "$BOOT_CONFIG"; then
+        echo "Removing temporary setup display settings..."
+        sed -i '/# --- SNAPCLIENT SETUP DISPLAY ---/,/# --- SNAPCLIENT SETUP DISPLAY END ---/d' "$BOOT_CONFIG"
+    fi
+
     # Extract display width from resolution
     DISPLAY_WIDTH="${DISPLAY_RESOLUTION%x*}"
 

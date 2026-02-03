@@ -76,6 +76,27 @@ done
 
 echo "  Copied $(du -sh "$DEST" | cut -f1) to boot partition."
 
+# ── Set temporary resolution for setup progress screen ─────────────
+# This sets 1024x768 for the firstboot progress display.
+# setup.sh will replace these settings with final config after install.
+CONFIG_TXT="$BOOT/config.txt"
+SETUP_MARKER="# --- SNAPCLIENT SETUP DISPLAY ---"
+
+if [[ -f "$CONFIG_TXT" ]] && ! grep -qF "$SETUP_MARKER" "$CONFIG_TXT"; then
+    echo "Setting 1024x768 resolution for setup progress screen ..."
+    cat >> "$CONFIG_TXT" << 'EOF'
+
+# --- SNAPCLIENT SETUP DISPLAY ---
+# Temporary resolution for firstboot progress screen.
+# Will be replaced by setup.sh with final settings.
+hdmi_group=2
+hdmi_mode=16
+hdmi_force_hotplug=1
+# --- SNAPCLIENT SETUP DISPLAY END ---
+EOF
+    echo "  config.txt patched for 1024x768 setup display."
+fi
+
 # ── Patch boot scripts ──────────────────────────────────────────────
 FIRSTRUN="$BOOT/firstrun.sh"
 USERDATA="$BOOT/user-data"
