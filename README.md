@@ -57,10 +57,11 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 - 🎵 **Synchronized Audio**: Multi-room playback via Snapcast
 - 🎨 **Cover Display**: Full-screen album art with track metadata (MPD embedded art → iTunes → MusicBrainz)
 - 📊 **Real-Time Spectrum Analyzer**: dBFS FFT visualizer with half/third-octave bands, auto-gain normalization
+- 😴 **Standby Screen**: Retro hi-fi artwork with breathing animation when idle
 - 🔍 **mDNS Autodiscovery**: Snapserver found automatically — no IP configuration needed
 - 🎛️ **Multiple Audio HATs**: Support for 11 popular Raspberry Pi audio HATs + USB audio
 - 📺 **Flexible Display**: Framebuffer or browser mode, 6 resolution presets (800x480 to 4K)
-- ⚡ **Zero-Touch Install**: Flash SD, power on, auto-detects HAT and configures everything
+- ⚡ **Zero-Touch Install**: Flash SD, power on, auto-detects HAT with visual progress display
 - 🐳 **Docker-based**: Pre-built images for easy deployment
 - 🔄 **Auto-start**: Systemd services for automatic startup
 

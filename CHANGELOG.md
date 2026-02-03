@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Standby Screen** ([#19](https://github.com/lollonet/rpi-snapclient-usb/pull/19)) - Feb 3
+  - Retro VU meter / equalizer artwork when idle
+  - "Ready to Play" status with hostname display
+  - Subtle breathing wave animation on spectrum bars
+  - Default radio icon fallback for stations without logos
+
+- **Install Progress Display** ([#17](https://github.com/lollonet/rpi-snapclient-usb/pull/17)) - Feb 3
+  - Visual progress screen during zero-touch install (800x600)
+  - Step-by-step progress with timer and progress bar
+  - Uses KMS-compatible `video=` cmdline parameter
+
 - **MPD Embedded Artwork** ([#14](https://github.com/lollonet/rpi-snapclient-usb/pull/14)) - Feb 2
   - Fetch cover art directly from audio files via MPD `readpicture` protocol — fastest, most accurate source
   - Artwork priority chain: MPD embedded → iTunes (validated) → MusicBrainz/Cover Art Archive → Radio-Browser
@@ -81,6 +92,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Docker image builds triggered only on version tags
 
 ### Fixed
+- **ALSA Buffer Settings for All Devices** ([#18](https://github.com/lollonet/rpi-snapclient-usb/pull/18)) - Feb 3
+  - Apply buffer tuning (150ms, 4 fragments) to all ALSA output, not just `hw:*` devices
+  - Fixes underruns when using `default` soundcard
+  - Volume mount for entrypoint.sh allows local overrides
+
+- **mDNS Discovery Service Type** - Feb 3
+  - Use `_snapcast._tcp` for Snapserver discovery (not `_snapcast-ctrl._tcp`)
+  - RPC port = streaming port + 1 (1705 = 1704 + 1)
+
 - **ALSA Loopback Bypass** - Feb 2
   - `setup.sh` was setting `SOUNDCARD=hw:<card>,0` which sends audio directly to DAC, bypassing the `multi_out` route and leaving the spectrum analyzer with silence
   - Now always sets `SOUNDCARD=default` so audio routes through both DAC and loopback
