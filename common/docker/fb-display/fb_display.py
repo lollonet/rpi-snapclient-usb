@@ -89,6 +89,28 @@ AUTO_GAIN_ATTACK = 0.3   # how fast gain rises to new peaks
 AUTO_GAIN_DECAY = 0.005  # how slowly gain drops (very slow to avoid pumping)
 auto_gain_ref: float = NOISE_FLOOR + 30  # current auto-gain reference level (dBFS)
 
+# Idle animation state
+idle_animation_phase: float = 0.0
+IDLE_ANIMATION_SPEED = 0.05  # radians per frame
+
+
+def generate_idle_wave() -> np.ndarray:
+    """Generate a subtle breathing wave pattern for idle state."""
+    global idle_animation_phase
+    idle_animation_phase += IDLE_ANIMATION_SPEED
+    if idle_animation_phase > 2 * np.pi:
+        idle_animation_phase -= 2 * np.pi
+
+    # Create a gentle wave that travels across the bars
+    idle_vals = np.zeros(NUM_BANDS, dtype=np.float64)
+    for i in range(NUM_BANDS):
+        # Slow wave with phase offset per bar
+        wave = np.sin(idle_animation_phase + i * 0.3) * 0.5 + 0.5
+        # Scale to very low levels (just above noise floor)
+        idle_vals[i] = NOISE_FLOOR + 8 + wave * 6
+    return idle_vals
+
+
 # Metadata state
 current_metadata: dict | None = None
 metadata_version: int = 0  # bumped on change
@@ -468,6 +490,18 @@ def render_base_frame() -> Image.Image:
                     (L["art_size"], L["art_size"]), Image.LANCZOS
                 )
                 bg.paste(resized, (L["art_x"], L["art_y"]))
+    else:
+        # Standby mode: show standby artwork
+        standby_path = "/app/public/standby.png"
+        if os.path.exists(standby_path):
+            try:
+                standby_img = Image.open(standby_path)
+                resized = standby_img.resize(
+                    (L["art_size"], L["art_size"]), Image.LANCZOS
+                )
+                bg.paste(resized, (L["art_x"], L["art_y"]))
+            except Exception:
+                pass
 
     # Right top: track info (right-aligned, font shrinks to fit)
     text_right = L["right_x"] + L["right_w"]
@@ -526,13 +560,40 @@ def render_base_frame() -> Image.Image:
             draw.text((text_right - tw, text_y), fmt_text,
                       fill=_format_badge_color(meta), font=ft_badge)
     else:
-        msg = "No Music Playing"
-        ft = load_bold_font(base_title_size)
-        text_y = L["info_y"] + L["info_h"] // 2 - ft.size // 2
-        bbox = draw.textbbox((0, 0), msg, font=ft)
+        # Standby mode: show reassuring status
+        hostname = os.environ.get("HOSTNAME", os.environ.get("CLIENT_ID", "snapclient"))
+
+        # Line 1: Ready status
+        msg1 = "Ready to Play"
+        ft1 = load_bold_font(base_title_size)
+
+        # Line 2: Hostname/client ID
+        msg2 = f"▸ {hostname}"
+        ft2 = _get_font(base_detail_size)
+
+        # Line 3: Connection status
+        msg3 = "Waiting for audio..."
+        ft3 = _get_font(max(10, base_detail_size - 4))
+
+        # Calculate total height
+        line_gap = 8
+        total_h = ft1.size + ft2.size + ft3.size + line_gap * 2
+        text_y = L["info_y"] + (L["info_h"] - total_h) // 2
+
+        # Draw lines (right-aligned)
+        bbox = draw.textbbox((0, 0), msg1, font=ft1)
         tw = bbox[2] - bbox[0]
-        draw.text((text_right - tw, text_y), msg,
-                  fill=DIM_COLOR, font=ft)
+        draw.text((text_right - tw, text_y), msg1, fill=(100, 180, 120), font=ft1)
+        text_y += ft1.size + line_gap
+
+        bbox = draw.textbbox((0, 0), msg2, font=ft2)
+        tw = bbox[2] - bbox[0]
+        draw.text((text_right - tw, text_y), msg2, fill=ARTIST_COLOR, font=ft2)
+        text_y += ft2.size + line_gap
+
+        bbox = draw.textbbox((0, 0), msg3, font=ft3)
+        tw = bbox[2] - bbox[0]
+        draw.text((text_right - tw, text_y), msg3, fill=DIM_COLOR, font=ft3)
 
     # Spectrum panel background (will be overwritten each frame)
     draw.rounded_rectangle(
@@ -819,13 +880,12 @@ async def render_loop() -> None:
         elif is_playing:
             fps = FPS_QUIET
         else:
-            fps = FPS_IDLE
+            fps = FPS_QUIET  # Keep animating idle wave at reasonable FPS
 
-        # Skip spectrum write entirely when idle and nothing is animating
-        if not is_playing and not spectrum_active and not prev_spectrum_active:
-            await asyncio.sleep(1.0 / fps)
-            prev_spectrum_active = False
-            continue
+        # When idle, generate subtle wave animation instead of real spectrum
+        if not is_playing:
+            with _band_lock:
+                bands[:] = generate_idle_wave()
 
         prev_spectrum_active = spectrum_active
 
