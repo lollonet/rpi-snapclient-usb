@@ -22,6 +22,7 @@ fi
 SNAP_BOOT="$BOOT/snapclient"
 INSTALL_DIR="/opt/snapclient"
 LOG="/var/log/snapclient-install.log"
+export DEBIAN_FRONTEND=noninteractive
 
 # Verify source files exist
 if [ ! -d "$SNAP_BOOT" ]; then
@@ -29,16 +30,15 @@ if [ ! -d "$SNAP_BOOT" ]; then
     exit 1
 fi
 
-# Log everything
-exec > >(tee -a "$LOG") 2>&1
+# Helper: write to both log and HDMI console
+log_and_tty() { echo "$*" | tee -a "$LOG" /dev/tty1 2>/dev/null; }
 
-echo "========================================="
-echo "Snapclient Auto-Install"
-date -Iseconds
-echo "========================================="
+log_and_tty "========================================="
+log_and_tty "Snapclient Auto-Install"
+log_and_tty "========================================="
 
 # Copy project files from boot partition
-echo "Copying files to $INSTALL_DIR ..."
+log_and_tty "Copying files to $INSTALL_DIR ..."
 mkdir -p "$INSTALL_DIR"
 # Copy all files including dotfiles (.env.example)
 cp -r "$SNAP_BOOT/"* "$INSTALL_DIR/" 2>/dev/null || true
@@ -53,18 +53,19 @@ elif [ -f "$INSTALL_DIR/snapclient.conf" ]; then
     CONFIG="$INSTALL_DIR/snapclient.conf"
 fi
 
-# Run setup in auto mode
-echo "Running setup.sh --auto ..."
+# Run setup in auto mode (all output goes to log only; progress() writes to tty1 directly)
+log_and_tty "Running setup.sh --auto ..."
 cd "$INSTALL_DIR"
-bash scripts/setup.sh --auto "$CONFIG"
+bash scripts/setup.sh --auto "$CONFIG" >> "$LOG" 2>&1
 
 # Mark as installed
 touch "$MARKER"
 
-echo "========================================="
-echo "Auto-install complete!"
-echo "Rebooting in 5 seconds ..."
-echo "========================================="
-
-sleep 5
+log_and_tty ""
+log_and_tty "  ━━━ Installation complete! ━━━"
+log_and_tty ""
+for i in 5 4 3 2 1; do
+    log_and_tty "  Rebooting in $i..."
+    sleep 1
+done
 reboot
