@@ -45,17 +45,37 @@ echo ""
 # ============================================
 # Progress display (auto mode only)
 # ============================================
-SECONDS=0
+# Use monotonic counter instead of SECONDS (clock may be wrong on first boot)
+PROGRESS_START_MONO=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
+
 STEP_NAMES=("System dependencies" "Docker CE" "Audio HAT config"
             "ALSA loopback" "Boot settings" "Docker environment"
             "Systemd service" "Pulling images")
+
+# Weights reflect actual duration (Docker=40%, Pull=30%, Deps=20%, rest=10%)
+STEP_WEIGHTS=(20 40 2 2 2 2 2 30)
 
 progress() {
     [[ "$AUTO_MODE" != true ]] && return
     local step=$1 msg="$2"
     local total=${#STEP_NAMES[@]}
-    local elapsed=$SECONDS
-    local pct=$(( (step - 1) * 100 / total ))
+
+    # Elapsed time from monotonic uptime (immune to clock changes)
+    local now_mono
+    now_mono=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
+    local elapsed=$(( now_mono - PROGRESS_START_MONO ))
+
+    # Calculate weighted percentage (sum weights of COMPLETED steps)
+    # step=1 means starting step 1, nothing completed yet → 0%
+    # step=2 means step 1 done → weight[0]
+    local weight_sum=0 total_weight=0
+    for ((i=0; i<total; i++)); do
+        total_weight=$(( total_weight + STEP_WEIGHTS[i] ))
+        if (( i < step - 1 )); then
+            weight_sum=$(( weight_sum + STEP_WEIGHTS[i] ))
+        fi
+    done
+    local pct=$(( weight_sum * 100 / total_weight ))
 
     # One-line summary to stdout (goes to log via firstboot redirect)
     echo "=== Step $step/$total: $msg ($((elapsed/60))m$((elapsed%60))s) ==="
@@ -87,6 +107,36 @@ progress() {
             else                       printf '  ○ %s\n' "$name"
             fi
         done
+        printf '\n'
+    } > /dev/tty1
+}
+
+progress_complete() {
+    [[ "$AUTO_MODE" != true ]] && return
+    local total=${#STEP_NAMES[@]}
+    local now_mono
+    now_mono=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
+    local elapsed=$(( now_mono - PROGRESS_START_MONO ))
+
+    [[ -c /dev/tty1 ]] || return
+
+    local bar=""
+    for ((i=0; i<40; i++)); do bar+="█"; done
+
+    {
+        printf '\033[2J\033[H'
+        printf '\n'
+        printf '  ┌────────────────────────────────────────────────┐\n'
+        printf '  │         \033[1mSnapclient Auto-Install\033[0m              │\n'
+        printf '  └────────────────────────────────────────────────┘\n'
+        printf '\n'
+        printf '  \033[36m⏱  Elapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
+        printf '  \033[32m%s\033[0m 100%%\n\n' "$bar"
+        for i in $(seq 1 "$total"); do
+            printf '  \033[32m✓\033[0m %s\n' "${STEP_NAMES[$((i-1))]}"
+        done
+        printf '\n'
+        printf '  \033[32m✓ Installation complete!\033[0m\n'
         printf '\n'
     } > /dev/tty1
 }
@@ -788,6 +838,8 @@ echo ""
 # ============================================
 # Setup Complete
 # ============================================
+progress_complete
+
 echo "========================================="
 echo "Setup Complete!"
 echo "========================================="
