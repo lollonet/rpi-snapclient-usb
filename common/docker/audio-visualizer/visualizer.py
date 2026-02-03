@@ -2,12 +2,15 @@
 """Real-time octave-band spectrum analyzer.
 
 Reads raw PCM from ALSA loopback capture device, computes FFT, groups into
-octave bands, outputs dBFS values via WebSocket. No autosens, no
-normalization — absolute levels referenced to 0 dBFS (16-bit full scale = 32768).
+octave bands, outputs normalized dB values via WebSocket.
 
-Output format: "dBFS_1;dBFS_2;...;dBFS_N" per frame.
-Values are in dBFS (negative, e.g. -12;-25;-40;...).
-Silence = -inf, clamped to NOISE_FLOOR.
+Volume-independent: normalizes total band power to 0 dB, so output shows
+relative spectral shape regardless of playback volume. Quiet and loud music
+produce similar bar heights — only the frequency distribution matters.
+
+Output format: "dB_1;dB_2;...;dB_N" per frame.
+Values are relative dB (mostly negative, e.g. -6;-12;-20;...).
+Silence = NOISE_FLOOR.
 """
 
 import asyncio
@@ -161,11 +164,21 @@ def analyze_pcm(new_samples: np.ndarray) -> str | None:
     cumsum = np.concatenate(([0.0], np.cumsum(spectrum)))
     band_power = np.maximum(cumsum[hi] - cumsum[edges], 0.0)
 
-    # Convert to dBFS: 10*log10(power), clamp to noise floor
+    # Volume-independent normalization: divide by total power so sum = 1.0
+    # This shows relative spectral shape regardless of playback volume
+    total_power = np.sum(band_power)
+    if total_power > 1e-30:  # very low threshold to ensure normalization at any volume
+        band_power_norm = band_power / total_power
+    else:
+        band_power_norm = band_power
+
+    # Convert to dB: 10*log10(normalized_power), clamp to noise floor
+    # With normalization, values are relative (sum of linear = 1.0)
+    # So max possible for single band = 0 dB, typical spread = -6 to -20 dB
     with np.errstate(divide="ignore"):
         band_db = np.where(
-            band_power > 0,
-            np.maximum(10.0 * np.log10(band_power), NOISE_FLOOR),
+            band_power_norm > 0,
+            np.maximum(10.0 * np.log10(band_power_norm), NOISE_FLOOR),
             NOISE_FLOOR,
         )
 
