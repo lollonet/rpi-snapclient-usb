@@ -146,12 +146,22 @@ else
     echo ""
 fi
 
+# ── Eject SD card ──────────────────────────────────────────────────
+echo ""
+echo "Ejecting SD card..."
+if [[ "$OSTYPE" == darwin* ]]; then
+    diskutil eject "$BOOT" 2>/dev/null || diskutil unmount "$BOOT" 2>/dev/null || true
+else
+    sync
+    umount "$BOOT" 2>/dev/null || true
+fi
+echo "  SD card ejected."
+
 # ── Done ────────────────────────────────────────────────────────────
 echo ""
 echo "=== SD card ready! ==="
 echo ""
 echo "Next steps:"
-echo "  1. (Optional) Edit $DEST/snapclient.conf to customize settings"
-echo "  2. Eject the SD card and insert it into the Raspberry Pi"
-echo "  3. Power on — installation takes ~5 minutes, then auto-reboots"
+echo "  1. Insert the SD card into the Raspberry Pi"
+echo "  2. Power on — installation takes ~5 minutes, then auto-reboots"
 echo ""
