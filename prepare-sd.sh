@@ -150,10 +150,10 @@ fi
 echo ""
 echo "Ejecting SD card..."
 if [[ "$OSTYPE" == darwin* ]]; then
-    diskutil eject "$BOOT" 2>/dev/null || diskutil unmount "$BOOT" 2>/dev/null || true
+    sudo diskutil eject "$BOOT" 2>/dev/null || sudo diskutil unmount "$BOOT" 2>/dev/null || true
 else
     sync
-    umount "$BOOT" 2>/dev/null || true
+    sudo umount "$BOOT" 2>/dev/null || true
 fi
 echo "  SD card ejected."
 
