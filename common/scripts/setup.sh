@@ -513,10 +513,22 @@ if [ -n "$BOOT_CONFIG" ]; then
         sed -i "/$CONFIG_MARKER_START/,/$CONFIG_MARKER_END/d" "$BOOT_CONFIG"
     fi
 
-    # Remove temporary setup display section from prepare-sd.sh
+    # Remove temporary setup display section from prepare-sd.sh (legacy)
     if grep -q "SNAPCLIENT SETUP DISPLAY" "$BOOT_CONFIG"; then
         echo "Removing temporary setup display settings..."
         sed -i '/# --- SNAPCLIENT SETUP DISPLAY ---/,/# --- SNAPCLIENT SETUP DISPLAY END ---/d' "$BOOT_CONFIG"
+    fi
+
+    # Remove temporary video= parameter from cmdline.txt (KMS mode)
+    CMDLINE=""
+    if [ -f /boot/firmware/cmdline.txt ]; then
+        CMDLINE="/boot/firmware/cmdline.txt"
+    elif [ -f /boot/cmdline.txt ]; then
+        CMDLINE="/boot/cmdline.txt"
+    fi
+    if [ -n "$CMDLINE" ] && grep -q "video=HDMI-A-1:1024x768" "$CMDLINE"; then
+        echo "Removing temporary 1024x768 video parameter..."
+        sed -i 's/ video=HDMI-A-1:1024x768@60//' "$CMDLINE"
     fi
 
     # Extract display width from resolution

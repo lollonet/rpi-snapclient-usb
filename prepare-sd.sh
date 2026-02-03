@@ -77,24 +77,17 @@ done
 echo "  Copied $(du -sh "$DEST" | cut -f1) to boot partition."
 
 # ── Set temporary resolution for setup progress screen ─────────────
-# This sets 1024x768 for the firstboot progress display.
-# setup.sh will replace these settings with final config after install.
-CONFIG_TXT="$BOOT/config.txt"
-SETUP_MARKER="# --- SNAPCLIENT SETUP DISPLAY ---"
+# KMS driver ignores hdmi_group/hdmi_mode, so we use cmdline.txt video= param.
+# setup.sh will remove this after install completes.
+CMDLINE="$BOOT/cmdline.txt"
+SETUP_VIDEO="video=HDMI-A-1:1024x768@60"
 
-if [[ -f "$CONFIG_TXT" ]] && ! grep -qF "$SETUP_MARKER" "$CONFIG_TXT"; then
+if [[ -f "$CMDLINE" ]] && ! grep -qF "$SETUP_VIDEO" "$CMDLINE"; then
     echo "Setting 1024x768 resolution for setup progress screen ..."
-    cat >> "$CONFIG_TXT" << 'EOF'
-
-# --- SNAPCLIENT SETUP DISPLAY ---
-# Temporary resolution for firstboot progress screen.
-# Will be replaced by setup.sh with final settings.
-hdmi_group=2
-hdmi_mode=16
-hdmi_force_hotplug=1
-# --- SNAPCLIENT SETUP DISPLAY END ---
-EOF
-    echo "  config.txt patched for 1024x768 setup display."
+    # Append video= parameter to cmdline.txt (single line file)
+    sed -i.bak "s/$/ $SETUP_VIDEO/" "$CMDLINE"
+    rm -f "${CMDLINE}.bak"
+    echo "  cmdline.txt patched for 1024x768 setup display."
 fi
 
 # ── Patch boot scripts ──────────────────────────────────────────────
