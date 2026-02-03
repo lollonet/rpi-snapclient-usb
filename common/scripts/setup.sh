@@ -47,6 +47,7 @@ echo ""
 # ============================================
 # Use monotonic counter instead of SECONDS (clock may be wrong on first boot)
 PROGRESS_START_MONO=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
+PROGRESS_ANIM_PID=""
 
 STEP_NAMES=("System dependencies" "Docker CE" "Audio HAT config"
             "ALSA loopback" "Boot settings" "Docker environment"
@@ -55,10 +56,94 @@ STEP_NAMES=("System dependencies" "Docker CE" "Audio HAT config"
 # Weights reflect actual duration (Docker=40%, Pull=30%, Deps=20%, rest=10%)
 STEP_WEIGHTS=(20 40 2 2 2 2 2 30)
 
+# Render progress display to tty1
+render_progress() {
+    local step=$1 pct=$2 elapsed=$3 spinner=${4:-}
+    local total=${#STEP_NAMES[@]}
+
+    [[ -c /dev/tty1 ]] || return
+
+    # Build progress bar (40 chars wide)
+    local bar_width=40
+    local filled=$(( pct * bar_width / 100 ))
+    local empty=$(( bar_width - filled ))
+    local bar=""
+    for ((i=0; i<filled; i++)); do bar+="█"; done
+    for ((i=0; i<empty; i++)); do bar+="░"; done
+
+    {
+        printf '\033[2J\033[H'
+        printf '\n'
+        printf '  ┌────────────────────────────────────────────────┐\n'
+        printf '  │         \033[1mSnapclient Auto-Install\033[0m              │\n'
+        printf '  └────────────────────────────────────────────────┘\n'
+        printf '\n'
+        printf '  \033[36m⏱  Elapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
+        printf '  \033[33m%s\033[0m %3d%% %s\n\n' "$bar" "$pct" "$spinner"
+        for i in $(seq 1 "$total"); do
+            local name="${STEP_NAMES[$((i-1))]}"
+            if (( i < step )); then   printf '  \033[32m✓\033[0m %s\n' "$name"
+            elif (( i == step )); then printf '  \033[33m▶\033[0m %s\n' "$name"
+            else                       printf '  ○ %s\n' "$name"
+            fi
+        done
+        printf '\n'
+    } > /dev/tty1
+}
+
+# Start background animation for long-running steps
+start_progress_animation() {
+    [[ "$AUTO_MODE" != true ]] && return
+    local step=$1 base_pct=$2 step_weight=$3
+
+    # Kill any existing animation
+    stop_progress_animation
+
+    # Start background process that updates display every second
+    (
+        local spinners=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+        local spin_idx=0
+        local step_start
+        step_start=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
+
+        while true; do
+            local now_mono elapsed step_elapsed pct_in_step current_pct
+            now_mono=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
+            elapsed=$(( now_mono - PROGRESS_START_MONO ))
+            step_elapsed=$(( now_mono - step_start ))
+
+            # Gradually fill the step's portion (ease-out curve)
+            # Max out at 90% of step weight to leave room for completion
+            if (( step_elapsed < 300 )); then
+                pct_in_step=$(( step_weight * step_elapsed * 9 / 3000 ))
+            else
+                pct_in_step=$(( step_weight * 9 / 10 ))
+            fi
+            current_pct=$(( base_pct + pct_in_step ))
+
+            render_progress "$step" "$current_pct" "$elapsed" "${spinners[$spin_idx]}"
+            spin_idx=$(( (spin_idx + 1) % 10 ))
+            sleep 1
+        done
+    ) &
+    PROGRESS_ANIM_PID=$!
+}
+
+stop_progress_animation() {
+    if [[ -n "$PROGRESS_ANIM_PID" ]]; then
+        kill "$PROGRESS_ANIM_PID" 2>/dev/null || true
+        wait "$PROGRESS_ANIM_PID" 2>/dev/null || true
+        PROGRESS_ANIM_PID=""
+    fi
+}
+
 progress() {
     [[ "$AUTO_MODE" != true ]] && return
     local step=$1 msg="$2"
     local total=${#STEP_NAMES[@]}
+
+    # Stop any running animation
+    stop_progress_animation
 
     # Elapsed time from monotonic uptime (immune to clock changes)
     local now_mono
@@ -80,39 +165,16 @@ progress() {
     # One-line summary to stdout (goes to log via firstboot redirect)
     echo "=== Step $step/$total: $msg ($((elapsed/60))m$((elapsed%60))s) ==="
 
-    # Full ANSI progress block to HDMI console only
-    [[ -c /dev/tty1 ]] || return
-
-    # Build progress bar (40 chars wide)
-    local bar_width=40
-    local filled=$(( pct * bar_width / 100 ))
-    local empty=$(( bar_width - filled ))
-    local bar=""
-    for ((i=0; i<filled; i++)); do bar+="█"; done
-    for ((i=0; i<empty; i++)); do bar+="░"; done
-
-    {
-        printf '\033[2J\033[H'
-        printf '\n'
-        printf '  ┌────────────────────────────────────────────────┐\n'
-        printf '  │         \033[1mSnapclient Auto-Install\033[0m              │\n'
-        printf '  └────────────────────────────────────────────────┘\n'
-        printf '\n'
-        printf '  \033[36m⏱  Elapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
-        printf '  \033[33m%s\033[0m %3d%%\n\n' "$bar" "$pct"
-        for i in $(seq 1 "$total"); do
-            local name="${STEP_NAMES[$((i-1))]}"
-            if (( i < step )); then   printf '  \033[32m✓\033[0m %s\n' "$name"
-            elif (( i == step )); then printf '  \033[33m▶\033[0m %s\n' "$name"
-            else                       printf '  ○ %s\n' "$name"
-            fi
-        done
-        printf '\n'
-    } > /dev/tty1
+    # Render to tty1
+    render_progress "$step" "$pct" "$elapsed"
 }
 
 progress_complete() {
     [[ "$AUTO_MODE" != true ]] && return
+
+    # Stop any running animation
+    stop_progress_animation
+
     local total=${#STEP_NAMES[@]}
     local now_mono
     now_mono=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
@@ -387,6 +449,7 @@ echo ""
 INSTALL_DIR="/opt/snapclient"
 
 progress 1 "Installing system dependencies..."
+start_progress_animation 1 0 20  # Animate during apt-get
 
 # Base packages (always needed)
 BASE_PACKAGES="ca-certificates curl gnupg alsa-utils avahi-daemon git"
@@ -419,6 +482,8 @@ else
 fi
 
 progress 2 "Installing Docker CE..."
+start_progress_animation 2 20 40  # Animate during long Docker install
+
 # Install Docker CE (official repository) - skip if already installed
 if command -v docker &> /dev/null && docker --version | grep -q "Docker version"; then
     echo "Docker CE already installed, skipping installation..."
@@ -831,6 +896,8 @@ echo ""
 # Step 12: Pre-pull container images
 # ============================================
 progress 8 "Pulling container images..."
+start_progress_animation 8 70 30  # Animate during long image pull
+
 cd "$INSTALL_DIR"
 docker compose pull 2>&1 || echo "  Image pull failed — will retry on first boot"
 echo ""
