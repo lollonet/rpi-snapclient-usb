@@ -335,18 +335,22 @@ detect_hat() {
 
     if [ -f /proc/device-tree/hat/product ]; then
         hat_product=$(tr -d '\0' < /proc/device-tree/hat/product)
+        # Log detected product for debugging
+        echo "EEPROM product: '$hat_product'" >&2
+        # Match with and without brand prefix (EEPROM varies by HAT version)
         case "$hat_product" in
-            *HiFiBerry*DAC*HD*|*DAC2*HD*)   echo "hifiberry-dac2hd" ; return ;;
-            *HiFiBerry*Digi*)               echo "hifiberry-digi"   ; return ;;
-            *HiFiBerry*DAC*)                echo "hifiberry-dac"    ; return ;;
+            *DAC2*HD*|*DAC*HD*)             echo "hifiberry-dac2hd" ; return ;;
+            *Digi+*|*Digi\ +*|*HiFiBerry*Digi*) echo "hifiberry-digi" ; return ;;
+            *DAC+*|*DAC\ +*|*HiFiBerry*DAC*) echo "hifiberry-dac"   ; return ;;
             *IQaudio*DigiAMP*|*DigiAMP*)    echo "iqaudio-digiamp"  ; return ;;
-            *IQaudio*Codec*|*Codec*Zero*)   echo "iqaudio-codec"    ; return ;;
-            *IQaudio*DAC*|*IQaudIO*)        echo "iqaudio-dac"      ; return ;;
+            *Codec*Zero*|*IQaudio*Codec*)   echo "iqaudio-codec"    ; return ;;
+            *IQaudio*DAC*|*IQaudIO*DAC*)    echo "iqaudio-dac"      ; return ;;
             *Boss*DAC*|*Allo*Boss*)         echo "allo-boss"        ; return ;;
             *DigiOne*|*Allo*Digi*)          echo "allo-digione"     ; return ;;
             *JustBoom*DAC*)                 echo "justboom-dac"     ; return ;;
             *JustBoom*Digi*)                echo "justboom-digi"    ; return ;;
         esac
+        echo "Warning: Unknown HAT product '$hat_product', falling back to USB" >&2
     fi
 
     if command -v aplay &>/dev/null; then
