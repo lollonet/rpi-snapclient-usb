@@ -919,6 +919,15 @@ class SnapcastMetadataService:
 
 
 if __name__ == "__main__":
+    # Clear stale metadata from previous session to avoid showing wrong cover on startup
+    stale_metadata = Path("/app/public/metadata.json")
+    if stale_metadata.exists():
+        try:
+            stale_metadata.unlink()
+            logger.info("Cleared stale metadata.json from previous session")
+        except OSError as e:
+            logger.warning(f"Could not clear stale metadata: {e}")
+
     snapserver_host = os.environ.get("SNAPSERVER_HOST", "")
     snapserver_port = int(os.environ.get("SNAPSERVER_PORT", "1705"))
 
