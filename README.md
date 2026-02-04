@@ -187,15 +187,17 @@ DISPLAY_RESOLUTION=1920x1080
 # Display mode: browser (X11 + Chromium) or framebuffer (direct /dev/fb0)
 DISPLAY_MODE=framebuffer
 
-# Spectrum band resolution: half-octave (19 bands) or third-octave (31 bands)
-BAND_MODE=half-octave
+# Spectrum band resolution: third-octave (31 bands) or half-octave (19 bands)
+BAND_MODE=third-octave
 ```
 
-Then restart services:
+Then recreate containers to apply changes:
 ```bash
 cd /opt/snapclient
-sudo docker compose restart
+sudo docker compose up -d
 ```
+
+> **Note**: Use `docker compose up -d` (not `restart`) to pick up `.env` changes. Restart only restarts containers without re-reading environment variables.
 
 ## Verification
 
