@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-02-04
+
+### Added
+- **Container Healthchecks** - All services now have proper healthchecks with `condition: service_healthy` dependencies
+- **Resource Limits** - CPU and memory limits with auto-detection based on Pi RAM (low/medium/high profiles)
+- **cgroup Memory Auto-Enable** - `setup.sh` automatically adds `cgroup_enable=memory cgroup_memory=1` to cmdline.txt
+- **WebSocket Rate Limiting** - audio-visualizer limits to 20 total and 5 per-IP connections
+
+### Changed
+- **Pinned Image Versions** - Docker images now use `:v1.3.0` tags instead of `:latest` for reproducible deployments
+
+### Security
+- **Command Injection Prevention** (entrypoint.sh) - Added `validate_string()` to reject shell metacharacters in environment variables
+- **Path Traversal Prevention** (setup.sh) - Reject `..` in config paths, use `realpath -e` for validation
+- **Granular Capabilities** - Replaced `privileged: true` with specific caps (SYS_NICE, IPC_LOCK, SYS_RESOURCE)
+- **tmpfs Hardening** - All tmpfs mounts use `noexec,nosuid,nodev` flags
+- **SSRF IPv6 Protection** - Block private/loopback/link-local IPv6 addresses in artwork downloads
+- **Security Options** - All containers use `no-new-privileges:true` and `cap_drop: ALL` where possible
+
+### Fixed
+- **Healthcheck Commands** - Use `pidof` instead of unavailable `pgrep` in Alpine containers
+- **nginx Capabilities** - nginx requires CAP_CHOWN for startup, removed conflicting `cap_drop: ALL`
+
+## [1.2.0] - 2026-02-03
+
 ### Added
 - **Standby Screen** ([#19](https://github.com/lollonet/rpi-snapclient-usb/pull/19)) - Feb 3
   - Retro VU meter / equalizer artwork when idle

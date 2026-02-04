@@ -360,10 +360,34 @@ async def read_loopback_and_broadcast() -> None:
             retry_delay = min(retry_delay * 2, max_retry_delay)
 
 
+# Rate limiting: max connections per IP and total
+MAX_CLIENTS = 20
+MAX_PER_IP = 5
+client_ips: dict[str, int] = {}
+
+
 async def websocket_handler(websocket) -> None:
-    """Handle WebSocket connections."""
+    """Handle WebSocket connections with rate limiting."""
+    client_ip = websocket.remote_address[0] if websocket.remote_address else "unknown"
+
+    # Check total connection limit
+    if len(clients) >= MAX_CLIENTS:
+        logger.warning(f"Rejected connection from {client_ip}: max clients reached")
+        await websocket.close(1013, "Server at capacity")
+        return
+
+    # Check per-IP limit
+    current_count = client_ips.get(client_ip, 0)
+    if current_count >= MAX_PER_IP:
+        logger.warning(f"Rejected connection from {client_ip}: per-IP limit reached")
+        await websocket.close(1013, "Too many connections from this IP")
+        return
+
+    # Accept connection
     clients.add(websocket)
-    logger.info(f"Client connected: {websocket.remote_address}")
+    client_ips[client_ip] = current_count + 1
+    logger.info(f"Client connected: {client_ip} ({len(clients)} total)")
+
     try:
         async for _ in websocket:
             pass
@@ -371,7 +395,10 @@ async def websocket_handler(websocket) -> None:
         pass
     finally:
         clients.discard(websocket)
-        logger.info(f"Client disconnected: {websocket.remote_address}")
+        client_ips[client_ip] = client_ips.get(client_ip, 1) - 1
+        if client_ips.get(client_ip, 0) <= 0:
+            client_ips.pop(client_ip, None)
+        logger.info(f"Client disconnected: {client_ip} ({len(clients)} remaining)")
 
 
 async def main() -> None:

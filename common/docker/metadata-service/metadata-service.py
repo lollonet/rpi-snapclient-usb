@@ -707,15 +707,20 @@ class SnapcastMetadataService:
             return ""
 
         # Block private/loopback IPs to prevent SSRF to internal services
+        # Check both IPv4 and IPv6 addresses
         try:
-            addr = socket.gethostbyname(parsed.hostname or "")
-            ip = ipaddress.ip_address(addr)
-            if ip.is_private or ip.is_loopback or ip.is_link_local:
-                logger.warning(f"Blocked artwork download to private IP: {addr}")
-                self._failed_downloads.add(url)
-                return ""
-        except (socket.gaierror, ValueError):
-            logger.warning(f"Cannot resolve artwork host: {parsed.hostname}")
+            for family, _, _, _, sockaddr in socket.getaddrinfo(
+                parsed.hostname or "", None, socket.AF_UNSPEC
+            ):
+                addr = sockaddr[0]
+                ip = ipaddress.ip_address(addr)
+                if (ip.is_private or ip.is_loopback or ip.is_link_local or
+                        ip.is_multicast or ip.is_reserved):
+                    logger.warning(f"Blocked artwork download to restricted IP: {addr}")
+                    self._failed_downloads.add(url)
+                    return ""
+        except (socket.gaierror, ValueError, OSError) as e:
+            logger.warning(f"Cannot resolve artwork host {parsed.hostname}: {e}")
             self._failed_downloads.add(url)
             return ""
 

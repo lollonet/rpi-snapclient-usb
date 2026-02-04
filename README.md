@@ -64,6 +64,8 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 - ⚡ **Zero-Touch Install**: Flash SD, power on, auto-detects HAT with visual progress display
 - 🐳 **Docker-based**: Pre-built images for easy deployment
 - 🔄 **Auto-start**: Systemd services for automatic startup
+- 🔒 **Security Hardened**: Input validation, SSRF protection, granular capabilities
+- 📊 **Resource Limits**: Auto-detected CPU/memory limits based on Pi RAM
 
 ## Supported Audio HATs
 
@@ -204,10 +206,16 @@ sudo docker compose up -d
 Check that everything is running:
 
 ```bash
-# Check Docker containers
+# Check Docker containers (all should show "healthy")
 sudo docker ps
 # Should show: snapclient, metadata-service, cover-webserver, audio-visualizer
 # Plus fb-display if using framebuffer mode
+
+# Check healthchecks
+sudo docker inspect --format='{{.State.Health.Status}}' snapclient
+
+# Verify resource limits are enforced
+sudo docker stats --no-stream
 
 # Check snapclient logs
 sudo docker logs -f snapclient
@@ -225,10 +233,15 @@ curl http://localhost:8080/metadata.json
 
 ## Docker Image
 
-This project uses a unified pre-built image:
-- **Image**: `ghcr.io/lollonet/rpi-snapclient-usb:latest`
+This project uses pre-built images with pinned versions for reproducibility:
+- **Images**: `ghcr.io/lollonet/rpi-snapclient-usb:v1.3.0` and related service images
 - **Platform**: ARM64 (Raspberry Pi 4)
 - **Services**: snapclient, metadata-service, nginx, audio-visualizer, fb-display
+
+All containers run with:
+- **Healthchecks** with dependency ordering (fb-display waits for visualizer, etc.)
+- **Resource limits** auto-detected based on Pi RAM (2GB/4GB/8GB profiles)
+- **Security hardening**: no-new-privileges, capability drops, tmpfs restrictions
 
 Update to latest version:
 ```bash
