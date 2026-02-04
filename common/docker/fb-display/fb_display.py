@@ -454,8 +454,12 @@ def fetch_artwork(url: str) -> Image.Image | None:
             cached_artwork = Image.open(io.BytesIO(resp.content))
             cached_artwork_url = url
             return cached_artwork
-    except Exception:
-        pass
+        elif resp.status_code != 404:
+            logger.debug(f"Artwork fetch returned {resp.status_code}: {url}")
+    except requests.exceptions.RequestException as e:
+        logger.debug(f"Artwork fetch failed: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error fetching artwork: {e}")
     return None
 
 
@@ -811,6 +815,7 @@ async def spectrum_ws_reader() -> None:
 async def metadata_poller() -> None:
     """Poll metadata endpoint periodically."""
     global current_metadata, metadata_version
+    consecutive_failures = 0
     while True:
         try:
             resp = await asyncio.get_event_loop().run_in_executor(
@@ -827,8 +832,15 @@ async def metadata_poller() -> None:
                     metadata_version += 1
                 else:
                     current_metadata = data  # update bitrate silently
-        except Exception:
-            pass
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+                if consecutive_failures == 5:
+                    logger.warning(f"Metadata service returning {resp.status_code}")
+        except Exception as e:
+            consecutive_failures += 1
+            if consecutive_failures == 5:
+                logger.warning(f"Metadata polling failed: {e}")
         await asyncio.sleep(2)
 
 

@@ -22,6 +22,11 @@ done
 
 if [ "$AUTO_MODE" = true ]; then
     if [ -n "$AUTO_CONFIG" ] && [ -f "$AUTO_CONFIG" ]; then
+        # Validate config path (prevent path traversal and injection)
+        if [[ ! "$AUTO_CONFIG" =~ ^[a-zA-Z0-9_./-]+$ ]]; then
+            echo "Error: Invalid characters in config path: $AUTO_CONFIG"
+            exit 1
+        fi
         # shellcheck source=/dev/null
         source "$AUTO_CONFIG"
     fi
@@ -731,6 +736,12 @@ detect_resource_profile() {
     local mem_mb
     mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 
+    # Fallback to medium profile if detection failed (0 or very low = likely error)
+    if (( mem_mb < 256 )); then
+        echo "medium"
+        return
+    fi
+
     # Determine profile based on RAM
     if (( mem_mb < 2048 )); then
         # Pi Zero 2 W, Pi 3, <2GB RAM
@@ -1006,7 +1017,13 @@ progress 8 "Pulling container images..."
 start_progress_animation 8 70 30  # Animate during long image pull
 
 cd "$INSTALL_DIR"
-docker compose pull 2>&1 || echo "  Image pull failed — will retry on first boot"
+if ! docker compose pull 2>&1; then
+    echo ""
+    echo "WARNING: Failed to pull container images."
+    echo "  This may be due to network issues or registry unavailability."
+    echo "  The system will attempt to pull images on first service start."
+    echo "  If problems persist, check: docker compose pull"
+fi
 echo ""
 
 # ============================================

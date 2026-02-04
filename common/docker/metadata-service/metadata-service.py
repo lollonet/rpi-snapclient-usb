@@ -794,8 +794,8 @@ class SnapcastMetadataService:
         try:
             with open(self.output_file, 'w') as f:
                 json.dump(self._output_metadata(metadata), f, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Quiet write failed: {e}")
 
     def write_metadata(self, metadata: dict) -> None:
         """Write metadata to JSON file"""

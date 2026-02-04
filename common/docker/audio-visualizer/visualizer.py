@@ -302,12 +302,15 @@ def alsa_read_frames(handle, libasound, num_frames: int) -> bytes | None:
 async def read_loopback_and_broadcast() -> None:
     """Read raw PCM from ALSA loopback capture, compute spectrum, broadcast."""
     frame_interval = 1.0 / TARGET_FPS
+    retry_delay = 2
+    max_retry_delay = 60
 
     while True:
         try:
             logger.info(f"Opening ALSA loopback capture: {LOOPBACK_DEVICE}")
             handle, libasound = open_alsa_capture()
             logger.info("ALSA capture opened, reading audio data...")
+            retry_delay = 2  # Reset on successful open
 
             try:
                 while True:
@@ -346,9 +349,15 @@ async def read_loopback_and_broadcast() -> None:
             finally:
                 libasound.snd_pcm_close(handle)
 
+        except RuntimeError as e:
+            # Device open errors - use exponential backoff
+            logger.error(f"ALSA device error: {e}, retrying in {retry_delay}s...")
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, max_retry_delay)
         except Exception as e:
-            logger.error(f"Error reading ALSA loopback: {e}, retrying in 2s...")
-            await asyncio.sleep(2)
+            logger.error(f"Unexpected error: {e}, retrying in {retry_delay}s...")
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, max_retry_delay)
 
 
 async def websocket_handler(websocket) -> None:
