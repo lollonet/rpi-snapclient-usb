@@ -127,6 +127,8 @@ services:
       - SYS_NICE  # Audio priority
     devices:
       - /dev/snd:/dev/snd
+    volumes:
+      - ./docker/audio-visualizer/visualizer.py:/app/visualizer.py:ro
     ports:
       - "8081:8081"
     environment:
