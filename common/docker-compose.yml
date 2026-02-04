@@ -55,7 +55,7 @@ services:
     environment:
       - VISUALIZER_WS_PORT=8081
       - LOOPBACK_DEVICE=hw:Loopback,1,0
-      - AUDIO_FIFO=/tmp/audio/stream.fifo
+      - SAMPLE_RATE=${SAMPLE_RATE:-44100}
       - BAND_MODE=${BAND_MODE:-third-octave}
 
   fb-display:

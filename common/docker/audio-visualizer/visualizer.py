@@ -28,7 +28,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Audio parameters (must match snapclient output)
-SAMPLE_RATE = 48000
+SAMPLE_RATE = int(os.environ.get("SAMPLE_RATE", "44100"))
 CHANNELS = 2
 SAMPLE_WIDTH = 2  # 16-bit
 FRAME_SIZE = CHANNELS * SAMPLE_WIDTH
