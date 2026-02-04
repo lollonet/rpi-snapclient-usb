@@ -27,8 +27,18 @@ if [ "$AUTO_MODE" = true ]; then
             echo "Error: Invalid characters in config path: $AUTO_CONFIG"
             exit 1
         fi
+        # Reject path traversal attempts
+        if [[ "$AUTO_CONFIG" == *".."* ]]; then
+            echo "Error: Path traversal not allowed in config path: $AUTO_CONFIG"
+            exit 1
+        fi
+        # Resolve to absolute path and verify it exists
+        AUTO_CONFIG_REAL=$(realpath -e "$AUTO_CONFIG" 2>/dev/null) || {
+            echo "Error: Config file not found: $AUTO_CONFIG"
+            exit 1
+        }
         # shellcheck source=/dev/null
-        source "$AUTO_CONFIG"
+        source "$AUTO_CONFIG_REAL"
     fi
     # Defaults for auto mode (can be overridden by config file)
     AUDIO_HAT="${AUDIO_HAT:-auto}"
