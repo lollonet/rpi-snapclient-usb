@@ -37,7 +37,7 @@ services:
     privileged: true
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f snapclient || exit 1"]
+      test: ["CMD-SHELL", "pidof snapclient || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -69,7 +69,7 @@ services:
       - ./docker/metadata-service/metadata-service.py:/app/metadata-service.py:ro
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/metadata.json || exit 1"]
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8080/metadata.json\", timeout=5)' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -86,8 +86,9 @@ services:
     image: nginx:alpine
     container_name: cover-webserver
     restart: unless-stopped
-    <<: *default-security
-    read_only: true
+    # nginx:alpine needs CAP_CHOWN for startup, can't use full security anchor
+    security_opt:
+      - no-new-privileges:true
     tmpfs:
       - /tmp:size=16M
       - /var/cache/nginx:size=32M
@@ -130,7 +131,7 @@ services:
       - BAND_MODE=${BAND_MODE:-third-octave}
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f visualizer || exit 1"]
+      test: ["CMD-SHELL", "python3 -c 'import socket; s=socket.socket(); s.settimeout(2); s.connect((\"127.0.0.1\", 8081)); s.close()' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -165,7 +166,7 @@ services:
       - VISUALIZER_WS_PORT=8081
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f fb_display || exit 1"]
+      test: ["CMD-SHELL", "pidof python3 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
