@@ -82,26 +82,26 @@ render_progress() {
 
     [[ -c /dev/tty1 ]] || return
 
-    # Build progress bar (40 chars wide)
-    local bar_width=40
+    # Build progress bar (50 chars wide)
+    local bar_width=50
     local filled=$(( pct * bar_width / 100 ))
     local empty=$(( bar_width - filled ))
     local bar=""
     for ((i=0; i<filled; i++)); do bar+="█"; done
     for ((i=0; i<empty; i++)); do bar+="░"; done
 
-    # Get last 6 lines of log for output area
+    # Get last 10 lines of log for output area (wider: 64 chars)
     local log_lines=""
     if [[ -f "$PROGRESS_LOG" ]]; then
-        log_lines=$(tail -6 "$PROGRESS_LOG" 2>/dev/null | cut -c1-70 || true)
+        log_lines=$(tail -10 "$PROGRESS_LOG" 2>/dev/null | cut -c1-64 || true)
     fi
 
     {
         printf '\033[2J\033[H'
         printf '\n'
-        printf '  ┌────────────────────────────────────────────────────┐\n'
-        printf '  │              \033[1mSnapclient Auto-Install\033[0m              │\n'
-        printf '  └────────────────────────────────────────────────────┘\n'
+        printf '  ┌──────────────────────────────────────────────────────────────────┐\n'
+        printf '  │                     \033[1mSnapclient Auto-Install\033[0m                      │\n'
+        printf '  └──────────────────────────────────────────────────────────────────┘\n'
         printf '\n'
         printf '  \033[36m⏱  Elapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
         printf '  \033[33m%s\033[0m %3d%% %s\n\n' "$bar" "$pct" "$spinner"
@@ -113,20 +113,20 @@ render_progress() {
             fi
         done
         printf '\n'
-        printf '  ┌────────────────────── Output ──────────────────────┐\n'
-        # Print log lines (pad to 50 chars with 1-char margins)
+        printf '  ┌───────────────────────────── Output ─────────────────────────────┐\n'
+        # Print log lines (pad to 64 chars with 1-char margins)
         if [[ -n "$log_lines" ]]; then
             while IFS= read -r line; do
-                printf '  │ \033[90m%-50s\033[0m │\n' "$line"
+                printf '  │ \033[90m%-64s\033[0m │\n' "$line"
             done <<< "$log_lines"
         fi
-        # Fill remaining lines to make consistent height
+        # Fill remaining lines to make consistent height (10 lines)
         local line_count
         line_count=$(echo -n "$log_lines" | grep -c '^' || echo 0)
-        for ((i=line_count; i<6; i++)); do
-            printf '  │ %-50s │\n' ""
+        for ((i=line_count; i<10; i++)); do
+            printf '  │ %-64s │\n' ""
         done
-        printf '  └────────────────────────────────────────────────────┘\n'
+        printf '  └──────────────────────────────────────────────────────────────────┘\n'
     } > /dev/tty1
 }
 
@@ -227,14 +227,14 @@ progress_complete() {
     [[ -c /dev/tty1 ]] || return
 
     local bar=""
-    for ((i=0; i<40; i++)); do bar+="█"; done
+    for ((i=0; i<50; i++)); do bar+="█"; done
 
     {
         printf '\033[2J\033[H'
         printf '\n'
-        printf '  ┌────────────────────────────────────────────────────┐\n'
-        printf '  │              \033[1mSnapclient Auto-Install\033[0m              │\n'
-        printf '  └────────────────────────────────────────────────────┘\n'
+        printf '  ┌──────────────────────────────────────────────────────────────────┐\n'
+        printf '  │                     \033[1mSnapclient Auto-Install\033[0m                      │\n'
+        printf '  └──────────────────────────────────────────────────────────────────┘\n'
         printf '\n'
         printf '  \033[36m⏱  Elapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
         printf '  \033[32m%s\033[0m 100%%\n\n' "$bar"
@@ -244,14 +244,18 @@ progress_complete() {
         printf '\n'
         printf '  \033[32m✓ Installation complete!\033[0m\n'
         printf '\n'
-        printf '  ┌────────────────────── Output ──────────────────────┐\n'
-        printf '  │ \033[32m%-50s\033[0m │\n' "All steps completed successfully"
-        printf '  │ \033[32m%-50s\033[0m │\n' "System will reboot shortly..."
-        printf '  │ %-50s │\n' ""
-        printf '  │ %-50s │\n' ""
-        printf '  │ %-50s │\n' ""
-        printf '  │ %-50s │\n' ""
-        printf '  └────────────────────────────────────────────────────┘\n'
+        printf '  ┌───────────────────────────── Output ─────────────────────────────┐\n'
+        printf '  │ \033[32m%-64s\033[0m │\n' "All steps completed successfully"
+        printf '  │ \033[32m%-64s\033[0m │\n' "System will reboot shortly..."
+        printf '  │ %-64s │\n' ""
+        printf '  │ %-64s │\n' ""
+        printf '  │ %-64s │\n' ""
+        printf '  │ %-64s │\n' ""
+        printf '  │ %-64s │\n' ""
+        printf '  │ %-64s │\n' ""
+        printf '  │ %-64s │\n' ""
+        printf '  │ %-64s │\n' ""
+        printf '  └──────────────────────────────────────────────────────────────────┘\n'
     } > /dev/tty1
 }
 
@@ -510,7 +514,7 @@ echo ""
 INSTALL_DIR="/opt/snapclient"
 
 progress 1 "Installing system dependencies..."
-log_progress "Running apt-get update..."
+log_progress "apt-get update"
 start_progress_animation 1 0 12  # Animate during apt-get
 
 # Base packages (always needed)
@@ -528,6 +532,9 @@ if [ "$DISPLAY_MODE" = "browser" ]; then
     fi
 
     apt-get update
+    log_progress "apt-get install: ca-certificates curl gnupg..."
+    log_progress "apt-get install: alsa-utils avahi-daemon git..."
+    log_progress "apt-get install: xinit xserver-xorg openbox..."
     # shellcheck disable=SC2086
     apt-get install -y \
         $BASE_PACKAGES \
@@ -539,25 +546,28 @@ if [ "$DISPLAY_MODE" = "browser" ]; then
 else
     # Framebuffer mode: no X11 packages needed
     apt-get update
+    log_progress "apt-get install: ca-certificates curl gnupg..."
+    log_progress "apt-get install: alsa-utils avahi-daemon git..."
     # shellcheck disable=SC2086
     apt-get install -y $BASE_PACKAGES
 fi
+log_progress "System packages installed"
 
 progress 2 "Installing Docker CE..."
-log_progress "Setting up Docker repository..."
+log_progress "Checking Docker installation..."
 start_progress_animation 2 12 35  # Animate during long Docker install
 
 # Install Docker CE (official repository) - skip if already installed
 if command -v docker &> /dev/null && docker --version | grep -q "Docker version"; then
-    echo "Docker CE already installed, skipping installation..."
+    log_progress "Docker CE already installed, skipping"
 else
-    echo "Installing Docker CE from official repository..."
-
+    log_progress "Removing conflicting packages..."
     # Remove conflicting Debian packages first
     apt-get remove -y docker.io docker-compose docker-buildx containerd runc 2>/dev/null || true
 
     # Only download GPG key if not already present
     if [ ! -f /etc/apt/keyrings/docker.asc ]; then
+        log_progress "Downloading Docker GPG key..."
         install -m 0755 -d /etc/apt/keyrings
         curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
         chmod a+r /etc/apt/keyrings/docker.asc
@@ -565,6 +575,7 @@ else
 
     # Only add repo if not already present
     if [ ! -f /etc/apt/sources.list.d/docker.list ]; then
+        log_progress "Adding Docker apt repository..."
         echo \
           "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
           $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
@@ -572,21 +583,23 @@ else
         apt-get update
     fi
 
+    log_progress "apt-get install: docker-ce docker-ce-cli..."
+    log_progress "apt-get install: containerd.io docker-compose-plugin..."
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
 
-# Enable Docker service (idempotent)
+log_progress "systemctl enable docker"
 systemctl enable docker
 systemctl start docker
 
-# Enable Avahi for mDNS autodiscovery (idempotent)
+log_progress "systemctl enable avahi-daemon"
 systemctl enable avahi-daemon
 systemctl start avahi-daemon
 
-# Enable NTP time sync (prevents clock drift issues with Snapcast)
+log_progress "timedatectl set-ntp true"
 timedatectl set-ntp true 2>/dev/null || true
 
-echo "System dependencies installed"
+log_progress "Docker and system services ready"
 echo ""
 
 # ============================================
@@ -1119,16 +1132,23 @@ echo ""
 # Step 12: Pre-pull container images
 # ============================================
 progress 9 "Pulling container images..."
-log_progress "Pulling Docker images..."
 start_progress_animation 9 60 40  # Animate during long image pull
 
 cd "$INSTALL_DIR"
+log_progress "docker compose pull: snapclient"
+log_progress "docker compose pull: metadata-service"
+log_progress "docker compose pull: audio-visualizer"
+log_progress "docker compose pull: fb-display"
+log_progress "docker compose pull: nginx (cover-webserver)"
 if ! docker compose pull 2>&1; then
+    log_progress "WARNING: Some images failed to pull"
     echo ""
     echo "WARNING: Failed to pull container images."
     echo "  This may be due to network issues or registry unavailability."
     echo "  The system will attempt to pull images on first service start."
     echo "  If problems persist, check: docker compose pull"
+else
+    log_progress "All images pulled successfully"
 fi
 echo ""
 
