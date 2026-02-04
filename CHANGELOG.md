@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-02-04
+## [0.1.0] - 2026-02-05
 
-Initial public release with full feature set.
+Initial release with core feature set.
 
 ### Features
 
@@ -24,6 +24,7 @@ Initial public release with full feature set.
 - **Auto-Gain Normalization** - Spectrum reflects shape regardless of volume, with volume indicator
 - **Standby Screen** - Retro VU meter artwork with breathing animation when idle
 - **Adaptive FPS** - 20 FPS (spectrum), 5 FPS (playing), 1 FPS (idle) to save CPU
+- **Digital Clock** - Nerdy retro-style clock on install progress and framebuffer display
 - **Container Healthchecks** - All services with `condition: service_healthy` dependencies
 - **Resource Limits** - Auto-detected CPU/memory limits based on Pi RAM (2GB/4GB/8GB profiles)
 
