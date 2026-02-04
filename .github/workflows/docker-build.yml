@@ -11,7 +11,7 @@ env:
 jobs:
   build-snapclient:
     name: Build Snapclient Image
-    runs-on: [self-hosted, linux, arm64]
+    runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
       packages: write
@@ -58,7 +58,7 @@ jobs:
 
   build-metadata:
     name: Build Metadata Service Image
-    runs-on: [self-hosted, linux, arm64]
+    runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
       packages: write
@@ -105,7 +105,7 @@ jobs:
 
   build-visualizer:
     name: Build Audio Visualizer Image
-    runs-on: [self-hosted, linux, arm64]
+    runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
       packages: write
@@ -152,7 +152,7 @@ jobs:
 
   build-fb-display:
     name: Build Framebuffer Display Image
-    runs-on: [self-hosted, linux, arm64]
+    runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
       packages: write
