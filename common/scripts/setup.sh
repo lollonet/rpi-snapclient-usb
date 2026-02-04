@@ -82,6 +82,10 @@ render_progress() {
 
     [[ -c /dev/tty1 ]] || return
 
+    # Clamp pct to 0-100 for safety
+    (( pct < 0 )) && pct=0
+    (( pct > 100 )) && pct=100
+
     # Build progress bar (50 chars wide)
     local bar_width=50
     local filled=$(( pct * bar_width / 100 ))
