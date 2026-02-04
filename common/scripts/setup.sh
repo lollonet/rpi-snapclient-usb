@@ -520,6 +520,9 @@ systemctl start docker
 systemctl enable avahi-daemon
 systemctl start avahi-daemon
 
+# Enable NTP time sync (prevents clock drift issues with Snapcast)
+timedatectl set-ntp true 2>/dev/null || true
+
 echo "System dependencies installed"
 echo ""
 
