@@ -337,18 +337,23 @@ detect_hat() {
         hat_product=$(tr -d '\0' < /proc/device-tree/hat/product)
         # Log detected product for debugging
         echo "EEPROM product: '$hat_product'" >&2
-        # Match with and without brand prefix (EEPROM varies by HAT version)
+        # Match EEPROM strings - patterns based on Volumio dacs.json and real devices
+        # Order matters: more specific patterns first
         case "$hat_product" in
-            *DAC2*HD*|*DAC*HD*)             echo "hifiberry-dac2hd" ; return ;;
-            *Digi+*|*Digi\ +*|*HiFiBerry*Digi*) echo "hifiberry-digi" ; return ;;
-            *DAC+*|*DAC\ +*|*HiFiBerry*DAC*) echo "hifiberry-dac"   ; return ;;
-            *IQaudio*DigiAMP*|*DigiAMP*)    echo "iqaudio-digiamp"  ; return ;;
-            *Codec*Zero*|*IQaudio*Codec*)   echo "iqaudio-codec"    ; return ;;
-            *IQaudio*DAC*|*IQaudIO*DAC*)    echo "iqaudio-dac"      ; return ;;
-            *Boss*DAC*|*Allo*Boss*)         echo "allo-boss"        ; return ;;
-            *DigiOne*|*Allo*Digi*)          echo "allo-digione"     ; return ;;
-            *JustBoom*DAC*)                 echo "justboom-dac"     ; return ;;
-            *JustBoom*Digi*)                echo "justboom-digi"    ; return ;;
+            # HiFiBerry (EEPROM: "DAC 2 HD", "HiFiBerry DAC+", "Digi+", etc.)
+            *DAC*2*HD*)                                  echo "hifiberry-dac2hd" ; return ;;
+            Digi+*|*Digi\ +*|*HiFiBerry*Digi*)          echo "hifiberry-digi"   ; return ;;
+            *HiFiBerry*DAC*|DAC+*|*DAC\ +*)             echo "hifiberry-dac"    ; return ;;
+            # IQaudio/Raspberry Pi (EEPROM: "Pi-DigiAMP+", "Pi-CodecZero", "Raspberry Pi DAC Plus")
+            *Pi-DigiAMP*|*DigiAMP*)                     echo "iqaudio-digiamp"  ; return ;;
+            *Pi-Codec*|*CodecZero*|*Codec*Zero*)        echo "iqaudio-codec"    ; return ;;
+            *Raspberry*Pi*DAC*|*IQaudio*DAC*|*IQaudIO*) echo "iqaudio-dac"      ; return ;;
+            # Allo (EEPROM varies)
+            *Boss*|*BOSS*)                              echo "allo-boss"        ; return ;;
+            *DigiOne*|*Allo*Digi*)                      echo "allo-digione"     ; return ;;
+            # JustBoom (EEPROM: "JustBoom DAC HAT", "JustBoom Digi HAT")
+            *JustBoom*Digi*)                            echo "justboom-digi"    ; return ;;
+            *JustBoom*DAC*|*JustBoom*Amp*)              echo "justboom-dac"     ; return ;;
         esac
         echo "Warning: Unknown HAT product '$hat_product', falling back to USB" >&2
     fi
