@@ -99,9 +99,9 @@ render_progress() {
     {
         printf '\033[2J\033[H'
         printf '\n'
-        printf '  ┌────────────────────────────────────────────────┐\n'
-        printf '  │         \033[1mSnapclient Auto-Install\033[0m              │\n'
-        printf '  └────────────────────────────────────────────────┘\n'
+        printf '  ┌────────────────────────────────────────────────────┐\n'
+        printf '  │              \033[1mSnapclient Auto-Install\033[0m              │\n'
+        printf '  └────────────────────────────────────────────────────┘\n'
         printf '\n'
         printf '  \033[36m⏱  Elapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
         printf '  \033[33m%s\033[0m %3d%% %s\n\n' "$bar" "$pct" "$spinner"
@@ -113,9 +113,8 @@ render_progress() {
             fi
         done
         printf '\n'
-        printf '  ┌─────────────────── Output ───────────────────────┐\n'
-        printf '  │\033[90m%-52s\033[0m│\n' ""
-        # Print log lines (pad to 52 chars)
+        printf '  ┌────────────────────── Output ──────────────────────┐\n'
+        # Print log lines (pad to 50 chars with 1-char margins)
         if [[ -n "$log_lines" ]]; then
             while IFS= read -r line; do
                 printf '  │ \033[90m%-50s\033[0m │\n' "$line"
@@ -127,7 +126,7 @@ render_progress() {
         for ((i=line_count; i<6; i++)); do
             printf '  │ %-50s │\n' ""
         done
-        printf '  └─────────────────────────────────────────────────┘\n'
+        printf '  └────────────────────────────────────────────────────┘\n'
     } > /dev/tty1
 }
 
@@ -233,9 +232,9 @@ progress_complete() {
     {
         printf '\033[2J\033[H'
         printf '\n'
-        printf '  ┌────────────────────────────────────────────────┐\n'
-        printf '  │         \033[1mSnapclient Auto-Install\033[0m              │\n'
-        printf '  └────────────────────────────────────────────────┘\n'
+        printf '  ┌────────────────────────────────────────────────────┐\n'
+        printf '  │              \033[1mSnapclient Auto-Install\033[0m              │\n'
+        printf '  └────────────────────────────────────────────────────┘\n'
         printf '\n'
         printf '  \033[36m⏱  Elapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
         printf '  \033[32m%s\033[0m 100%%\n\n' "$bar"
@@ -245,14 +244,14 @@ progress_complete() {
         printf '\n'
         printf '  \033[32m✓ Installation complete!\033[0m\n'
         printf '\n'
-        printf '  ┌─────────────────── Output ───────────────────────┐\n'
+        printf '  ┌────────────────────── Output ──────────────────────┐\n'
         printf '  │ \033[32m%-50s\033[0m │\n' "All steps completed successfully"
         printf '  │ \033[32m%-50s\033[0m │\n' "System will reboot shortly..."
         printf '  │ %-50s │\n' ""
         printf '  │ %-50s │\n' ""
         printf '  │ %-50s │\n' ""
         printf '  │ %-50s │\n' ""
-        printf '  └─────────────────────────────────────────────────┘\n'
+        printf '  └────────────────────────────────────────────────────┘\n'
     } > /dev/tty1
 }
 
