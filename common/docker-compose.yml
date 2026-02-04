@@ -1,3 +1,18 @@
+# rpi-snapclient-usb Docker Compose
+# Resource profiles auto-detected by setup.sh: low | medium | high
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-security: &default-security
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
 services:
   snapclient:
     image: ghcr.io/lollonet/rpi-snapclient-usb:latest
@@ -18,7 +33,22 @@ services:
       - SOUNDCARD=${SOUNDCARD:-default}
       - ALSA_BUFFER_TIME=${ALSA_BUFFER_TIME:-150}
       - ALSA_FRAGMENTS=${ALSA_FRAGMENTS:-4}
+    # Audio requires elevated privileges for ALSA access
     privileged: true
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f snapclient || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: ${SNAPCLIENT_MEM_LIMIT:-128M}
+          cpus: '${SNAPCLIENT_CPU_LIMIT:-0.5}'
+        reservations:
+          memory: ${SNAPCLIENT_MEM_RESERVE:-64M}
 
   metadata-service:
     image: ghcr.io/lollonet/rpi-snapclient-usb-metadata:latest
@@ -26,6 +56,10 @@ services:
     container_name: metadata-service
     restart: unless-stopped
     network_mode: host
+    <<: *default-security
+    read_only: true
+    tmpfs:
+      - /tmp:size=32M
     environment:
       - SNAPSERVER_HOST=${SNAPSERVER_HOST:-}
       - SNAPSERVER_PORT=${SNAPSERVER_RPC_PORT:-1705}
@@ -33,21 +67,58 @@ services:
     volumes:
       - ./public:/app/public
       - ./docker/metadata-service/metadata-service.py:/app/metadata-service.py:ro
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/metadata.json || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: ${METADATA_MEM_LIMIT:-128M}
+          cpus: '${METADATA_CPU_LIMIT:-0.5}'
+        reservations:
+          memory: ${METADATA_MEM_RESERVE:-64M}
 
   nginx:
     image: nginx:alpine
     container_name: cover-webserver
     restart: unless-stopped
+    <<: *default-security
+    read_only: true
+    tmpfs:
+      - /tmp:size=16M
+      - /var/cache/nginx:size=32M
+      - /run:size=16M
     ports:
       - "8080:80"
     volumes:
       - ./public:/usr/share/nginx/html:ro
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: ${NGINX_MEM_LIMIT:-64M}
+          cpus: '${NGINX_CPU_LIMIT:-0.25}'
+        reservations:
+          memory: ${NGINX_MEM_RESERVE:-32M}
 
   audio-visualizer:
     image: ghcr.io/lollonet/rpi-snapclient-usb-visualizer:latest
     build: ./docker/audio-visualizer
     container_name: audio-visualizer
     restart: unless-stopped
+    <<: *default-security
+    cap_add:
+      - SYS_NICE  # Audio priority
     devices:
       - /dev/snd:/dev/snd
     ports:
@@ -57,6 +128,23 @@ services:
       - LOOPBACK_DEVICE=hw:Loopback,1,0
       - SAMPLE_RATE=${SAMPLE_RATE:-44100}
       - BAND_MODE=${BAND_MODE:-third-octave}
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f visualizer || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      snapclient:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: ${VISUALIZER_MEM_LIMIT:-256M}
+          cpus: '${VISUALIZER_CPU_LIMIT:-1.0}'
+        reservations:
+          memory: ${VISUALIZER_MEM_RESERVE:-128M}
 
   fb-display:
     image: ghcr.io/lollonet/rpi-snapclient-usb-fb-display:latest
@@ -66,6 +154,7 @@ services:
     profiles:
       - framebuffer
     network_mode: host
+    <<: *default-security
     devices:
       - /dev/fb0:/dev/fb0
     volumes:
@@ -74,3 +163,22 @@ services:
     environment:
       - DISPLAY_RESOLUTION=${DISPLAY_RESOLUTION:-1024x600}
       - VISUALIZER_WS_PORT=8081
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f fb_display || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      metadata-service:
+        condition: service_healthy
+      audio-visualizer:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: ${FBDISPLAY_MEM_LIMIT:-256M}
+          cpus: '${FBDISPLAY_CPU_LIMIT:-1.0}'
+        reservations:
+          memory: ${FBDISPLAY_MEM_RESERVE:-128M}

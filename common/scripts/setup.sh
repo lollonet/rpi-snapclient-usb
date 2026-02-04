@@ -721,9 +721,96 @@ fi
 echo ""
 
 # ============================================
-# Step 9: Configure Docker Environment
+# Step 9: Detect Hardware Profile & Configure Docker
 # ============================================
 progress 6 "Configuring Docker environment..."
+
+# Detect hardware and set appropriate resource limits
+detect_resource_profile() {
+    # Get total RAM in MB
+    local mem_mb
+    mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+
+    # Determine profile based on RAM
+    if (( mem_mb < 2048 )); then
+        # Pi Zero 2 W, Pi 3, <2GB RAM
+        echo "low"
+    elif (( mem_mb < 4096 )); then
+        # Pi 4 2GB, 2-4GB RAM
+        echo "medium"
+    else
+        # Pi 4 4GB+, Pi 5, 8GB+ RAM
+        echo "high"
+    fi
+}
+
+# Set resource limits based on profile
+set_resource_limits() {
+    local profile=$1
+
+    case "$profile" in
+        low)
+            # Minimal: Pi Zero 2 W, Pi 3
+            SNAPCLIENT_MEM_LIMIT="96M"
+            SNAPCLIENT_MEM_RESERVE="48M"
+            SNAPCLIENT_CPU_LIMIT="0.5"
+            METADATA_MEM_LIMIT="64M"
+            METADATA_MEM_RESERVE="32M"
+            METADATA_CPU_LIMIT="0.25"
+            NGINX_MEM_LIMIT="32M"
+            NGINX_MEM_RESERVE="16M"
+            NGINX_CPU_LIMIT="0.15"
+            VISUALIZER_MEM_LIMIT="128M"
+            VISUALIZER_MEM_RESERVE="64M"
+            VISUALIZER_CPU_LIMIT="0.5"
+            FBDISPLAY_MEM_LIMIT="128M"
+            FBDISPLAY_MEM_RESERVE="64M"
+            FBDISPLAY_CPU_LIMIT="0.5"
+            ;;
+        medium)
+            # Standard: Pi 4 2GB
+            SNAPCLIENT_MEM_LIMIT="128M"
+            SNAPCLIENT_MEM_RESERVE="64M"
+            SNAPCLIENT_CPU_LIMIT="0.5"
+            METADATA_MEM_LIMIT="128M"
+            METADATA_MEM_RESERVE="64M"
+            METADATA_CPU_LIMIT="0.5"
+            NGINX_MEM_LIMIT="64M"
+            NGINX_MEM_RESERVE="32M"
+            NGINX_CPU_LIMIT="0.25"
+            VISUALIZER_MEM_LIMIT="256M"
+            VISUALIZER_MEM_RESERVE="128M"
+            VISUALIZER_CPU_LIMIT="1.0"
+            FBDISPLAY_MEM_LIMIT="256M"
+            FBDISPLAY_MEM_RESERVE="128M"
+            FBDISPLAY_CPU_LIMIT="1.0"
+            ;;
+        high)
+            # Performance: Pi 4 4GB+, Pi 5
+            SNAPCLIENT_MEM_LIMIT="192M"
+            SNAPCLIENT_MEM_RESERVE="96M"
+            SNAPCLIENT_CPU_LIMIT="1.0"
+            METADATA_MEM_LIMIT="192M"
+            METADATA_MEM_RESERVE="96M"
+            METADATA_CPU_LIMIT="1.0"
+            NGINX_MEM_LIMIT="96M"
+            NGINX_MEM_RESERVE="48M"
+            NGINX_CPU_LIMIT="0.5"
+            VISUALIZER_MEM_LIMIT="384M"
+            VISUALIZER_MEM_RESERVE="192M"
+            VISUALIZER_CPU_LIMIT="2.0"
+            FBDISPLAY_MEM_LIMIT="384M"
+            FBDISPLAY_MEM_RESERVE="192M"
+            FBDISPLAY_CPU_LIMIT="2.0"
+            ;;
+    esac
+}
+
+# Detect and apply resource profile
+RESOURCE_PROFILE=$(detect_resource_profile)
+set_resource_limits "$RESOURCE_PROFILE"
+echo "Hardware profile: $RESOURCE_PROFILE ($(awk '/MemTotal/ {printf "%.1fGB RAM", $2/1024/1024}' /proc/meminfo), $(nproc) cores)"
+
 cd "$INSTALL_DIR"
 
 # Read current snapserver from .env if exists (empty = autodiscovery)
@@ -771,6 +858,22 @@ declare -A env_vars=(
     ["DISPLAY_MODE"]="$DISPLAY_MODE"
     ["BAND_MODE"]="$BAND_MODE"
     ["COMPOSE_PROFILES"]="$DOCKER_COMPOSE_PROFILES"
+    # Resource limits (auto-detected)
+    ["SNAPCLIENT_MEM_LIMIT"]="$SNAPCLIENT_MEM_LIMIT"
+    ["SNAPCLIENT_MEM_RESERVE"]="$SNAPCLIENT_MEM_RESERVE"
+    ["SNAPCLIENT_CPU_LIMIT"]="$SNAPCLIENT_CPU_LIMIT"
+    ["METADATA_MEM_LIMIT"]="$METADATA_MEM_LIMIT"
+    ["METADATA_MEM_RESERVE"]="$METADATA_MEM_RESERVE"
+    ["METADATA_CPU_LIMIT"]="$METADATA_CPU_LIMIT"
+    ["NGINX_MEM_LIMIT"]="$NGINX_MEM_LIMIT"
+    ["NGINX_MEM_RESERVE"]="$NGINX_MEM_RESERVE"
+    ["NGINX_CPU_LIMIT"]="$NGINX_CPU_LIMIT"
+    ["VISUALIZER_MEM_LIMIT"]="$VISUALIZER_MEM_LIMIT"
+    ["VISUALIZER_MEM_RESERVE"]="$VISUALIZER_MEM_RESERVE"
+    ["VISUALIZER_CPU_LIMIT"]="$VISUALIZER_CPU_LIMIT"
+    ["FBDISPLAY_MEM_LIMIT"]="$FBDISPLAY_MEM_LIMIT"
+    ["FBDISPLAY_MEM_RESERVE"]="$FBDISPLAY_MEM_RESERVE"
+    ["FBDISPLAY_CPU_LIMIT"]="$FBDISPLAY_CPU_LIMIT"
 )
 
 for key in "${!env_vars[@]}"; do
@@ -784,6 +887,7 @@ echo "  - Soundcard: $SOUNDCARD_VALUE"
 echo "  - Resolution: $DISPLAY_RESOLUTION"
 echo "  - Display mode: $DISPLAY_MODE"
 echo "  - Band mode: $BAND_MODE"
+echo "  - Resource profile: $RESOURCE_PROFILE"
 echo ""
 
 # ============================================
@@ -921,6 +1025,7 @@ echo "  - Display mode: $DISPLAY_MODE"
 echo "  - Band mode: $BAND_MODE"
 echo "  - Client ID: $CLIENT_ID"
 echo "  - Snapserver: ${snapserver_ip:-autodiscovery (mDNS)}"
+echo "  - Resource profile: $RESOURCE_PROFILE"
 echo "  - Install dir: $INSTALL_DIR"
 echo ""
 echo "Next steps:"
