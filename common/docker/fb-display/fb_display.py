@@ -132,6 +132,9 @@ spectrum_bg_fb: np.ndarray | None = None  # native FB format (RGB565 or BGRA32)
 # Cached volume knob overlay (re-rendered only when volume changes)
 _vol_knob_cache: dict = {"vol": None, "muted": None, "img": None, "np": None}
 
+# Cached clock overlay (re-rendered every second)
+_clock_cache: dict = {"time_str": None, "fb": None, "width": 0, "height": 0}
+
 # Cached fonts (loaded once)
 _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
 
@@ -318,6 +321,10 @@ def compute_layout() -> dict:
     bar_w = (bar_area_w - bar_gap * (NUM_BANDS - 1)) // NUM_BANDS
     bar_base_y = spec_y + spec_h - pad
 
+    # Clock position at bottom center
+    clock_h = max(20, int(HEIGHT * 0.05))
+    clock_y = start_y + container_h + outer_gap // 2
+
     return {
         "art_x": art_x, "art_y": art_y, "art_size": art_size,
         "right_x": right_x, "right_w": right_w,
@@ -327,6 +334,7 @@ def compute_layout() -> dict:
         "outer_gap": outer_gap,
         "pad": pad, "bar_area_w": bar_area_w, "bar_area_h": bar_area_h,
         "bar_gap": bar_gap, "bar_w": bar_w, "bar_base_y": bar_base_y,
+        "clock_y": clock_y, "clock_h": clock_h,
     }
 
 
@@ -684,6 +692,69 @@ def _get_volume_knob() -> Image.Image | None:
     return knob_np
 
 
+def render_clock() -> tuple[np.ndarray, int, int] | None:
+    """Render a nerdy retro-style digital clock. Returns (fb_pixels, width, height)."""
+    L = layout
+    if not L:
+        return None
+
+    current_time = time.strftime("%H:%M:%S")
+
+    # Check cache
+    if current_time == _clock_cache["time_str"] and _clock_cache["fb"] is not None:
+        return _clock_cache["fb"], _clock_cache["width"], _clock_cache["height"]
+
+    # Clock styling
+    clock_font_size = max(14, L["clock_h"] - 6)
+    font = _get_font(clock_font_size, bold=True)
+
+    # Measure text size
+    bbox = font.getbbox(current_time)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    # Create clock image with padding and retro border
+    pad_x, pad_y = 16, 4
+    img_w = text_w + pad_x * 2 + 4
+    img_h = text_h + pad_y * 2 + 4
+
+    img = Image.new("RGB", (img_w, img_h), BG_TOP)
+    draw = ImageDraw.Draw(img)
+
+    # Retro scanline/terminal effect: dark border with subtle glow
+    draw.rectangle([0, 0, img_w - 1, img_h - 1], outline=(40, 50, 70), width=1)
+    draw.rectangle([1, 1, img_w - 2, img_h - 2], outline=(25, 35, 55), width=1)
+
+    # Cyber/terminal green-cyan color for time
+    time_color = (0, 220, 180)  # Cyan-green terminal color
+
+    # Draw time with subtle shadow for depth
+    text_x = pad_x + 2
+    text_y = pad_y + 2 - bbox[1]
+    draw.text((text_x + 1, text_y + 1), current_time, fill=(0, 40, 35), font=font)
+    draw.text((text_x, text_y), current_time, fill=time_color, font=font)
+
+    # Add subtle "LED" dots between segments (nerdy touch)
+    # Small decorative dots at corners
+    dot_color = (0, 100, 80)
+    draw.ellipse([3, 3, 5, 5], fill=dot_color)
+    draw.ellipse([img_w - 6, 3, img_w - 4, 5], fill=dot_color)
+    draw.ellipse([3, img_h - 6, 5, img_h - 4], fill=dot_color)
+    draw.ellipse([img_w - 6, img_h - 6, img_w - 4, img_h - 4], fill=dot_color)
+
+    # Convert to native FB format
+    rgb = np.array(img)
+    fb_pixels = _rgb_to_fb_native(rgb)
+
+    # Update cache
+    _clock_cache["time_str"] = current_time
+    _clock_cache["fb"] = fb_pixels
+    _clock_cache["width"] = img_w
+    _clock_cache["height"] = img_h
+
+    return fb_pixels, img_w, img_h
+
+
 def render_spectrum() -> np.ndarray:
     """Render spectrum bars in native FB format (RGB565 or BGRA32).
 
@@ -909,6 +980,19 @@ async def render_loop() -> None:
             None, write_region_to_fb_fast,
             spec_rgb, layout["right_x"], layout["spec_y"],
         )
+
+        # Render clock (updates once per second via cache)
+        clock_result = await asyncio.get_event_loop().run_in_executor(
+            None, render_clock
+        )
+        if clock_result:
+            clock_fb, clock_w, clock_h = clock_result
+            clock_x = (WIDTH - clock_w) // 2
+            clock_y = layout["clock_y"]
+            await asyncio.get_event_loop().run_in_executor(
+                None, write_region_to_fb_fast,
+                clock_fb, clock_x, clock_y,
+            )
 
         elapsed = time.monotonic() - start
         sleep_time = (1.0 / fps) - elapsed
