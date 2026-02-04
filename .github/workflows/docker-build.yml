@@ -19,10 +19,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Clean up Docker buildx
+      - name: Clean up Docker
         run: |
           docker buildx stop || true
           docker buildx rm --all-inactive --force || true
+          docker buildx rm mybuilder --force 2>/dev/null || true
           docker system prune -f || true
 
       - name: Set up QEMU
@@ -31,8 +32,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          driver-opts: |
-            network=host
+          install: true
+
+      - name: Create and bootstrap builder
+        run: |
+          docker buildx create --name mybuilder --use --bootstrap || true
+          docker buildx inspect --bootstrap
 
       - name: Log in to Container Registry
         uses: docker/login-action@v3
@@ -58,12 +63,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: common/docker/snapclient
+          builder: mybuilder
           platforms: linux/arm64,linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   build-metadata:
     name: Build Metadata Service Image
@@ -75,10 +79,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Clean up Docker buildx
+      - name: Clean up Docker
         run: |
           docker buildx stop || true
           docker buildx rm --all-inactive --force || true
+          docker buildx rm mybuilder --force 2>/dev/null || true
           docker system prune -f || true
 
       - name: Set up QEMU
@@ -87,8 +92,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          driver-opts: |
-            network=host
+          install: true
+
+      - name: Create and bootstrap builder
+        run: |
+          docker buildx create --name mybuilder --use --bootstrap || true
+          docker buildx inspect --bootstrap
 
       - name: Log in to Container Registry
         uses: docker/login-action@v3
@@ -114,12 +123,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: common/docker/metadata-service
+          builder: mybuilder
           platforms: linux/arm64,linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   build-visualizer:
     name: Build Audio Visualizer Image
@@ -131,10 +139,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Clean up Docker buildx
+      - name: Clean up Docker
         run: |
           docker buildx stop || true
           docker buildx rm --all-inactive --force || true
+          docker buildx rm mybuilder --force 2>/dev/null || true
           docker system prune -f || true
 
       - name: Set up QEMU
@@ -143,8 +152,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          driver-opts: |
-            network=host
+          install: true
+
+      - name: Create and bootstrap builder
+        run: |
+          docker buildx create --name mybuilder --use --bootstrap || true
+          docker buildx inspect --bootstrap
 
       - name: Log in to Container Registry
         uses: docker/login-action@v3
@@ -170,12 +183,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: common/docker/audio-visualizer
+          builder: mybuilder
           platforms: linux/arm64,linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   build-fb-display:
     name: Build Framebuffer Display Image
@@ -187,10 +199,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Clean up Docker buildx
+      - name: Clean up Docker
         run: |
           docker buildx stop || true
           docker buildx rm --all-inactive --force || true
+          docker buildx rm mybuilder --force 2>/dev/null || true
           docker system prune -f || true
 
       - name: Set up QEMU
@@ -199,8 +212,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          driver-opts: |
-            network=host
+          install: true
+
+      - name: Create and bootstrap builder
+        run: |
+          docker buildx create --name mybuilder --use --bootstrap || true
+          docker buildx inspect --bootstrap
 
       - name: Log in to Container Registry
         uses: docker/login-action@v3
@@ -226,6 +243,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: common/docker/fb-display
+          builder: mybuilder
           platforms: linux/arm64,linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
