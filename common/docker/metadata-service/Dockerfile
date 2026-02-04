@@ -2,8 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install uv for fast dependency installation
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 # Install mDNS discovery dependency
-RUN pip install --no-cache-dir zeroconf
+RUN uv pip install --system --no-cache zeroconf
 
 # Copy metadata service
 COPY metadata-service.py /app/
