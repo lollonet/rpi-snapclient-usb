@@ -15,9 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **cgroup Memory Auto-Enable** - `setup.sh` automatically adds `cgroup_enable=memory cgroup_memory=1` to cmdline.txt
 - **WebSocket Rate Limiting** - audio-visualizer limits to 20 total and 5 per-IP connections
 
-### Changed
-- **Pinned Image Versions** - Docker images now use `:v1.3.0` tags instead of `:latest` for reproducible deployments
-
 ### Security
 - **Command Injection Prevention** (entrypoint.sh) - Added `validate_string()` to reject shell metacharacters in environment variables
 - **Path Traversal Prevention** (setup.sh) - Reject `..` in config paths, use `realpath -e` for validation

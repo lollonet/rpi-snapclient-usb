@@ -233,8 +233,8 @@ curl http://localhost:8080/metadata.json
 
 ## Docker Image
 
-This project uses pre-built images with pinned versions for reproducibility:
-- **Images**: `ghcr.io/lollonet/rpi-snapclient-usb:v1.3.0` and related service images
+This project uses pre-built Docker images:
+- **Images**: `ghcr.io/lollonet/rpi-snapclient-usb:latest` and related service images
 - **Platform**: ARM64 (Raspberry Pi 4)
 - **Services**: snapclient, metadata-service, nginx, audio-visualizer, fb-display
 
