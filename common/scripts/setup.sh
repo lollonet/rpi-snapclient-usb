@@ -720,6 +720,13 @@ if [ -n "$BOOT_CONFIG" ]; then
         sed -i 's/$/ fbcon=map:9/' "$CMDLINE"
         echo "Disabled fbcon on fb0 (cmdline.txt updated)"
     fi
+
+    # Enable cgroup memory controller for Docker resource limits
+    # Required for cgroups v2 on newer kernels (Bookworm+/Trixie)
+    if [ -n "$CMDLINE" ] && ! grep -q "cgroup_enable=memory" "$CMDLINE"; then
+        sed -i 's/$/ cgroup_enable=memory cgroup_memory=1/' "$CMDLINE"
+        echo "Enabled cgroup memory controller (cmdline.txt updated)"
+    fi
 else
     echo "Warning: Could not find boot config file"
 fi
