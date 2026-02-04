@@ -56,7 +56,7 @@ services:
       - VISUALIZER_WS_PORT=8081
       - LOOPBACK_DEVICE=hw:Loopback,1,0
       - AUDIO_FIFO=/tmp/audio/stream.fifo
-      - BAND_MODE=${BAND_MODE:-half-octave}
+      - BAND_MODE=${BAND_MODE:-third-octave}
 
   fb-display:
     image: ghcr.io/lollonet/rpi-snapclient-usb-fb-display:latest

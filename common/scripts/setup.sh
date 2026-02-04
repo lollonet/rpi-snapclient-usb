@@ -29,7 +29,7 @@ if [ "$AUTO_MODE" = true ]; then
     AUDIO_HAT="${AUDIO_HAT:-auto}"
     DISPLAY_RESOLUTION="${DISPLAY_RESOLUTION:-1920x1080}"
     DISPLAY_MODE="${DISPLAY_MODE:-framebuffer}"
-    BAND_MODE="${BAND_MODE:-half-octave}"
+    BAND_MODE="${BAND_MODE:-third-octave}"
     SNAPSERVER_HOST="${SNAPSERVER_HOST:-}"
 fi
 
@@ -423,13 +423,13 @@ if [ "$AUTO_MODE" = true ]; then
     echo "Band mode: $BAND_MODE"
 else
     echo "Select spectrum analyzer band resolution:"
-    echo "1) Half-octave (19 bands) — recommended"
-    echo "2) Third-octave (31 bands)"
+    echo "1) Third-octave (31 bands) — recommended"
+    echo "2) Half-octave (19 bands)"
     read -rp "Enter choice [1-2]: " band_mode_choice
 
     case "${band_mode_choice:-1}" in
-        2) BAND_MODE="third-octave" ;;
-        *) BAND_MODE="half-octave" ;;
+        2) BAND_MODE="half-octave" ;;
+        *) BAND_MODE="third-octave" ;;
     esac
 
     echo "Band mode: $BAND_MODE"
