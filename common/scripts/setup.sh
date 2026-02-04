@@ -66,12 +66,16 @@ PROGRESS_ANIM_PID=""
 
 STEP_NAMES=("System dependencies" "Docker CE" "Audio HAT config"
             "ALSA loopback" "Boot settings" "Docker environment"
-            "Systemd service" "Pulling images")
+            "Security hardening" "Systemd service" "Pulling images")
 
-# Weights reflect actual duration (Docker=40%, Pull=30%, Deps=20%, rest=10%)
-STEP_WEIGHTS=(20 40 2 2 2 2 2 30)
+# Weights reflect actual duration (Pull=40%, Docker=35%, Deps=12%, rest=13%)
+STEP_WEIGHTS=(12 35 2 2 2 2 2 3 40)
 
-# Render progress display to tty1
+# Log file for capturing output to display
+PROGRESS_LOG="/tmp/snapclient-progress.log"
+: > "$PROGRESS_LOG"  # Clear/create log file
+
+# Render progress display to tty1 (top: progress, bottom: log output)
 render_progress() {
     local step=$1 pct=$2 elapsed=$3 spinner=${4:-}
     local total=${#STEP_NAMES[@]}
@@ -85,6 +89,12 @@ render_progress() {
     local bar=""
     for ((i=0; i<filled; i++)); do bar+="█"; done
     for ((i=0; i<empty; i++)); do bar+="░"; done
+
+    # Get last 6 lines of log for output area
+    local log_lines=""
+    if [[ -f "$PROGRESS_LOG" ]]; then
+        log_lines=$(tail -6 "$PROGRESS_LOG" 2>/dev/null | cut -c1-70 || true)
+    fi
 
     {
         printf '\033[2J\033[H'
@@ -103,7 +113,27 @@ render_progress() {
             fi
         done
         printf '\n'
+        printf '  ┌─────────────────── Output ───────────────────────┐\n'
+        printf '  │\033[90m%-52s\033[0m│\n' ""
+        # Print log lines (pad to 52 chars)
+        if [[ -n "$log_lines" ]]; then
+            while IFS= read -r line; do
+                printf '  │ \033[90m%-50s\033[0m │\n' "$line"
+            done <<< "$log_lines"
+        fi
+        # Fill remaining lines to make consistent height
+        local line_count
+        line_count=$(echo -n "$log_lines" | grep -c '^' || echo 0)
+        for ((i=line_count; i<6; i++)); do
+            printf '  │ %-50s │\n' ""
+        done
+        printf '  └─────────────────────────────────────────────────┘\n'
     } > /dev/tty1
+}
+
+# Helper to log output for display
+log_progress() {
+    echo "$*" >> "$PROGRESS_LOG"
 }
 
 # Start background animation for long-running steps
@@ -215,6 +245,14 @@ progress_complete() {
         printf '\n'
         printf '  \033[32m✓ Installation complete!\033[0m\n'
         printf '\n'
+        printf '  ┌─────────────────── Output ───────────────────────┐\n'
+        printf '  │ \033[32m%-50s\033[0m │\n' "All steps completed successfully"
+        printf '  │ \033[32m%-50s\033[0m │\n' "System will reboot shortly..."
+        printf '  │ %-50s │\n' ""
+        printf '  │ %-50s │\n' ""
+        printf '  │ %-50s │\n' ""
+        printf '  │ %-50s │\n' ""
+        printf '  └─────────────────────────────────────────────────┘\n'
     } > /dev/tty1
 }
 
@@ -464,7 +502,8 @@ echo ""
 INSTALL_DIR="/opt/snapclient"
 
 progress 1 "Installing system dependencies..."
-start_progress_animation 1 0 20  # Animate during apt-get
+log_progress "Running apt-get update..."
+start_progress_animation 1 0 12  # Animate during apt-get
 
 # Base packages (always needed)
 BASE_PACKAGES="ca-certificates curl gnupg alsa-utils avahi-daemon git"
@@ -497,7 +536,8 @@ else
 fi
 
 progress 2 "Installing Docker CE..."
-start_progress_animation 2 20 40  # Animate during long Docker install
+log_progress "Setting up Docker repository..."
+start_progress_animation 2 12 35  # Animate during long Docker install
 
 # Install Docker CE (official repository) - skip if already installed
 if command -v docker &> /dev/null && docker --version | grep -q "Docker version"; then
@@ -997,9 +1037,49 @@ fi
 echo ""
 
 # ============================================
+# Step 10: Security Hardening
+# ============================================
+progress 7 "Security hardening..."
+log_progress "Applying security settings..."
+
+# Verify cgroup memory controller is configured (set in boot settings)
+if [ -f "/boot/firmware/cmdline.txt" ]; then
+    CMDLINE="/boot/firmware/cmdline.txt"
+elif [ -f "/boot/cmdline.txt" ]; then
+    CMDLINE="/boot/cmdline.txt"
+else
+    CMDLINE=""
+fi
+
+if [ -n "$CMDLINE" ] && grep -q "cgroup_enable=memory" "$CMDLINE"; then
+    echo "✓ cgroup memory controller enabled (resource limits)"
+    log_progress "cgroup memory: enabled"
+else
+    echo "⚠ cgroup memory controller not in cmdline (limits may not work)"
+    log_progress "cgroup memory: not configured"
+fi
+
+# Verify docker-compose.yml has security settings
+if grep -q "no-new-privileges" "$INSTALL_DIR/docker-compose.yml" 2>/dev/null; then
+    echo "✓ Container security options configured"
+    log_progress "Container security: configured"
+else
+    echo "⚠ Container security options not found in docker-compose.yml"
+fi
+
+# Verify read_only and tmpfs settings
+if grep -q "read_only: true" "$INSTALL_DIR/docker-compose.yml" 2>/dev/null; then
+    echo "✓ Read-only containers configured"
+    log_progress "Read-only mode: enabled"
+fi
+
+echo ""
+
+# ============================================
 # Step 11: Create Systemd Service for Docker
 # ============================================
-progress 7 "Creating systemd service..."
+progress 8 "Creating systemd service..."
+log_progress "Creating snapclient.service..."
 
 # Docker Compose profiles are handled via COMPOSE_PROFILES in .env
 cat > /etc/systemd/system/snapclient.service << EOF
@@ -1030,8 +1110,9 @@ echo ""
 # ============================================
 # Step 12: Pre-pull container images
 # ============================================
-progress 8 "Pulling container images..."
-start_progress_animation 8 70 30  # Animate during long image pull
+progress 9 "Pulling container images..."
+log_progress "Pulling Docker images..."
+start_progress_animation 9 60 40  # Animate during long image pull
 
 cd "$INSTALL_DIR"
 if ! docker compose pull 2>&1; then
