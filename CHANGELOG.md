@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Read-Only Root Filesystem** - SD card protection using raspi-config overlayfs, enabled by default. Disable with `--no-readonly` flag. Includes Docker fuse-overlayfs storage driver and `ro-mode` helper script for easy enable/disable
 - **WebSocket Metadata Push** ([9e168fb](https://github.com/lollonet/rpi-snapclient-usb/commit/9e168fb)) - Metadata service now pushes updates via WebSocket instead of HTTP polling, reducing latency and network overhead
 
-### Fixed
+### Fixed (continued)
 - **fb-display OOM on high-res framebuffers** - Render at internal resolution (from `DISPLAY_RESOLUTION` or auto-capped at 1920x1080) and scale to actual framebuffer. Prevents OOM kills on 4K displays with low memory limits. `DISPLAY_RESOLUTION` is now optional; leave empty to auto-detect
 - **Visualizer Healthcheck** ([f4a25ab](https://github.com/lollonet/rpi-snapclient-usb/commit/f4a25ab)) - Use process check instead of TCP connect to avoid spamming WebSocket error logs
 - **Dead Code Removal** ([b771304](https://github.com/lollonet/rpi-snapclient-usb/commit/b771304)) - Remove unused `metadata_queue` variable from metadata service
@@ -39,7 +39,7 @@ Initial release with core feature set.
 - **Install Progress Display** - Visual progress on HDMI during install (800x600)
 - **Cover Display** - Full-screen album art with track metadata on framebuffer or browser
 - **Artwork Sources** - MPD embedded → iTunes (validated) → MusicBrainz/Cover Art Archive → Radio-Browser
-- **Real-Time Spectrum Analyzer** - dBFS FFT with half-octave (19) or third-octave (31) bands
+- **Real-Time Spectrum Analyzer** - dBFS FFT with half-octave (21) or third-octave (31) bands
 - **Auto-Gain Normalization** - Spectrum reflects shape regardless of volume, with volume indicator
 - **Standby Screen** - Retro VU meter artwork with breathing animation when idle
 - **Adaptive FPS** - 20 FPS (spectrum), 5 FPS (playing), 1 FPS (idle) to save CPU

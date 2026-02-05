@@ -53,8 +53,6 @@ PANEL_BG = (17, 17, 17)
 # Spectrum state — NUM_BANDS auto-detected from first WS message
 NUM_BANDS = 21  # default, updated on first WS message
 NOISE_FLOOR = -72.0  # dBFS
-REF_LEVEL = 0.0  # dBFS
-DB_RANGE = REF_LEVEL - NOISE_FLOOR  # 72 dB
 
 bands = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
 display_bands = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
@@ -607,8 +605,8 @@ def render_base_frame() -> Image.Image:
                     (L["art_size"], L["art_size"]), Image.LANCZOS
                 )
                 bg.paste(resized, (L["art_x"], L["art_y"]))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to load standby image: {e}")
 
     # Right top: track info (right-aligned, font shrinks to fit)
     text_right = L["right_x"] + L["right_w"]
@@ -992,9 +990,6 @@ async def render_loop() -> None:
 
     FPS_ACTIVE = 20
     FPS_QUIET = 5
-    FPS_IDLE = 1
-
-    prev_spectrum_active = False
 
     while True:
         start = time.monotonic()
@@ -1034,8 +1029,6 @@ async def render_loop() -> None:
         if not is_playing:
             with _band_lock:
                 bands[:] = generate_idle_wave()
-
-        prev_spectrum_active = spectrum_active
 
         # Render spectrum as numpy array and write directly to FB
         spec_rgb = await asyncio.get_event_loop().run_in_executor(

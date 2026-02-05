@@ -39,7 +39,7 @@ HOP_SIZE = 1600  # ~33ms hop = 30 FPS update rate
 BYTES_PER_READ = HOP_SIZE * FRAME_SIZE
 TARGET_FPS = 30
 
-# Band mode: "half-octave" (19 bands) or "third-octave" (31 bands)
+# Band mode: "half-octave" (21 bands) or "third-octave" (31 bands)
 BAND_MODE = os.environ.get("BAND_MODE", "half-octave")
 
 
