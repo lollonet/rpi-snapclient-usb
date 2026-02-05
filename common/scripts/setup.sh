@@ -5,9 +5,13 @@ set -euo pipefail
 # Auto mode: --auto [config_file]
 # Reads settings from config file, skips all prompts.
 # HAT auto-detection via EEPROM when AUDIO_HAT=auto.
+#
+# Optional flags:
+#   --read-only    Enable read-only filesystem (SD card protection)
 # ============================================
 AUTO_MODE=false
 AUTO_CONFIG=""
+ENABLE_READONLY=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -15,6 +19,10 @@ while [[ $# -gt 0 ]]; do
             AUTO_MODE=true
             AUTO_CONFIG="${2:-}"
             shift 2 || shift
+            ;;
+        --read-only)
+            ENABLE_READONLY=true
+            shift
             ;;
         *) shift ;;
     esac
@@ -46,6 +54,10 @@ if [ "$AUTO_MODE" = true ]; then
     DISPLAY_MODE="${DISPLAY_MODE:-framebuffer}"
     BAND_MODE="${BAND_MODE:-third-octave}"
     SNAPSERVER_HOST="${SNAPSERVER_HOST:-}"
+    # ENABLE_READONLY: command line --read-only takes precedence, then config file
+    if [[ "$ENABLE_READONLY" != "true" ]]; then
+        ENABLE_READONLY="${ENABLE_READONLY:-false}"
+    fi
 fi
 
 echo "========================================="
@@ -66,10 +78,11 @@ PROGRESS_ANIM_PID=""
 
 STEP_NAMES=("System dependencies" "Docker CE" "Audio HAT config"
             "ALSA loopback" "Boot settings" "Docker environment"
-            "Security hardening" "Systemd service" "Pulling images")
+            "Security hardening" "Systemd service" "Pulling images"
+            "Read-only filesystem")
 
-# Weights reflect actual duration (Pull=40%, Docker=35%, Deps=12%, rest=13%)
-STEP_WEIGHTS=(12 35 2 2 2 2 2 3 40)
+# Weights reflect actual duration (Pull=40%, Docker=33%, Deps=12%, RO=5%, rest=10%)
+STEP_WEIGHTS=(12 33 2 2 2 2 2 3 37 5)
 
 # Log file for capturing output to display
 PROGRESS_LOG="/tmp/snapclient-progress.log"
@@ -520,6 +533,26 @@ else
     esac
 
     echo "Band mode: $BAND_MODE"
+fi
+echo ""
+
+# ============================================
+# Step 3c: Read-Only Filesystem Option
+# ============================================
+if [ "$AUTO_MODE" = true ]; then
+    echo "Read-only mode: $ENABLE_READONLY"
+else
+    echo "Enable read-only filesystem? (protects SD card from corruption)"
+    echo "  - All writes go to RAM, lost on reboot"
+    echo "  - Requires 'sudo ro-mode disable' for updates"
+    read -rp "Enable read-only mode? [y/N]: " readonly_choice
+
+    case "${readonly_choice:-n}" in
+        [Yy]|[Yy][Ee][Ss]) ENABLE_READONLY=true ;;
+        *) ENABLE_READONLY=false ;;
+    esac
+
+    echo "Read-only mode: $ENABLE_READONLY"
 fi
 echo ""
 
@@ -1175,6 +1208,68 @@ fi
 echo ""
 
 # ============================================
+# Step 13: Configure Read-Only Filesystem (optional)
+# ============================================
+if [[ "${ENABLE_READONLY:-false}" == "true" ]]; then
+    progress 10 "Configuring read-only filesystem..."
+    log_progress "Installing fuse-overlayfs..."
+
+    # Install fuse-overlayfs for Docker compatibility with overlayfs root
+    apt-get install -y fuse-overlayfs
+
+    # Check if Docker is already using fuse-overlayfs (idempotent)
+    current_driver=$(docker info --format '{{.Driver}}' 2>/dev/null || echo "none")
+    if [[ "$current_driver" != "fuse-overlayfs" ]]; then
+        # Switch storage driver (requires wiping existing data)
+        log_progress "Switching Docker storage driver to fuse-overlayfs..."
+        systemctl stop docker
+
+        # Configure Docker to use fuse-overlayfs storage driver
+        # (required because overlay2 doesn't work on overlayfs root)
+        mkdir -p /etc/docker
+        cp "$COMMON_DIR/docker/daemon.json" /etc/docker/daemon.json
+
+        # Clear existing Docker data (incompatible with new storage driver)
+        log_progress "Clearing Docker data (storage driver change)..."
+        rm -rf /var/lib/docker/*
+
+        # Restart Docker
+        log_progress "Restarting Docker..."
+        systemctl start docker
+
+        # Re-pull images (storage was cleared)
+        log_progress "Re-pulling container images..."
+        cd "$INSTALL_DIR"
+        if ! docker compose pull 2>&1; then
+            echo "WARNING: Failed to pull images after storage driver change."
+            echo "  Run 'docker compose pull' manually after reboot."
+        fi
+    else
+        log_progress "Docker already using fuse-overlayfs, skipping reconfiguration..."
+    fi
+
+    # Install ro-mode helper script
+    log_progress "Installing ro-mode helper..."
+    install -m 755 "$COMMON_DIR/scripts/ro-mode.sh" /usr/local/bin/ro-mode
+
+    # Enable overlayfs (takes effect after reboot)
+    log_progress "Enabling overlayfs..."
+    raspi-config nonint do_overlayfs 0
+
+    echo "Read-only filesystem configured"
+    echo "  - Docker storage driver: fuse-overlayfs"
+    echo "  - Helper script: /usr/local/bin/ro-mode"
+    echo "  - Status: Will activate after reboot"
+    echo ""
+    echo "To temporarily disable for updates:"
+    echo "  sudo ro-mode disable && sudo reboot"
+    echo ""
+else
+    echo "Read-only filesystem: skipped (ENABLE_READONLY=false)"
+fi
+echo ""
+
+# ============================================
 # Setup Complete
 # ============================================
 progress_complete
@@ -1191,6 +1286,7 @@ echo "  - Band mode: $BAND_MODE"
 echo "  - Client ID: $CLIENT_ID"
 echo "  - Snapserver: ${snapserver_ip:-autodiscovery (mDNS)}"
 echo "  - Resource profile: $RESOURCE_PROFILE"
+echo "  - Read-only mode: ${ENABLE_READONLY:-false}"
 echo "  - Install dir: $INSTALL_DIR"
 echo ""
 echo "Next steps:"
@@ -1208,5 +1304,12 @@ if [ "$DISPLAY_MODE" = "browser" ]; then
 echo "Cover display will show on the connected screen via Chromium"
 else
 echo "Cover display will render directly to framebuffer (/dev/fb0)"
+fi
+if [[ "${ENABLE_READONLY:-false}" == "true" ]]; then
+echo ""
+echo "Read-only mode is enabled. After reboot:"
+echo "  - Root filesystem will be read-only (protected from corruption)"
+echo "  - Use 'sudo ro-mode status' to verify"
+echo "  - Use 'sudo ro-mode disable && sudo reboot' for updates"
 fi
 echo ""
