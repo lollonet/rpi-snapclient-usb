@@ -50,7 +50,7 @@ if [ "$AUTO_MODE" = true ]; then
     fi
     # Defaults for auto mode (can be overridden by config file)
     AUDIO_HAT="${AUDIO_HAT:-auto}"
-    DISPLAY_RESOLUTION="${DISPLAY_RESOLUTION:-1920x1080}"
+    DISPLAY_RESOLUTION="${DISPLAY_RESOLUTION:-}"
     DISPLAY_MODE="${DISPLAY_MODE:-framebuffer}"
     BAND_MODE="${BAND_MODE:-third-octave}"
     SNAPSERVER_HOST="${SNAPSERVER_HOST:-}"
@@ -486,7 +486,7 @@ get_resolution() {
 }
 
 if [ "$AUTO_MODE" = true ]; then
-    echo "Resolution: $DISPLAY_RESOLUTION"
+    echo "Resolution: ${DISPLAY_RESOLUTION:-auto}"
 else
     show_resolution_options
     read -rp "Enter choice [1-7]: " resolution_choice
@@ -1028,7 +1028,7 @@ echo "Docker configuration ready"
 echo "  - Snapserver: ${snapserver_ip:-autodiscovery}"
 echo "  - Client ID: $CLIENT_ID"
 echo "  - Soundcard: $SOUNDCARD_VALUE"
-echo "  - Resolution: $DISPLAY_RESOLUTION"
+echo "  - Resolution: ${DISPLAY_RESOLUTION:-auto}"
 echo "  - Display mode: $DISPLAY_MODE"
 echo "  - Band mode: $BAND_MODE"
 echo "  - Resource profile: $RESOURCE_PROFILE"
@@ -1047,7 +1047,11 @@ if [ "$DISPLAY_MODE" = "browser" ]; then
     REAL_USER="${SUDO_USER:-$USER}"
     REAL_HOME=$(eval echo ~"$REAL_USER")
 
-    # Validate and convert resolution to comma-separated for chromium
+    # Browser mode requires an explicit resolution for Chromium window size
+    if [[ -z "$DISPLAY_RESOLUTION" ]]; then
+        DISPLAY_RESOLUTION="1920x1080"
+        echo "Browser mode: defaulting to $DISPLAY_RESOLUTION"
+    fi
     if [[ ! "$DISPLAY_RESOLUTION" =~ ^[0-9]+x[0-9]+$ ]]; then
         echo "Error: Invalid DISPLAY_RESOLUTION format: $DISPLAY_RESOLUTION"
         exit 1
@@ -1280,7 +1284,7 @@ echo "========================================="
 echo ""
 echo "Configuration Summary:"
 echo "  - Audio HAT: $HAT_NAME"
-echo "  - Resolution: $DISPLAY_RESOLUTION"
+echo "  - Resolution: ${DISPLAY_RESOLUTION:-auto}"
 echo "  - Display mode: $DISPLAY_MODE"
 echo "  - Band mode: $BAND_MODE"
 echo "  - Client ID: $CLIENT_ID"

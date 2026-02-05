@@ -35,9 +35,11 @@ SPECTRUM_WS_PORT = int(os.environ.get("VISUALIZER_WS_PORT", "8081"))
 FB_DEVICE = "/dev/fb0"
 TARGET_FPS = 20
 
-# Resolution: read from FB sysfs at startup, env var is fallback only
-_fallback_res = os.environ.get("DISPLAY_RESOLUTION", "1024x600")
-WIDTH, HEIGHT = (int(x) for x in _fallback_res.split("x"))
+# Render resolution: from DISPLAY_RESOLUTION env var if set,
+# otherwise auto-detected from framebuffer (capped at 1920x1080).
+# Actual FB dimensions stored separately in FB_WIDTH/FB_HEIGHT.
+_init_res = os.environ.get("DISPLAY_RESOLUTION") or "1920x1080"
+WIDTH, HEIGHT = (int(x) for x in _init_res.split("x"))
 
 # Colors
 BG_TOP = (10, 10, 10)
@@ -49,7 +51,7 @@ DIM_COLOR = (85, 85, 85)
 PANEL_BG = (17, 17, 17)
 
 # Spectrum state — NUM_BANDS auto-detected from first WS message
-NUM_BANDS = 19  # default, updated on first WS message
+NUM_BANDS = 21  # default, updated on first WS message
 NOISE_FLOOR = -72.0  # dBFS
 REF_LEVEL = 0.0  # dBFS
 DB_RANGE = REF_LEVEL - NOISE_FLOOR  # 72 dB
@@ -124,17 +126,20 @@ fb_mmap = None
 fb_stride = 0
 fb_bpp = 32
 
+# Actual framebuffer dimensions (may differ from render WIDTH/HEIGHT)
+FB_WIDTH, FB_HEIGHT = WIDTH, HEIGHT
+
 # Cached frames: base_frame has bg+art+text, spectrum_bg is native FB format
 base_frame: Image.Image | None = None
 base_frame_version: int = -1
 spectrum_bg_np: np.ndarray | None = None  # numpy RGB array for alpha blending
 spectrum_bg_fb: np.ndarray | None = None  # native FB format (RGB565 or BGRA32)
 
-# Cached volume knob overlay (re-rendered only when volume changes)
-_vol_knob_cache: dict = {"vol": None, "muted": None, "img": None, "np": None}
-
 # Cached clock overlay (re-rendered every second)
 _clock_cache: dict = {"time_str": None, "fb": None, "width": 0, "height": 0}
+
+# Logo image (loaded once at startup)
+_logo_img: Image.Image | None = None
 
 # Cached fonts (loaded once)
 _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
@@ -159,12 +164,39 @@ def get_fb_info() -> tuple[int, int, int, int]:
 
 
 def open_framebuffer() -> None:
-    """Open and memory-map the framebuffer device."""
-    global fb_fd, fb_mmap, fb_stride, fb_bpp, WIDTH, HEIGHT
+    """Open and memory-map the framebuffer device.
+
+    Sets FB_WIDTH/FB_HEIGHT to actual framebuffer dimensions and
+    WIDTH/HEIGHT to the (possibly lower) internal render resolution.
+    Output is scaled from render to FB resolution when writing.
+    """
+    global fb_fd, fb_mmap, fb_stride, fb_bpp, WIDTH, HEIGHT, FB_WIDTH, FB_HEIGHT
 
     fb_w, fb_h, fb_bpp, fb_stride = get_fb_info()
-    WIDTH, HEIGHT = fb_w, fb_h
-    logger.info(f"Framebuffer: {WIDTH}x{HEIGHT}, {fb_bpp}bpp, stride={fb_stride}")
+    FB_WIDTH, FB_HEIGHT = fb_w, fb_h
+
+    # Determine render resolution
+    display_res = os.environ.get("DISPLAY_RESOLUTION")
+    if display_res:
+        # Explicit render resolution — use it, capped at actual FB size
+        rw, rh = (int(x) for x in display_res.split("x"))
+        WIDTH = min(rw, fb_w)
+        HEIGHT = min(rh, fb_h)
+    else:
+        # Auto-detect: use FB native, capped at 1920x1080 for memory safety
+        max_w, max_h = 1920, 1080
+        if fb_w <= max_w and fb_h <= max_h:
+            WIDTH, HEIGHT = fb_w, fb_h
+        else:
+            scale = min(max_w / fb_w, max_h / fb_h)
+            WIDTH = int(fb_w * scale)
+            HEIGHT = int(fb_h * scale)
+
+    logger.info(f"Framebuffer: {FB_WIDTH}x{FB_HEIGHT}, {fb_bpp}bpp, stride={fb_stride}")
+    if (WIDTH, HEIGHT) != (FB_WIDTH, FB_HEIGHT):
+        logger.info(
+            f"Render resolution: {WIDTH}x{HEIGHT} (scaled to FB on output)"
+        )
 
     fd = os.open(FB_DEVICE, os.O_RDWR)
     size = fb_stride * fb_h
@@ -176,14 +208,20 @@ def write_region_to_fb_fast(fb_pixels: np.ndarray, x: int, y: int) -> None:
     """Write a native-format pixel array to the framebuffer at position (x, y).
 
     Accepts pre-converted pixels: uint16 (h,w) for 16bpp or uint8 (h,w,4) for 32bpp.
-    No per-frame RGB→FB conversion needed.
+    Coordinates are in render space; scaled to FB resolution if needed.
     """
     if fb_mmap is None:
         return
 
+    # Scale from render resolution to FB resolution
+    if WIDTH != FB_WIDTH or HEIGHT != FB_HEIGHT:
+        fb_pixels = _scale_to_fb(fb_pixels)
+        x = round(x * FB_WIDTH / WIDTH)
+        y = round(y * FB_HEIGHT / HEIGHT)
+
     h, w = fb_pixels.shape[:2]
-    if x < 0 or y < 0 or x + w > WIDTH or y + h > HEIGHT:
-        logger.warning(f"Framebuffer write out of bounds: ({x},{y}) {w}x{h} on {WIDTH}x{HEIGHT}")
+    if x < 0 or y < 0 or x + w > FB_WIDTH or y + h > FB_HEIGHT:
+        logger.warning(f"Framebuffer write out of bounds: ({x},{y}) {w}x{h} on {FB_WIDTH}x{FB_HEIGHT}")
         return
 
     bpp_bytes = fb_bpp // 8
@@ -198,23 +236,42 @@ def write_region_to_fb_fast(fb_pixels: np.ndarray, x: int, y: int) -> None:
 
 
 def write_full_frame(img: Image.Image) -> None:
-    """Write a full-screen image to the framebuffer."""
+    """Write a full-screen image to the framebuffer, scaling to fit.
+
+    Scales and writes in strips (CHUNK rows at a time) to avoid allocating
+    a full FB-sized image in memory (e.g. 24 MB for 4K).
+    """
     if fb_mmap is None:
         return
-    rgb = np.array(img.convert("RGB"))
-    fb_pixels = _rgb_to_fb_native(rgb)
-    # Write row by row to handle stride
-    h = fb_pixels.shape[0]
+
+    needs_scale = (img.width, img.height) != (FB_WIDTH, FB_HEIGHT)
     bpp_bytes = fb_bpp // 8
-    row_bytes = fb_pixels.shape[1] * bpp_bytes if fb_bpp == 16 else fb_pixels.shape[1] * 4
+    row_bytes = FB_WIDTH * bpp_bytes
+    CHUNK = 64
     try:
-        if fb_stride == row_bytes:
-            fb_mmap.seek(0)
-            fb_mmap.write(fb_pixels.tobytes())
-        else:
-            for row in range(h):
-                fb_mmap.seek(row * fb_stride)
-                fb_mmap.write(fb_pixels[row].tobytes())
+        for fb_y0 in range(0, FB_HEIGHT, CHUNK):
+            fb_y1 = min(fb_y0 + CHUNK, FB_HEIGHT)
+
+            if needs_scale:
+                # Map FB rows back to source image rows
+                src_y0 = fb_y0 * img.height // FB_HEIGHT
+                src_y1 = max(src_y0 + 1, fb_y1 * img.height // FB_HEIGHT)
+                strip = img.crop((0, src_y0, img.width, src_y1))
+                strip = strip.resize(
+                    (FB_WIDTH, fb_y1 - fb_y0), Image.BILINEAR
+                )
+            else:
+                strip = img.crop((0, fb_y0, FB_WIDTH, fb_y1))
+
+            chunk_rgb = np.array(strip.convert("RGB"))
+            chunk_fb = _rgb_to_fb_native(chunk_rgb)
+            if fb_stride == row_bytes:
+                fb_mmap.seek(fb_y0 * fb_stride)
+                fb_mmap.write(chunk_fb.tobytes())
+            else:
+                for row in range(chunk_fb.shape[0]):
+                    fb_mmap.seek((fb_y0 + row) * fb_stride)
+                    fb_mmap.write(chunk_fb[row].tobytes())
     except (ValueError, OSError) as e:
         logger.warning(f"Framebuffer full-frame write failed: {e}")
 
@@ -322,9 +379,25 @@ def compute_layout() -> dict:
     bar_w = (bar_area_w - bar_gap * (NUM_BANDS - 1)) // NUM_BANDS
     bar_base_y = spec_y + spec_h - pad
 
-    # Clock position at bottom center
-    clock_h = max(20, int(HEIGHT * 0.05))
-    clock_y = start_y + container_h + outer_gap // 2
+    # Bottom bar: between container bottom and screen bottom
+    bottom_y = start_y + container_h
+    bottom_h = HEIGHT - bottom_y
+    bottom_pad = max(2, bottom_h // 16)
+    nudge_up = bottom_pad * 4  # shift logo/knob upward
+
+    # Logo: left-aligned, square, enlarged
+    logo_size = bottom_h - bottom_pad * 2
+    logo_x = start_x
+    logo_y = bottom_y + (bottom_h - logo_size) // 2 - nudge_up
+
+    # Volume knob: right-aligned, enlarged
+    vol_radius = max(16, (bottom_h - bottom_pad * 2) // 2)
+    vol_x = start_x + container_w - vol_radius * 2 - bottom_pad
+    vol_y = bottom_y + (bottom_h - vol_radius * 2) // 2 - nudge_up
+
+    # Clock+date: centered in bottom bar
+    clock_h = max(20, bottom_h - bottom_pad * 2)
+    clock_y = bottom_y + bottom_pad
 
     return {
         "art_x": art_x, "art_y": art_y, "art_size": art_size,
@@ -336,6 +409,9 @@ def compute_layout() -> dict:
         "pad": pad, "bar_area_w": bar_area_w, "bar_area_h": bar_area_h,
         "bar_gap": bar_gap, "bar_w": bar_w, "bar_base_y": bar_base_y,
         "clock_y": clock_y, "clock_h": clock_h,
+        "bottom_y": bottom_y, "bottom_h": bottom_h, "bottom_pad": bottom_pad,
+        "logo_size": logo_size, "logo_x": logo_x, "logo_y": logo_y,
+        "vol_radius": vol_radius, "vol_x": vol_x, "vol_y": vol_y,
     }
 
 
@@ -357,6 +433,24 @@ def _rgb_to_fb_native(rgb_array: np.ndarray) -> np.ndarray:
         bgra[:, :, 2] = rgb_array[:, :, 0]
         bgra[:, :, 3] = 255
         return bgra
+
+
+def _scale_to_fb(pixels: np.ndarray) -> np.ndarray:
+    """Scale native-format pixel array from render to FB resolution.
+
+    Uses nearest-neighbor interpolation via numpy fancy indexing.
+    Works for both 2D (uint16, 16bpp) and 3D (uint8 h×w×4, 32bpp) arrays.
+    """
+    if WIDTH == FB_WIDTH and HEIGHT == FB_HEIGHT:
+        return pixels
+    h, w = pixels.shape[:2]
+    new_w = round(w * FB_WIDTH / WIDTH)
+    new_h = round(h * FB_HEIGHT / HEIGHT)
+    if new_w == w and new_h == h:
+        return pixels
+    row_idx = (np.arange(new_h) * h / new_h).astype(int)
+    col_idx = (np.arange(new_w) * w / new_w).astype(int)
+    return pixels[row_idx[:, None], col_idx[None, :]]
 
 
 def _rgb_tuple_to_fb(r: int, g: int, b: int) -> int | tuple:
@@ -615,6 +709,21 @@ def render_base_frame() -> Image.Image:
         radius=6, fill=(10, 10, 15),
     )
 
+    # Bottom bar: logo (left)
+    if _logo_img is not None:
+        logo_resized = _logo_img.resize(
+            (L["logo_size"], L["logo_size"]), Image.LANCZOS
+        )
+        bg.paste(logo_resized, (L["logo_x"], L["logo_y"]), logo_resized)
+
+    # Bottom bar: volume knob (right) — reuses `meta` from above
+    vol = meta.get("volume") if meta else None
+    muted = meta.get("muted", False) if meta else False
+    if vol is not None:
+        vol = max(0, min(100, vol))
+        knob_img = _render_volume_knob(vol, muted)
+        bg.paste(knob_img, (L["vol_x"], L["vol_y"]), knob_img)
+
     return bg
 
 
@@ -631,9 +740,9 @@ def extract_spectrum_bg() -> None:
 
 
 def _render_volume_knob(vol: int, muted: bool) -> Image.Image:
-    """Render the volume knob as a small RGBA image. Cached."""
+    """Render the volume knob as an RGBA image for the bottom bar."""
     L = layout
-    radius = max(12, L["spec_h"] // 14)
+    radius = L["vol_radius"]
     size = radius * 2 + 4
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -670,39 +779,18 @@ def _render_volume_knob(vol: int, muted: bool) -> Image.Image:
     return img
 
 
-def _get_volume_knob() -> Image.Image | None:
-    """Get cached volume knob image, re-rendering only when volume changes."""
-    meta = current_metadata
-    if not meta:
-        return None
-    vol = meta.get("volume")
-    muted = meta.get("muted", False)
-    if vol is None:
-        return None
-    vol = max(0, min(100, vol))
-
-    if vol == _vol_knob_cache["vol"] and muted == _vol_knob_cache["muted"]:
-        return _vol_knob_cache["np"]
-
-    img = _render_volume_knob(vol, muted)
-    knob_np = np.array(img)
-    _vol_knob_cache["vol"] = vol
-    _vol_knob_cache["muted"] = muted
-    _vol_knob_cache["img"] = img
-    _vol_knob_cache["np"] = knob_np
-    return knob_np
-
-
 def render_clock() -> tuple[np.ndarray, int, int] | None:
-    """Render a nerdy retro-style digital clock. Returns (fb_pixels, width, height)."""
+    """Render date+time in retro terminal style. Returns (fb_pixels, width, height)."""
     L = layout
     if not L:
         return None
 
-    current_time = time.strftime("%H:%M:%S")
+    date_str = time.strftime("%a %d %b")
+    time_str = time.strftime("%H:%M:%S")
+    display_str = f"{date_str}  ·  {time_str}"
 
-    # Check cache
-    if current_time == _clock_cache["time_str"] and _clock_cache["fb"] is not None:
+    # Check cache (changes every second)
+    if display_str == _clock_cache["time_str"] and _clock_cache["fb"] is not None:
         return _clock_cache["fb"], _clock_cache["width"], _clock_cache["height"]
 
     # Clock styling
@@ -710,7 +798,7 @@ def render_clock() -> tuple[np.ndarray, int, int] | None:
     font = _get_font(clock_font_size, bold=True)
 
     # Measure text size
-    bbox = font.getbbox(current_time)
+    bbox = font.getbbox(display_str)
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
 
@@ -727,16 +815,15 @@ def render_clock() -> tuple[np.ndarray, int, int] | None:
     draw.rectangle([1, 1, img_w - 2, img_h - 2], outline=(25, 35, 55), width=1)
 
     # Cyber/terminal green-cyan color for time
-    time_color = (0, 220, 180)  # Cyan-green terminal color
+    time_color = (0, 220, 180)
 
-    # Draw time with subtle shadow for depth
+    # Draw text with subtle shadow for depth
     text_x = pad_x + 2
     text_y = pad_y + 2 - bbox[1]
-    draw.text((text_x + 1, text_y + 1), current_time, fill=(0, 40, 35), font=font)
-    draw.text((text_x, text_y), current_time, fill=time_color, font=font)
+    draw.text((text_x + 1, text_y + 1), display_str, fill=(0, 40, 35), font=font)
+    draw.text((text_x, text_y), display_str, fill=time_color, font=font)
 
-    # Add subtle "LED" dots between segments (nerdy touch)
-    # Small decorative dots at corners
+    # Decorative corner dots
     dot_color = (0, 100, 80)
     draw.ellipse([3, 3, 5, 5], fill=dot_color)
     draw.ellipse([img_w - 6, 3, img_w - 4, 5], fill=dot_color)
@@ -748,7 +835,7 @@ def render_clock() -> tuple[np.ndarray, int, int] | None:
     fb_pixels = _rgb_to_fb_native(rgb)
 
     # Update cache
-    _clock_cache["time_str"] = current_time
+    _clock_cache["time_str"] = display_str
     _clock_cache["fb"] = fb_pixels
     _clock_cache["width"] = img_w
     _clock_cache["height"] = img_h
@@ -835,26 +922,6 @@ def _render_spectrum_locked() -> np.ndarray:
                 buf[peak_y:peak_y + marker_h, bx:bx + bar_w] = PEAK_COLORS_FB[i]
             else:
                 buf[peak_y:peak_y + marker_h, bx:bx + bar_w, :] = PEAK_COLORS_FB[i]
-
-    # Composite volume knob — blend in RGB, convert only the small knob region
-    knob_np = _get_volume_knob()
-    if knob_np is not None:
-        kh, kw = knob_np.shape[:2]
-        kx = L["right_w"] - pad // 2 - kw
-        ky = max(0, pad // 2 - kh // 4)
-        ky2 = min(ky + kh, buf.shape[0])
-        kx2 = min(kx + kw, buf.shape[1])
-        kh_clip = ky2 - ky
-        kw_clip = kx2 - kx
-        if kh_clip > 0 and kw_clip > 0:
-            # Alpha-blend in RGB space using the RGB background
-            alpha = knob_np[:kh_clip, :kw_clip, 3:4].astype(np.float32) / 255.0
-            rgb_k = knob_np[:kh_clip, :kw_clip, :3].astype(np.float32)
-            bg_rgb = spectrum_bg_np[ky:ky2, kx:kx2].astype(np.float32)
-            blended = (rgb_k * alpha + bg_rgb * (1.0 - alpha)).astype(np.uint8)
-            # Convert only the small knob region to native FB format
-            knob_fb = _rgb_to_fb_native(blended)
-            buf[ky:ky2, kx:kx2] = knob_fb
 
     return buf
 
@@ -1000,7 +1067,7 @@ async def render_loop() -> None:
 
 async def main() -> None:
     """Start all tasks."""
-    global layout
+    global layout, _logo_img
 
     logger.info(f"Starting framebuffer display: {WIDTH}x{HEIGHT}")
     logger.info(f"  Metadata WS port: {METADATA_WS_PORT}")
@@ -1012,6 +1079,15 @@ async def main() -> None:
     precompute_colors()
     precompute_fb_colors()
     _init_spectrum_buffer()
+
+    # Load logo for bottom bar
+    logo_path = "/app/logo.png"
+    if os.path.exists(logo_path):
+        try:
+            _logo_img = Image.open(logo_path).convert("RGBA")
+            logger.info(f"Loaded logo: {logo_path}")
+        except Exception as e:
+            logger.warning(f"Failed to load logo: {e}")
 
     logger.info(
         f"  Layout: art={layout['art_size']}px, "

@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **fb-display bottom bar redesign** - Logo (left), date+time (center), enlarged volume knob (right). Volume knob moved from spectrum panel to bottom bar. Clock now shows `Thu 05 Feb · HH:MM:SS` format
+
+### Fixed
+- **Spectrum only covered 20 Hz–10 kHz** - Half-octave band centers extended from 19 bands (20–10000 Hz) to 21 bands (20–20000 Hz), covering the full audible range
+
 ### Added
 - **Read-Only Root Filesystem** - Optional SD card protection using raspi-config overlayfs. Enable with `--read-only` flag or `ENABLE_READONLY=true` in config. Includes Docker fuse-overlayfs storage driver and `ro-mode` helper script for easy enable/disable
 - **WebSocket Metadata Push** ([9e168fb](https://github.com/lollonet/rpi-snapclient-usb/commit/9e168fb)) - Metadata service now pushes updates via WebSocket instead of HTTP polling, reducing latency and network overhead
 
 ### Fixed
+- **fb-display OOM on high-res framebuffers** - Render at internal resolution (from `DISPLAY_RESOLUTION` or auto-capped at 1920x1080) and scale to actual framebuffer. Prevents OOM kills on 4K displays with low memory limits. `DISPLAY_RESOLUTION` is now optional; leave empty to auto-detect
 - **Visualizer Healthcheck** ([f4a25ab](https://github.com/lollonet/rpi-snapclient-usb/commit/f4a25ab)) - Use process check instead of TCP connect to avoid spamming WebSocket error logs
 - **Dead Code Removal** ([b771304](https://github.com/lollonet/rpi-snapclient-usb/commit/b771304)) - Remove unused `metadata_queue` variable from metadata service
 

@@ -171,8 +171,11 @@ services:
     volumes:
       - ./public:/app/public:ro
       - ./docker/fb-display/fb_display.py:/app/fb_display.py:ro
+      - ./docker/fb-display/logo.png:/app/logo.png:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     environment:
-      - DISPLAY_RESOLUTION=${DISPLAY_RESOLUTION:-1024x600}
+      - DISPLAY_RESOLUTION=${DISPLAY_RESOLUTION:-}
       - VISUALIZER_WS_PORT=8081
       - METADATA_WS_PORT=8082
     logging: *default-logging

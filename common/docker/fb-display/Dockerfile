@@ -13,8 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Python dependencies
 RUN uv pip install --system --no-cache Pillow websockets requests numpy
 
-# Copy renderer
+# Copy renderer and assets
 COPY fb_display.py /app/
+COPY logo.png /app/
 
 RUN chmod +x /app/fb_display.py
 
