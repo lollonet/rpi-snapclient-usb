@@ -27,7 +27,6 @@ from zeroconf import ServiceBrowser, ServiceStateChange, Zeroconf
 # WebSocket server state
 WS_PORT = int(os.environ.get("METADATA_WS_PORT", "8082"))
 ws_clients: set = set()
-metadata_queue: asyncio.Queue | None = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -928,9 +927,6 @@ class SnapcastMetadataService:
 
     async def run_async(self) -> None:
         """Async main loop with WebSocket broadcast."""
-        global metadata_queue
-        metadata_queue = asyncio.Queue()
-
         logger.info(f"Starting Snapcast Metadata Service (async)")
         logger.info(f"  Snapserver: {self.snapserver_host}:{self.snapserver_port}")
         logger.info(f"  MPD fallback: {self.mpd_host}:{self.mpd_port}")
@@ -1051,12 +1047,6 @@ async def ws_handler(websocket, path=None):
     logger.info(f"WebSocket client connected: {client_addr}")
 
     try:
-        # Send current metadata immediately on connect
-        if metadata_queue is not None:
-            # Get service instance's current metadata
-            # We'll send it via the broadcast mechanism
-            pass
-
         # Keep connection alive, handle disconnects
         async for message in websocket:
             # Clients don't send anything, but we need to consume messages
