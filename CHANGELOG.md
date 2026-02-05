@@ -9,12 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **fb-display bottom bar redesign** - Logo (left), date+time (center), enlarged volume knob (right). Volume knob moved from spectrum panel to bottom bar. Clock now shows `Thu 05 Feb · HH:MM:SS` format
+- **Read-only filesystem enabled by default** - SD card protection is now on by default in both auto and interactive mode. Use `--no-readonly` flag to disable
 
 ### Fixed
 - **Spectrum only covered 20 Hz–10 kHz** - Half-octave band centers extended from 19 bands (20–10000 Hz) to 21 bands (20–20000 Hz), covering the full audible range
 
 ### Added
-- **Read-Only Root Filesystem** - Optional SD card protection using raspi-config overlayfs. Enable with `--read-only` flag or `ENABLE_READONLY=true` in config. Includes Docker fuse-overlayfs storage driver and `ro-mode` helper script for easy enable/disable
+- **Read-Only Root Filesystem** - SD card protection using raspi-config overlayfs, enabled by default. Disable with `--no-readonly` flag. Includes Docker fuse-overlayfs storage driver and `ro-mode` helper script for easy enable/disable
 - **WebSocket Metadata Push** ([9e168fb](https://github.com/lollonet/rpi-snapclient-usb/commit/9e168fb)) - Metadata service now pushes updates via WebSocket instead of HTTP polling, reducing latency and network overhead
 
 ### Fixed

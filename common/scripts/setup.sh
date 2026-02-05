@@ -7,11 +7,11 @@ set -euo pipefail
 # HAT auto-detection via EEPROM when AUDIO_HAT=auto.
 #
 # Optional flags:
-#   --read-only    Enable read-only filesystem (SD card protection)
+#   --no-readonly  Disable read-only filesystem (default: enabled)
 # ============================================
 AUTO_MODE=false
 AUTO_CONFIG=""
-ENABLE_READONLY=false
+ENABLE_READONLY=true
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -22,6 +22,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --read-only)
             ENABLE_READONLY=true
+            shift
+            ;;
+        --no-readonly)
+            ENABLE_READONLY=false
             shift
             ;;
         *) shift ;;
@@ -545,11 +549,11 @@ else
     echo "Enable read-only filesystem? (protects SD card from corruption)"
     echo "  - All writes go to RAM, lost on reboot"
     echo "  - Requires 'sudo ro-mode disable' for updates"
-    read -rp "Enable read-only mode? [y/N]: " readonly_choice
+    read -rp "Enable read-only mode? [Y/n]: " readonly_choice
 
-    case "${readonly_choice:-n}" in
-        [Yy]|[Yy][Ee][Ss]) ENABLE_READONLY=true ;;
-        *) ENABLE_READONLY=false ;;
+    case "${readonly_choice:-y}" in
+        [Nn]|[Nn][Oo]) ENABLE_READONLY=false ;;
+        *) ENABLE_READONLY=true ;;
     esac
 
     echo "Read-only mode: $ENABLE_READONLY"
