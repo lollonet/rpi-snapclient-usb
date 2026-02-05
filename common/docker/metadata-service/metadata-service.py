@@ -74,6 +74,8 @@ class SnapcastMetadataService:
         self.user_agent = os.environ.get("USER_AGENT", "SnapcastMetadataService/1.0")
         self._mpd_was_connected = False
         self._failed_downloads: set[str] = set()
+        self._snap_sock: socket.socket | None = None
+        self._snap_buffer: bytes = b""
 
     def _create_socket_connection(self, host: str, port: int, timeout: int = 5, log_errors: bool = True) -> socket.socket | None:
         """Create a socket connection with standard settings"""
@@ -87,9 +89,26 @@ class SnapcastMetadataService:
                 logger.error(f"Failed to connect to {host}:{port}: {e}")
             return None
 
-    def connect_to_snapserver(self) -> socket.socket | None:
-        """Connect to Snapserver JSON-RPC interface"""
-        return self._create_socket_connection(self.snapserver_host, self.snapserver_port)
+    def _get_snap_socket(self) -> socket.socket | None:
+        """Return persistent Snapserver socket, connecting if needed."""
+        if self._snap_sock is not None:
+            return self._snap_sock
+        self._snap_sock = self._create_socket_connection(
+            self.snapserver_host, self.snapserver_port
+        )
+        if self._snap_sock:
+            logger.info(f"Connected to snapserver {self.snapserver_host}:{self.snapserver_port}")
+        return self._snap_sock
+
+    def _close_snap_socket(self) -> None:
+        """Close persistent Snapserver socket and reset buffer."""
+        if self._snap_sock is not None:
+            try:
+                self._snap_sock.close()
+            except Exception:
+                pass
+            self._snap_sock = None
+            self._snap_buffer = b""
 
     def _read_mpd_response(self, sock: socket.socket) -> bytes:
         """Read MPD response until OK or ACK"""
@@ -361,41 +380,59 @@ class SnapcastMetadataService:
             sock.close()
 
     def send_rpc_request(self, sock: socket.socket, method: str, params: dict | None = None) -> dict | None:
-        """Send JSON-RPC request and get response"""
-        try:
-            request = {
-                "id": 1,
-                "jsonrpc": "2.0",
-                "method": method,
-                "params": params or {}
-            }
+        """Send JSON-RPC request and return matching response.
 
-            sock.sendall((json.dumps(request) + "\r\n").encode())
+        Uses a persistent buffer to handle unsolicited Snapcast notifications
+        (messages without "id") that arrive on the persistent connection.
+        """
+        request = {
+            "id": 1,
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params or {}
+        }
+        sock.sendall((json.dumps(request) + "\r\n").encode())
 
-            response_bytes = b""
-            while True:
-                chunk = sock.recv(8192)
-                if not chunk:
-                    break
-                response_bytes += chunk
-                if b"\r\n" in response_bytes:
-                    break
+        while True:
+            # Process complete messages already in the buffer
+            while b"\r\n" in self._snap_buffer:
+                line, self._snap_buffer = self._snap_buffer.split(b"\r\n", 1)
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line.decode('utf-8', errors='replace'))
+                except json.JSONDecodeError:
+                    continue
+                if "id" in msg:
+                    return msg  # Our response
+                # else: unsolicited notification — discard
 
-            response = response_bytes.decode('utf-8', errors='replace').strip()
-            return json.loads(response) if response else None
-        except Exception as e:
-            logger.error(f"RPC request failed: {e}")
-            return None
+            # Need more data from the socket
+            chunk = sock.recv(8192)
+            if not chunk:
+                return None  # Connection closed
+            self._snap_buffer += chunk
 
     def get_metadata_from_snapserver(self) -> dict[str, Any]:
-        """Get metadata from Snapserver JSON-RPC for our client's stream"""
-        sock = self.connect_to_snapserver()
+        """Get metadata from Snapserver JSON-RPC for our client's stream.
+
+        Uses a persistent socket. On failure, reconnects once before giving up.
+        """
+        sock = self._get_snap_socket()
         if not sock:
             return {"playing": False}
 
         try:
             status = self.send_rpc_request(sock, "Server.GetStatus")
             if not status:
+                # Connection dead — retry once
+                self._close_snap_socket()
+                sock = self._get_snap_socket()
+                if not sock:
+                    return {"playing": False}
+                status = self.send_rpc_request(sock, "Server.GetStatus")
+            if not status:
+                self._close_snap_socket()
                 return {"playing": False}
 
             # Find our client and its stream
@@ -448,9 +485,8 @@ class SnapcastMetadataService:
 
         except Exception as e:
             logger.error(f"Error getting Snapserver metadata: {e}")
+            self._close_snap_socket()
             return {"playing": False}
-        finally:
-            sock.close()
 
     def _find_client_stream(self, server: dict) -> tuple[str | None, dict]:
         """Find the stream ID and volume info for our client.
