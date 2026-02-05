@@ -64,7 +64,7 @@ jobs:
         with:
           context: common/docker/snapclient
           builder: mybuilder
-          platforms: linux/arm64,linux/amd64
+          platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -124,7 +124,7 @@ jobs:
         with:
           context: common/docker/metadata-service
           builder: mybuilder
-          platforms: linux/arm64,linux/amd64
+          platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -184,7 +184,7 @@ jobs:
         with:
           context: common/docker/audio-visualizer
           builder: mybuilder
-          platforms: linux/arm64,linux/amd64
+          platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -244,7 +244,7 @@ jobs:
         with:
           context: common/docker/fb-display
           builder: mybuilder
-          platforms: linux/arm64,linux/amd64
+          platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
