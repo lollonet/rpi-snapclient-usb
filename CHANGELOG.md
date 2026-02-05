@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **WebSocket Metadata Push** ([9e168fb](https://github.com/lollonet/rpi-snapclient-usb/commit/9e168fb)) - Metadata service now pushes updates via WebSocket instead of HTTP polling, reducing latency and network overhead
+
+### Fixed
+- **Visualizer Healthcheck** ([f4a25ab](https://github.com/lollonet/rpi-snapclient-usb/commit/f4a25ab)) - Use process check instead of TCP connect to avoid spamming WebSocket error logs
+- **Dead Code Removal** ([b771304](https://github.com/lollonet/rpi-snapclient-usb/commit/b771304)) - Remove unused `metadata_queue` variable from metadata service
+
+### Maintenance
+- **CI Cache Fix** ([a202721](https://github.com/lollonet/rpi-snapclient-usb/commit/a202721)) - Remove GHA cache from fb-display job to fix transient build failures
+
 ## [0.1.0] - 2026-02-05
 
 Initial release with core feature set.
