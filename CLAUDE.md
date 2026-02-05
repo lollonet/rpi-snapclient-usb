@@ -1,22 +1,60 @@
-# Project Requirements
+# CLAUDE.md — rpi-snapclient-usb
 
-## mDNS Discovery
+Raspberry Pi Snapcast client with auto-detection, Docker services, and framebuffer display.
 
-**MUST use `_snapcast._tcp` for Snapserver discovery**, not `_snapcast-ctrl._tcp`.
+## Architecture
 
-- Snapserver advertises streaming service on `_snapcast._tcp` (port 1704)
-- RPC/control port = streaming_port + 1 (1705)
-- The `_snapcast-ctrl._tcp` service is NOT advertised by default
+```
+common/
+├── docker-compose.yml          # All services, profiles: framebuffer | browser
+├── .env.example                # Full config reference
+├── docker/
+│   ├── snapclient/             # Core audio client (ALSA → Snapserver)
+│   ├── metadata-service/       # Track info via WebSocket (port 8082)
+│   ├── audio-visualizer/       # FFT spectrum via WebSocket (port 8081)
+│   └── fb-display/             # Framebuffer renderer (/dev/fb0)
+├── scripts/setup.sh            # Main installer (--auto supported)
+├── public/                     # Web UI assets
+└── audio-hats/                 # HAT overlay configs
+install/snapclient.conf         # User-facing config defaults
+prepare-sd.sh                   # SD card auto-install prep
+```
 
-## Auto-Detection
+## Key Rules
 
-Always prefer auto-detection over hardcoded values:
-- Audio HAT: detect via EEPROM (`/proc/device-tree/hat/product`)
-- Snapserver: discover via mDNS, never hardcode IP
-- Display resolution: use user config, not hardcoded defaults
+### mDNS Discovery
+Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = streaming_port + 1.
 
-## Install Progress Screen
+### Auto-Detection First
+- Audio HAT: EEPROM at `/proc/device-tree/hat/product`, fallback to ALSA card names, then USB
+- Snapserver: mDNS discovery, never hardcode IP
+- Display resolution: `DISPLAY_RESOLUTION` env var optional; auto-detect from framebuffer, capped at 1920×1080
 
-- Resolution: 800x600 via `video=HDMI-A-1:800x600@60` in cmdline.txt
-- KMS driver ignores `hdmi_group`/`hdmi_mode` - must use cmdline.txt `video=` param
-- Remove video param after install so final boot uses native resolution
+### Read-Only Filesystem
+- Enabled by default (`ENABLE_READONLY=true`)
+- Docker **must** use `fuse-overlayfs` storage driver — kernel overlay2 fails on overlayfs root
+- `ro-mode.sh enable/disable/status` manages it; requires reboot
+- Use `--no-readonly` flag on setup.sh to skip
+
+### Display Rendering
+- `fb_display.py` bind-mounted into container (live updates without image rebuild)
+- Resolution scaling: renders at internal res, scales to actual FB on output
+- Bottom bar: logo (left), date+time (center), volume knob (right)
+- Timezone: mount `/etc/localtime` and `/etc/timezone` into container
+- Install progress screen: `video=HDMI-A-1:800x600@60` in cmdline.txt (KMS ignores hdmi_group/hdmi_mode); remove after install
+
+### Spectrum Analyzer
+- Half-octave default: 21 bands, 20 Hz–20 kHz
+- Third-octave option: 31 bands (ISO 266), set `BAND_MODE=third-octave`
+- Band count auto-detected by display from first WebSocket message
+
+### Deployment
+- **SD card**: `prepare-sd.sh` patches firstrun for auto-install
+- **Live update**: rsync changed files + `docker compose up -d --force-recreate`
+- Bind-mounted files: `fb_display.py`, `visualizer.py`, `metadata-service.py` — no image rebuild needed
+- Device hosts: `snapdigi` (192.168.63.5), `snapvideo` — SSH user `claudio`
+
+### Git & CI
+- Pre-push hook runs shellcheck, bash syntax, HAT config validation
+- Docker images: `ghcr.io/lollonet/rpi-snapclient-usb-*:latest` (ARM64 only)
+- Branch naming: `feature/<desc>` or `fix/<desc>`, always use PRs
