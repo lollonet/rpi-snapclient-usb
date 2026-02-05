@@ -1217,27 +1217,36 @@ if [[ "${ENABLE_READONLY:-false}" == "true" ]]; then
     # Install fuse-overlayfs for Docker compatibility with overlayfs root
     apt-get install -y fuse-overlayfs
 
-    # Stop Docker to reconfigure storage driver
-    log_progress "Reconfiguring Docker storage driver..."
-    systemctl stop docker
+    # Check if Docker is already using fuse-overlayfs (idempotent)
+    current_driver=$(docker info --format '{{.Driver}}' 2>/dev/null || echo "none")
+    if [[ "$current_driver" != "fuse-overlayfs" ]]; then
+        # Switch storage driver (requires wiping existing data)
+        log_progress "Switching Docker storage driver to fuse-overlayfs..."
+        systemctl stop docker
 
-    # Configure Docker to use fuse-overlayfs storage driver
-    # (required because overlay2 doesn't work on overlayfs root)
-    mkdir -p /etc/docker
-    cp "$COMMON_DIR/docker/daemon.json" /etc/docker/daemon.json
+        # Configure Docker to use fuse-overlayfs storage driver
+        # (required because overlay2 doesn't work on overlayfs root)
+        mkdir -p /etc/docker
+        cp "$COMMON_DIR/docker/daemon.json" /etc/docker/daemon.json
 
-    # Clear existing Docker data (incompatible with new storage driver)
-    log_progress "Clearing Docker data (storage driver change)..."
-    rm -rf /var/lib/docker/*
+        # Clear existing Docker data (incompatible with new storage driver)
+        log_progress "Clearing Docker data (storage driver change)..."
+        rm -rf /var/lib/docker/*
 
-    # Restart Docker
-    log_progress "Restarting Docker..."
-    systemctl start docker
+        # Restart Docker
+        log_progress "Restarting Docker..."
+        systemctl start docker
 
-    # Re-pull images (storage was cleared)
-    log_progress "Re-pulling container images..."
-    cd "$INSTALL_DIR"
-    docker compose pull 2>&1 || true
+        # Re-pull images (storage was cleared)
+        log_progress "Re-pulling container images..."
+        cd "$INSTALL_DIR"
+        if ! docker compose pull 2>&1; then
+            echo "WARNING: Failed to pull images after storage driver change."
+            echo "  Run 'docker compose pull' manually after reboot."
+        fi
+    else
+        log_progress "Docker already using fuse-overlayfs, skipping reconfiguration..."
+    fi
 
     # Install ro-mode helper script
     log_progress "Installing ro-mode helper..."
