@@ -17,6 +17,11 @@ SNAPCLIENT — QUICK INSTALL
 Your audio HAT is detected automatically.
 Edit snapclient.conf ONLY if auto-detection does not work.
 
+For SD card protection (recommended for unattended use):
+  Set ENABLE_READONLY=true in snapclient.conf before step 3.
+  This makes the root filesystem read-only, preventing corruption.
+  Use "sudo ro-mode disable && sudo reboot" when updates are needed.
+
 After install, play music on your Snapserver and enjoy!
 
 

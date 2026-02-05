@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Read-Only Root Filesystem** - Optional SD card protection using raspi-config overlayfs. Enable with `--read-only` flag or `ENABLE_READONLY=true` in config. Includes Docker fuse-overlayfs storage driver and `ro-mode` helper script for easy enable/disable
 - **WebSocket Metadata Push** ([9e168fb](https://github.com/lollonet/rpi-snapclient-usb/commit/9e168fb)) - Metadata service now pushes updates via WebSocket instead of HTTP polling, reducing latency and network overhead
 
 ### Fixed
