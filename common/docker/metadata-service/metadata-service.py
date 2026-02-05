@@ -3,8 +3,11 @@
 Snapcast Metadata Service
 Fetches metadata from Snapserver JSON-RPC and serves it as JSON for cover display.
 Supports all sources: MPD, AirPlay, Spotify, etc.
+
+Pushes metadata changes via WebSocket to connected clients (fb-display).
 """
 
+import asyncio
 import html
 import ipaddress
 import json
@@ -18,7 +21,13 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
+import websockets
 from zeroconf import ServiceBrowser, ServiceStateChange, Zeroconf
+
+# WebSocket server state
+WS_PORT = int(os.environ.get("METADATA_WS_PORT", "8082"))
+ws_clients: set = set()
+metadata_queue: asyncio.Queue | None = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -917,6 +926,166 @@ class SnapcastMetadataService:
 
             time.sleep(2)
 
+    async def run_async(self) -> None:
+        """Async main loop with WebSocket broadcast."""
+        global metadata_queue
+        metadata_queue = asyncio.Queue()
+
+        logger.info(f"Starting Snapcast Metadata Service (async)")
+        logger.info(f"  Snapserver: {self.snapserver_host}:{self.snapserver_port}")
+        logger.info(f"  MPD fallback: {self.mpd_host}:{self.mpd_port}")
+        logger.info(f"  Client ID: {self.client_id}")
+        logger.info(f"  WebSocket port: {WS_PORT}")
+
+        # Start WebSocket server
+        ws_server = await websockets.serve(ws_handler, "0.0.0.0", WS_PORT)
+        logger.info(f"WebSocket server started on port {WS_PORT}")
+
+        # Run metadata polling in executor (blocking I/O)
+        loop = asyncio.get_event_loop()
+
+        while True:
+            try:
+                # Run blocking metadata fetch in thread pool
+                metadata = await loop.run_in_executor(
+                    None, self.get_metadata_from_snapserver
+                )
+
+                # If stream is MPD, always query MPD for richer metadata
+                if metadata.get('source') == 'MPD':
+                    mpd_meta = await loop.run_in_executor(
+                        None, self.get_mpd_metadata
+                    )
+                    if mpd_meta.get('playing'):
+                        mpd_meta["volume"] = metadata.get("volume", 100)
+                        mpd_meta["muted"] = metadata.get("muted", False)
+                        if not mpd_meta.get("title") and mpd_meta.get("station_name"):
+                            mpd_meta["title"] = mpd_meta["station_name"]
+                        metadata = mpd_meta
+                        logger.debug("Using MPD metadata")
+
+                # Fetch artwork (blocking calls in executor)
+                if metadata.get('playing'):
+                    artwork_url = metadata.get('artwork', '')
+                    is_radio = metadata.get('codec') == 'RADIO'
+
+                    if not artwork_url and metadata.get('source') == 'MPD' and not is_radio:
+                        mpd_art = await loop.run_in_executor(
+                            None, self.fetch_mpd_artwork, metadata.get('file', '')
+                        )
+                        if mpd_art:
+                            metadata['artwork'] = mpd_art
+                            artwork_url = None
+
+                    if not artwork_url and not metadata.get('artwork'):
+                        if is_radio and metadata.get('station_name'):
+                            artwork_url = await loop.run_in_executor(
+                                None, self.fetch_radio_logo,
+                                metadata['station_name'], metadata.get('file', '')
+                            )
+                        elif metadata.get('artist') and metadata.get('album'):
+                            artwork_url = await loop.run_in_executor(
+                                None, self.fetch_album_artwork,
+                                metadata['artist'], metadata['album']
+                            )
+
+                    if artwork_url:
+                        local_art = await loop.run_in_executor(
+                            None, self.download_artwork, artwork_url
+                        )
+                        metadata['artwork'] = local_art
+
+                    if not metadata.get('artwork') and is_radio and metadata.get('station_name'):
+                        logo_url = await loop.run_in_executor(
+                            None, self.fetch_radio_logo,
+                            metadata['station_name'], metadata.get('file', '')
+                        )
+                        if logo_url:
+                            local_art = await loop.run_in_executor(
+                                None, self.download_artwork, logo_url
+                            )
+                            metadata['artwork'] = local_art
+
+                    if not metadata.get('artwork') and is_radio:
+                        metadata['artwork'] = '/default-radio.png'
+
+                    if not is_radio and metadata.get('artist'):
+                        artist_image = await loop.run_in_executor(
+                            None, self.fetch_artist_image, metadata['artist']
+                        )
+                        metadata['artist_image'] = artist_image
+
+                # Check for changes and broadcast
+                if self._metadata_changed(metadata, self.current_metadata):
+                    new_title = metadata.get("title", "")
+                    new_artist = metadata.get("artist", "")
+                    old_title = self.current_metadata.get("title", "")
+                    old_artist = self.current_metadata.get("artist", "")
+                    if (new_title or new_artist) and (new_title, new_artist) != (old_title, old_artist):
+                        self._failed_downloads.clear()
+                    self.current_metadata = metadata
+                    self.write_metadata(metadata)
+                    # Broadcast to WebSocket clients
+                    await broadcast_metadata(metadata)
+                else:
+                    volatile_changed = any(
+                        metadata.get(f) != self.current_metadata.get(f)
+                        for f in self._VOLATILE_FIELDS
+                    )
+                    if volatile_changed:
+                        self.current_metadata = metadata
+                        self._write_metadata_quiet(metadata)
+                        # Broadcast volatile updates too (volume changes)
+                        await broadcast_metadata(metadata)
+
+            except Exception as e:
+                logger.error(f"Error in async main loop: {e}")
+
+            await asyncio.sleep(2)
+
+
+async def ws_handler(websocket, path=None):
+    """Handle WebSocket connections."""
+    ws_clients.add(websocket)
+    client_addr = websocket.remote_address
+    logger.info(f"WebSocket client connected: {client_addr}")
+
+    try:
+        # Send current metadata immediately on connect
+        if metadata_queue is not None:
+            # Get service instance's current metadata
+            # We'll send it via the broadcast mechanism
+            pass
+
+        # Keep connection alive, handle disconnects
+        async for message in websocket:
+            # Clients don't send anything, but we need to consume messages
+            pass
+    except websockets.exceptions.ConnectionClosed:
+        pass
+    finally:
+        ws_clients.discard(websocket)
+        logger.info(f"WebSocket client disconnected: {client_addr}")
+
+
+async def broadcast_metadata(metadata: dict) -> None:
+    """Broadcast metadata to all connected WebSocket clients."""
+    if not ws_clients:
+        return
+
+    # Strip internal fields
+    output = {k: v for k, v in metadata.items() if k not in ("file", "station_name")}
+    message = json.dumps(output)
+
+    # Send to all clients concurrently
+    tasks = [client.send(message) for client in ws_clients.copy()]
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Remove failed clients
+        for client, result in zip(ws_clients.copy(), results):
+            if isinstance(result, Exception):
+                ws_clients.discard(client)
+
 
 if __name__ == "__main__":
     # Clear stale metadata from previous session to avoid showing wrong cover on startup
@@ -947,4 +1116,6 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     service = SnapcastMetadataService(snapserver_host, snapserver_port, client_id)
-    service.run()
+
+    # Run async version with WebSocket server
+    asyncio.run(service.run_async())

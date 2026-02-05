@@ -12,6 +12,7 @@ and a pre-allocated framebuffer write buffer to avoid per-frame allocations.
 import asyncio
 import colorsys
 import io
+import json
 import logging
 import mmap
 import os
@@ -29,8 +30,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Display configuration
-METADATA_URL = "http://localhost:8080/metadata.json"
-WS_PORT = int(os.environ.get("VISUALIZER_WS_PORT", "8081"))
+METADATA_WS_PORT = int(os.environ.get("METADATA_WS_PORT", "8082"))
+SPECTRUM_WS_PORT = int(os.environ.get("VISUALIZER_WS_PORT", "8081"))
 FB_DEVICE = "/dev/fb0"
 TARGET_FPS = 20
 
@@ -860,7 +861,7 @@ def _render_spectrum_locked() -> np.ndarray:
 
 async def spectrum_ws_reader() -> None:
     """Connect to spectrum WebSocket and update band dBFS values."""
-    ws_url = f"ws://localhost:{WS_PORT}"
+    ws_url = f"ws://localhost:{SPECTRUM_WS_PORT}"
     while True:
         try:
             async with websockets.connect(ws_url) as ws:
@@ -883,36 +884,33 @@ async def spectrum_ws_reader() -> None:
             await asyncio.sleep(5)
 
 
-async def metadata_poller() -> None:
-    """Poll metadata endpoint periodically."""
+async def metadata_ws_reader() -> None:
+    """Connect to metadata WebSocket and receive pushed updates."""
     global current_metadata, metadata_version
-    consecutive_failures = 0
+    ws_url = f"ws://localhost:{METADATA_WS_PORT}"
+
     while True:
         try:
-            resp = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: requests.get(METADATA_URL, timeout=3)
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                # Ignore volatile fields (bitrate) for change detection
-                old_stable = {k: v for k, v in (current_metadata or {}).items()
-                              if k != "bitrate"}
-                new_stable = {k: v for k, v in data.items() if k != "bitrate"}
-                if new_stable != old_stable:
-                    current_metadata = data
-                    metadata_version += 1
-                else:
-                    current_metadata = data  # update bitrate silently
-                consecutive_failures = 0
-            else:
-                consecutive_failures += 1
-                if consecutive_failures == 5:
-                    logger.warning(f"Metadata service returning {resp.status_code}")
+            async with websockets.connect(ws_url) as ws:
+                logger.info(f"Connected to metadata WebSocket: {ws_url}")
+                async for message in ws:
+                    try:
+                        data = json.loads(message)
+                        # Ignore volatile fields (bitrate) for change detection
+                        old_stable = {k: v for k, v in (current_metadata or {}).items()
+                                      if k != "bitrate"}
+                        new_stable = {k: v for k, v in data.items() if k != "bitrate"}
+                        if new_stable != old_stable:
+                            current_metadata = data
+                            metadata_version += 1
+                            logger.debug(f"Metadata updated: {data.get('title', 'N/A')}")
+                        else:
+                            current_metadata = data  # update bitrate silently
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Invalid metadata JSON: {e}")
         except Exception as e:
-            consecutive_failures += 1
-            if consecutive_failures == 5:
-                logger.warning(f"Metadata polling failed: {e}")
-        await asyncio.sleep(2)
+            logger.debug(f"Metadata WS error: {e}")
+            await asyncio.sleep(5)
 
 
 def is_spectrum_active() -> bool:
@@ -1005,8 +1003,8 @@ async def main() -> None:
     global layout
 
     logger.info(f"Starting framebuffer display: {WIDTH}x{HEIGHT}")
-    logger.info(f"  Metadata: {METADATA_URL}")
-    logger.info(f"  Spectrum WS port: {WS_PORT}")
+    logger.info(f"  Metadata WS port: {METADATA_WS_PORT}")
+    logger.info(f"  Spectrum WS port: {SPECTRUM_WS_PORT}")
     logger.info(f"  Framebuffer: {FB_DEVICE}")
 
     open_framebuffer()
@@ -1024,7 +1022,7 @@ async def main() -> None:
     await asyncio.gather(
         render_loop(),
         spectrum_ws_reader(),
-        metadata_poller(),
+        metadata_ws_reader(),
     )
 
 

@@ -5,8 +5,8 @@ WORKDIR /app
 # Install uv for fast dependency installation
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install mDNS discovery dependency
-RUN uv pip install --system --no-cache zeroconf
+# Install dependencies: mDNS discovery + WebSocket server
+RUN uv pip install --system --no-cache zeroconf websockets
 
 # Copy metadata service
 COPY metadata-service.py /app/
