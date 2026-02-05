@@ -961,10 +961,11 @@ async def metadata_ws_reader() -> None:
                 async for message in ws:
                     try:
                         data = json.loads(message)
-                        # Ignore volatile fields (bitrate) for change detection
+                        # Ignore volatile fields for change detection (must match metadata-service)
+                        _VOLATILE = {"bitrate", "artwork", "artist_image"}
                         old_stable = {k: v for k, v in (current_metadata or {}).items()
-                                      if k != "bitrate"}
-                        new_stable = {k: v for k, v in data.items() if k != "bitrate"}
+                                      if k not in _VOLATILE}
+                        new_stable = {k: v for k, v in data.items() if k not in _VOLATILE}
                         if new_stable != old_stable:
                             current_metadata = data
                             metadata_version += 1
