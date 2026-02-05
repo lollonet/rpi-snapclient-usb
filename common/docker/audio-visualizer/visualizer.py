@@ -47,7 +47,7 @@ def generate_band_centers(mode: str) -> list[float]:
     """Generate center frequencies for the given band mode.
 
     half-octave:  step = 2^(1/2), edges = center / 2^(1/4) to center * 2^(1/4)
-                  19 bands from 20 Hz to 10 kHz
+                  21 bands from 20 Hz to 20 kHz
     third-octave: step = 2^(1/3), edges = center / 2^(1/6) to center * 2^(1/6)
                   31 bands from 20 Hz to 20 kHz (ISO 266 standard)
     """
@@ -58,10 +58,10 @@ def generate_band_centers(mode: str) -> list[float]:
             200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
             2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000,
         ]
-    # Default: half-octave (19 bands, 20 Hz to 10 kHz)
+    # Default: half-octave (21 bands, 20 Hz to 20 kHz)
     return [
         20, 28, 40, 57, 80, 113, 160, 226, 320, 453,
-        640, 894, 1250, 1768, 2500, 3536, 5000, 7071, 10000,
+        640, 894, 1250, 1768, 2500, 3536, 5000, 7071, 10000, 14142, 20000,
     ]
 
 
