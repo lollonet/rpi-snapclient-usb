@@ -172,6 +172,7 @@ services:
       - ./public:/app/public:ro
       - ./docker/fb-display/fb_display.py:/app/fb_display.py:ro
       - ./docker/fb-display/logo.png:/app/logo.png:ro
+      - ./docker/fb-display/snapforge-text.png:/app/snapforge-text.png:ro
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     environment:

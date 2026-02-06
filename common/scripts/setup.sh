@@ -798,8 +798,9 @@ if [ -n "$BOOT_CONFIG" ]; then
         sed -i 's/ video=HDMI-A-1:800x600@60//' "$CMDLINE"
     fi
 
-    # Extract display width from resolution
+    # Extract display width from resolution (default to 0 for autodiscovery mode)
     DISPLAY_WIDTH="${DISPLAY_RESOLUTION%x*}"
+    DISPLAY_WIDTH="${DISPLAY_WIDTH:-0}"
 
     # Build new configuration block
     {

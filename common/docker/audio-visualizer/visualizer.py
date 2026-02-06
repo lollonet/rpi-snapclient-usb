@@ -217,6 +217,10 @@ def open_alsa_capture():
 
     libasound = ctypes.CDLL(libasound_path)
 
+    # Set argtypes/restype for snd_pcm_readi to prevent 64-bit truncation on ARM64
+    libasound.snd_pcm_readi.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
+    libasound.snd_pcm_readi.restype = ctypes.c_long
+
     # Opaque pointer types
     class snd_pcm_t(ctypes.Structure):
         pass
