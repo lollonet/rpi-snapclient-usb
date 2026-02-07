@@ -7,24 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- **fb-display bottom bar redesign** - Logo (left), date+time (center), enlarged volume knob (right). Volume knob moved from spectrum panel to bottom bar. Clock now shows `Thu 05 Feb · HH:MM:SS` format
-- **Read-only filesystem enabled by default** - SD card protection is now on by default in both auto and interactive mode. Use `--no-readonly` flag to disable
-
-### Fixed
-- **Spectrum only covered 20 Hz–10 kHz** - Half-octave band centers extended from 19 bands (20–10000 Hz) to 21 bands (20–20000 Hz), covering the full audible range
+## [0.1.1] - 2026-02-07
 
 ### Added
-- **Read-Only Root Filesystem** - SD card protection using raspi-config overlayfs, enabled by default. Disable with `--no-readonly` flag. Includes Docker fuse-overlayfs storage driver and `ro-mode` helper script for easy enable/disable
-- **WebSocket Metadata Push** ([9e168fb](https://github.com/lollonet/rpi-snapclient-usb/commit/9e168fb)) - Metadata service now pushes updates via WebSocket instead of HTTP polling, reducing latency and network overhead
+- **SnapForge Branding** ([#30](https://github.com/lollonet/rpi-snapclient-usb/pull/30)) - Brand text logo displayed next to icon in bottom bar
+- **Read-Only Root Filesystem** ([#25](https://github.com/lollonet/rpi-snapclient-usb/pull/25)) - SD card protection using raspi-config overlayfs, enabled by default. Includes Docker fuse-overlayfs storage driver and `ro-mode` helper script
+- **WebSocket Metadata Push** - Metadata service pushes updates via WebSocket instead of HTTP polling, reducing latency
 
-### Fixed (continued)
-- **fb-display OOM on high-res framebuffers** - Render at internal resolution (from `DISPLAY_RESOLUTION` or auto-capped at 1920x1080) and scale to actual framebuffer. Prevents OOM kills on 4K displays with low memory limits. `DISPLAY_RESOLUTION` is now optional; leave empty to auto-detect
-- **Visualizer Healthcheck** ([f4a25ab](https://github.com/lollonet/rpi-snapclient-usb/commit/f4a25ab)) - Use process check instead of TCP connect to avoid spamming WebSocket error logs
-- **Dead Code Removal** ([b771304](https://github.com/lollonet/rpi-snapclient-usb/commit/b771304)) - Remove unused `metadata_queue` variable from metadata service
+### Changed
+- **Bottom Bar Redesign** ([#27](https://github.com/lollonet/rpi-snapclient-usb/pull/27)) - Logo (left), date+time (center), enlarged volume knob (right). Clock shows `Thu 05 Feb · HH:MM:SS` format
+- **Read-only filesystem enabled by default** - Use `--no-readonly` flag to disable
 
-### Maintenance
-- **CI Cache Fix** ([a202721](https://github.com/lollonet/rpi-snapclient-usb/commit/a202721)) - Remove GHA cache from fb-display job to fix transient build failures
+### Fixed
+- **ARM64 ctypes** ([#30](https://github.com/lollonet/rpi-snapclient-usb/pull/30)) - Add argtypes/restype for snd_pcm_readi to prevent 64-bit return value truncation on RPi 4/5
+- **Spectrum range** ([#27](https://github.com/lollonet/rpi-snapclient-usb/pull/27)) - Extended from 20Hz–10kHz to full 20Hz–20kHz (21 bands)
+- **Persistent TCP** ([#26](https://github.com/lollonet/rpi-snapclient-usb/pull/26)) - Metadata service uses single connection to snapserver instead of reconnecting each poll
+- **Dead code cleanup** ([#29](https://github.com/lollonet/rpi-snapclient-usb/pull/29)) - Remove stale comments, unused variables, duplicate changelog headings
+- **RO-mode status detection** - Fix overlayroot mount detection in status check
+- **Visualizer healthcheck** - Use process check instead of TCP connect to avoid WebSocket error spam
+
+### Security
+- **CSP Header** ([#30](https://github.com/lollonet/rpi-snapclient-usb/pull/30)) - Add Content-Security-Policy meta tag to web UI for defense-in-depth
+
+### Documentation
+- **CLAUDE.md rewrite** ([#28](https://github.com/lollonet/rpi-snapclient-usb/pull/28)) - Architecture map and operational rules
 
 ## [0.1.0] - 2026-02-05
 
