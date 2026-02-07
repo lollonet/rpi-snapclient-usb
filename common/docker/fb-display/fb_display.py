@@ -136,8 +136,9 @@ spectrum_bg_fb: np.ndarray | None = None  # native FB format (RGB565 or BGRA32)
 # Cached clock overlay (re-rendered every second)
 _clock_cache: dict = {"time_str": None, "fb": None, "width": 0, "height": 0}
 
-# Logo image (loaded once at startup)
+# Logo and brand text images (loaded once at startup)
 _logo_img: Image.Image | None = None
+_brand_img: Image.Image | None = None
 
 # Cached fonts (loaded once)
 _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
@@ -707,12 +708,22 @@ def render_base_frame() -> Image.Image:
         radius=6, fill=(10, 10, 15),
     )
 
-    # Bottom bar: logo (left)
+    # Bottom bar: logo (left) + SnapForge brand image
     if _logo_img is not None:
         logo_resized = _logo_img.resize(
             (L["logo_size"], L["logo_size"]), Image.LANCZOS
         )
         bg.paste(logo_resized, (L["logo_x"], L["logo_y"]), logo_resized)
+
+        # Brand text image next to logo
+        if _brand_img is not None:
+            # Scale brand image to match logo height
+            brand_h = L["logo_size"]
+            brand_w = int(_brand_img.width * brand_h / _brand_img.height)
+            brand_resized = _brand_img.resize((brand_w, brand_h), Image.LANCZOS)
+            brand_x = L["logo_x"] + L["logo_size"] + 8
+            brand_y = L["logo_y"]
+            bg.paste(brand_resized, (brand_x, brand_y), brand_resized)
 
     # Bottom bar: volume knob (right) — reuses `meta` from above
     vol = meta.get("volume") if meta else None
@@ -1061,7 +1072,7 @@ async def render_loop() -> None:
 
 async def main() -> None:
     """Start all tasks."""
-    global layout, _logo_img
+    global layout, _logo_img, _brand_img
 
     logger.info(f"Starting framebuffer display: {WIDTH}x{HEIGHT}")
     logger.info(f"  Metadata WS port: {METADATA_WS_PORT}")
@@ -1082,6 +1093,15 @@ async def main() -> None:
             logger.info(f"Loaded logo: {logo_path}")
         except Exception as e:
             logger.warning(f"Failed to load logo: {e}")
+
+    # Load brand text image (SnapForge)
+    brand_path = "/app/snapforge-text.png"
+    if os.path.exists(brand_path):
+        try:
+            _brand_img = Image.open(brand_path).convert("RGBA")
+            logger.info(f"Loaded brand image: {brand_path}")
+        except Exception as e:
+            logger.warning(f"Failed to load brand image: {e}")
 
     logger.info(
         f"  Layout: art={layout['art_size']}px, "
