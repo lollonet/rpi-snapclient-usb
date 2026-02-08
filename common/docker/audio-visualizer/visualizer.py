@@ -34,8 +34,8 @@ SAMPLE_WIDTH = 2  # 16-bit
 FRAME_SIZE = CHANNELS * SAMPLE_WIDTH
 
 # FFT parameters
-FFT_SIZE = 4096  # ~85ms window at 48kHz — good frequency resolution for low bands
-HOP_SIZE = 1600  # ~33ms hop = 30 FPS update rate
+FFT_SIZE = 8192  # ~186ms window at 44.1kHz — better frequency resolution for low bands (5.4Hz/bin)
+HOP_SIZE = 1600  # ~36ms hop = 28 FPS update rate
 BYTES_PER_READ = HOP_SIZE * FRAME_SIZE
 TARGET_FPS = 30
 
@@ -77,8 +77,8 @@ LOOPBACK_DEVICE = os.environ.get("LOOPBACK_DEVICE", "hw:Loopback,1,0")
 WS_PORT = int(os.environ.get("VISUALIZER_WS_PORT", "8081"))
 
 # Smoothing: fast attack, slow decay (in dB domain)
-ATTACK_COEFF = 0.4  # lower = faster attack (0 = instant)
-DECAY_COEFF = 0.85  # higher = slower decay
+ATTACK_COEFF = 0.3  # lower = faster attack (0 = instant)
+DECAY_COEFF = 0.9   # higher = slower decay
 
 clients: set = set()
 prev_db: np.ndarray = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
@@ -153,8 +153,8 @@ def analyze_pcm(new_samples: np.ndarray) -> str | None:
     # Apply window power correction
     spectrum *= WINDOW_POWER_CORR
 
-    # Normalize by FFT size² (Parseval's theorem)
-    spectrum /= (FFT_SIZE ** 2)
+    # Scale by FFT size (absolute scale irrelevant due to total_power normalization below)
+    spectrum /= FFT_SIZE
 
     # Band power summation using cumulative sum for O(1) per-band lookup
     spec_len = len(spectrum)
@@ -167,10 +167,11 @@ def analyze_pcm(new_samples: np.ndarray) -> str | None:
     # Volume-independent normalization: divide by total power so sum = 1.0
     # This shows relative spectral shape regardless of playback volume
     total_power = np.sum(band_power)
-    if total_power > 1e-30:  # very low threshold to ensure normalization at any volume
+    if total_power > 1e-20:  # guard against floating-point precision issues
         band_power_norm = band_power / total_power
     else:
-        band_power_norm = band_power
+        # Set all bands to equal low energy during silence
+        band_power_norm = np.full_like(band_power, 1e-10)
 
     # Convert to dB: 10*log10(normalized_power), clamp to noise floor
     # With normalization, values are relative (sum of linear = 1.0)

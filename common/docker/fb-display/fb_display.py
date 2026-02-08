@@ -81,8 +81,8 @@ def resize_bands(n: int) -> None:
     logger.info(f"Band count changed to {n}")
 
 # Smoothing coefficients
-ATTACK_COEFF = 0.6  # fast attack (higher = faster)
-DECAY_COEFF = 0.35  # decay speed (higher = faster)
+ATTACK_COEFF = 0.7  # fast attack (higher = faster)
+DECAY_COEFF = 0.15  # decay speed (higher = faster)
 PEAK_HOLD_S = 1.5   # seconds before peak marker vanishes
 
 # Auto-gain: track running maximum for volume-independent display
@@ -944,16 +944,22 @@ async def spectrum_ws_reader() -> None:
                 logger.info(f"Connected to spectrum WebSocket: {ws_url}")
                 async for message in ws:
                     values = message.split(";")
-                    resize_bands(len(values))
-                    new_vals = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
-                    for i in range(min(len(values), NUM_BANDS)):
+                    new_num_bands = len(values)
+                    resize_bands(new_num_bands)
+
+                    # Parse new values safely
+                    new_vals = np.full(new_num_bands, NOISE_FLOOR, dtype=np.float64)
+                    for i in range(new_num_bands):
                         try:
                             v = float(values[i])
                             new_vals[i] = v if not np.isnan(v) else NOISE_FLOOR
-                        except ValueError:
+                        except (ValueError, IndexError):
                             pass
+
+                    # Thread-safe assignment using current NUM_BANDS
                     with _band_lock:
-                        bands[:] = new_vals
+                        if len(new_vals) == NUM_BANDS:
+                            bands[:] = new_vals
         except Exception as e:
             logger.debug(f"Spectrum WS error: {e}")
             bands[:] = NOISE_FLOOR
