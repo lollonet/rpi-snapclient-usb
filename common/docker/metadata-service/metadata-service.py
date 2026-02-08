@@ -27,6 +27,7 @@ from zeroconf import ServiceBrowser, ServiceStateChange, Zeroconf
 # WebSocket server state
 WS_PORT = int(os.environ.get("METADATA_WS_PORT", "8082"))
 ws_clients: set = set()
+_service_instance: "SnapcastMetadataService | None" = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ class SnapcastMetadataService:
         self.snapserver_host = snapserver_host
         self.snapserver_port = snapserver_port
         self.client_id = client_id
+        self.stream_id: str | None = None  # Set when client is found
         self.mpd_host = snapserver_host  # MPD usually on same host as snapserver
         self.mpd_port = 6600
         self.output_file = Path("/app/public/metadata.json")
@@ -544,6 +546,109 @@ class SnapcastMetadataService:
             if identifier
         )
 
+    def set_client_volume(self, volume: int) -> bool:
+        """Set volume for this client (0-100)."""
+        sock = self._get_snap_socket()
+        if not sock:
+            return False
+
+        # Get client ID from snapserver
+        status = self.send_rpc_request(sock, "Server.GetStatus")
+        if not status:
+            return False
+
+        server = status.get("result", {}).get("server", {})
+        snap_client_id = None
+        for group in server.get("groups", []):
+            for client in group.get("clients", []):
+                if self._is_matching_client(client):
+                    snap_client_id = client.get("id")
+                    break
+            if snap_client_id:
+                break
+
+        if not snap_client_id:
+            logger.warning(f"Client {self.client_id} not found for volume control")
+            return False
+
+        volume = max(0, min(100, volume))
+        params = {
+            "id": snap_client_id,
+            "volume": {"percent": volume, "muted": False}
+        }
+
+        response = self.send_rpc_request(sock, "Client.SetVolume", params)
+        if response and "result" in response:
+            logger.info(f"Set client volume to {volume}%")
+            return True
+        return False
+
+    def adjust_volume(self, delta: int) -> bool:
+        """Adjust volume by delta (-100 to +100)."""
+        current = self.current_metadata.get("volume", 50)
+        new_volume = max(0, min(100, current + delta))
+        return self.set_client_volume(new_volume)
+
+    def toggle_playback(self) -> bool:
+        """Toggle play/pause on the stream via MPD."""
+        # Snapcast doesn't have native play/pause control
+        # Try MPD if available (most common source)
+        sock = self._create_socket_connection(self.mpd_host, self.mpd_port, log_errors=False)
+        if not sock:
+            logger.debug("MPD not available for playback toggle")
+            return False
+
+        try:
+            # Read MPD greeting
+            sock.recv(1024)
+
+            # Get current status
+            sock.sendall(b"status\n")
+            status = self._parse_mpd_response(self._read_mpd_response(sock))
+
+            state = status.get('state', 'stop')
+            if state == 'play':
+                sock.sendall(b"pause 1\n")
+                logger.info("MPD: paused")
+            else:
+                sock.sendall(b"play\n")
+                logger.info("MPD: playing")
+
+            self._read_mpd_response(sock)
+            return True
+
+        except Exception as e:
+            logger.warning(f"MPD playback toggle failed: {e}")
+            return False
+        finally:
+            sock.close()
+
+    async def handle_control_command(self, message: str) -> None:
+        """Handle control commands from display clients."""
+        try:
+            cmd = json.loads(message)
+            cmd_type = cmd.get("cmd")
+
+            if cmd_type == "toggle_play":
+                await asyncio.get_event_loop().run_in_executor(
+                    None, self.toggle_playback
+                )
+            elif cmd_type == "volume":
+                delta = cmd.get("delta", 0)
+                if delta:
+                    await asyncio.get_event_loop().run_in_executor(
+                        None, self.adjust_volume, delta
+                    )
+            elif cmd_type == "seek":
+                # Seek not supported by Snapcast for most stream types
+                logger.debug(f"Seek command ignored: {cmd.get('delta')}")
+            else:
+                logger.debug(f"Unknown control command: {cmd_type}")
+        except json.JSONDecodeError:
+            pass
+        except Exception as e:
+            logger.warning(f"Control command error: {e}")
+
     def _make_api_request(self, url: str, timeout: int = 5) -> dict | None:
         """Make an API request and return JSON response"""
         try:
@@ -988,6 +1093,9 @@ class SnapcastMetadataService:
 
     async def run_async(self) -> None:
         """Async main loop with WebSocket broadcast."""
+        global _service_instance
+        _service_instance = self
+
         logger.info(f"Starting Snapcast Metadata Service (async)")
         logger.info(f"  Snapserver: {self.snapserver_host}:{self.snapserver_port}")
         logger.info(f"  MPD fallback: {self.mpd_host}:{self.mpd_port}")
@@ -996,7 +1104,7 @@ class SnapcastMetadataService:
 
         # Start WebSocket server
         ws_server = await websockets.serve(ws_handler, "0.0.0.0", WS_PORT)
-        logger.info(f"WebSocket server started on port {WS_PORT}")
+        logger.info(f"WebSocket server started on port {WS_PORT} (bidirectional control enabled)")
 
         # Run metadata polling in executor (blocking I/O)
         loop = asyncio.get_event_loop()
@@ -1102,16 +1210,16 @@ class SnapcastMetadataService:
 
 
 async def ws_handler(websocket, path=None):
-    """Handle WebSocket connections."""
+    """Handle WebSocket connections and control commands."""
     ws_clients.add(websocket)
     client_addr = websocket.remote_address
     logger.info(f"WebSocket client connected: {client_addr}")
 
     try:
-        # Keep connection alive, handle disconnects
+        # Keep connection alive and process incoming control commands
         async for message in websocket:
-            # Clients don't send anything, but we need to consume messages
-            pass
+            if _service_instance and message:
+                await _service_instance.handle_control_command(message)
     except websockets.exceptions.ConnectionClosed:
         pass
     finally:

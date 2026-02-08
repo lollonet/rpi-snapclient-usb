@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-RUN uv pip install --system --no-cache Pillow websockets requests numpy
+RUN uv pip install --system --no-cache Pillow websockets requests numpy evdev
 
 # Copy renderer and assets
 COPY fb_display.py /app/
