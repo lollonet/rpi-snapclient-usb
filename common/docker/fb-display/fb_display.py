@@ -26,6 +26,14 @@ import requests
 import websockets
 from PIL import Image, ImageDraw, ImageFont
 
+# Optional touch input support
+try:
+    import evdev
+    from evdev import ecodes
+    EVDEV_AVAILABLE = True
+except ImportError:
+    EVDEV_AVAILABLE = False
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -145,6 +153,77 @@ _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
 
 # Layout geometry (computed once in compute_layout)
 layout: dict = {}
+
+# Touch input state
+_control_ws: websockets.WebSocketClientProtocol | None = None
+_control_ws_lock = asyncio.Lock()
+
+
+class GestureDetector:
+    """Detect tap and swipe gestures from touch events."""
+
+    SWIPE_THRESHOLD = 50   # min pixels for swipe
+    TAP_TIMEOUT = 0.3      # max seconds for tap
+
+    def __init__(self) -> None:
+        self.touch_start: tuple[int, int, float] | None = None
+        self.current_pos: tuple[int, int] = (0, 0)
+
+    def on_touch_down(self, x: int, y: int) -> None:
+        self.touch_start = (x, y, time.monotonic())
+        self.current_pos = (x, y)
+
+    def on_touch_move(self, x: int, y: int) -> None:
+        self.current_pos = (x, y)
+
+    def on_touch_up(self) -> dict | None:
+        if not self.touch_start:
+            return None
+
+        start_x, start_y, start_time = self.touch_start
+        end_x, end_y = self.current_pos
+        duration = time.monotonic() - start_time
+
+        dx = end_x - start_x
+        dy = end_y - start_y
+        distance = (dx**2 + dy**2) ** 0.5
+
+        self.touch_start = None
+
+        # Tap: short duration, small movement
+        if duration < self.TAP_TIMEOUT and distance < self.SWIPE_THRESHOLD:
+            return {"gesture": "tap", "x": start_x, "y": start_y}
+
+        # Swipe: significant movement
+        if distance >= self.SWIPE_THRESHOLD:
+            if abs(dy) > abs(dx):
+                # Vertical swipe - volume
+                return {"gesture": "swipe_v", "delta": -dy}  # up = positive
+            else:
+                # Horizontal swipe - seek
+                return {"gesture": "swipe_h", "delta": dx}   # right = positive
+
+        return None
+
+
+def find_touch_device() -> "evdev.InputDevice | None":
+    """Find first available touch input device."""
+    if not EVDEV_AVAILABLE:
+        return None
+
+    for path in evdev.list_devices():
+        try:
+            dev = evdev.InputDevice(path)
+            caps = dev.capabilities()
+            # Check for absolute positioning (touch devices use EV_ABS)
+            if ecodes.EV_ABS in caps:
+                abs_caps = [c[0] if isinstance(c, tuple) else c for c in caps[ecodes.EV_ABS]]
+                if ecodes.ABS_X in abs_caps and ecodes.ABS_Y in abs_caps:
+                    logger.info(f"Found touch device: {dev.name} at {path}")
+                    return dev
+        except (OSError, PermissionError):
+            continue
+    return None
 
 
 def get_fb_info() -> tuple[int, int, int, int]:
@@ -968,32 +1047,120 @@ async def spectrum_ws_reader() -> None:
 
 async def metadata_ws_reader() -> None:
     """Connect to metadata WebSocket and receive pushed updates."""
-    global current_metadata, metadata_version
+    global current_metadata, metadata_version, _control_ws
     ws_url = f"ws://localhost:{METADATA_WS_PORT}"
 
     while True:
         try:
             async with websockets.connect(ws_url) as ws:
                 logger.info(f"Connected to metadata WebSocket: {ws_url}")
-                async for message in ws:
-                    try:
-                        data = json.loads(message)
-                        # Ignore volatile fields for change detection (must match metadata-service)
-                        _VOLATILE = {"bitrate", "artwork", "artist_image"}
-                        old_stable = {k: v for k, v in (current_metadata or {}).items()
-                                      if k not in _VOLATILE}
-                        new_stable = {k: v for k, v in data.items() if k not in _VOLATILE}
-                        if new_stable != old_stable:
-                            current_metadata = data
-                            metadata_version += 1
-                            logger.debug(f"Metadata updated: {data.get('title', 'N/A')}")
-                        else:
-                            current_metadata = data  # update bitrate silently
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Invalid metadata JSON: {e}")
+                # Store reference for sending control commands
+                async with _control_ws_lock:
+                    _control_ws = ws
+                try:
+                    async for message in ws:
+                        try:
+                            data = json.loads(message)
+                            # Ignore volatile fields for change detection (must match metadata-service)
+                            _VOLATILE = {"bitrate", "artwork", "artist_image"}
+                            old_stable = {k: v for k, v in (current_metadata or {}).items()
+                                          if k not in _VOLATILE}
+                            new_stable = {k: v for k, v in data.items() if k not in _VOLATILE}
+                            if new_stable != old_stable:
+                                current_metadata = data
+                                metadata_version += 1
+                                logger.debug(f"Metadata updated: {data.get('title', 'N/A')}")
+                            else:
+                                current_metadata = data  # update bitrate silently
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"Invalid metadata JSON: {e}")
+                finally:
+                    async with _control_ws_lock:
+                        _control_ws = None
         except Exception as e:
             logger.debug(f"Metadata WS error: {e}")
+            async with _control_ws_lock:
+                _control_ws = None
             await asyncio.sleep(5)
+
+
+async def send_control_command(cmd: dict) -> bool:
+    """Send control command to metadata-service via WebSocket."""
+    async with _control_ws_lock:
+        ws = _control_ws
+    if ws is None:
+        logger.debug("No WebSocket connection for control command")
+        return False
+    try:
+        await ws.send(json.dumps(cmd))
+        return True
+    except Exception as e:
+        logger.debug(f"Failed to send control command: {e}")
+        return False
+
+
+async def handle_gesture(gesture: dict) -> None:
+    """Send control command based on detected gesture."""
+    if gesture["gesture"] == "tap":
+        logger.info("Tap detected - toggle play/pause")
+        await send_control_command({"cmd": "toggle_play"})
+    elif gesture["gesture"] == "swipe_v":
+        delta = gesture["delta"]
+        vol_change = int(delta / 10)  # Scale swipe to volume units
+        if vol_change != 0:
+            logger.info(f"Vertical swipe - volume {vol_change:+d}")
+            await send_control_command({"cmd": "volume", "delta": vol_change})
+    elif gesture["gesture"] == "swipe_h":
+        delta = gesture["delta"]
+        logger.debug(f"Horizontal swipe - seek {delta} (not supported)")
+        # Seek not supported by most Snapcast stream types
+
+
+async def touch_input_handler() -> None:
+    """Handle touch input and send control commands."""
+    if not EVDEV_AVAILABLE:
+        logger.info("evdev not available, touch controls disabled")
+        return
+
+    device = find_touch_device()
+    if not device:
+        logger.info("No touch device found, touch controls disabled")
+        return
+
+    logger.info(f"Touch controls enabled on {device.name}")
+    detector = GestureDetector()
+    x, y = 0, 0
+
+    # Get axis info for coordinate scaling
+    abs_info = device.capabilities().get(ecodes.EV_ABS, [])
+    x_info = next((i for c, i in abs_info if c == ecodes.ABS_X), None)
+    y_info = next((i for c, i in abs_info if c == ecodes.ABS_Y), None)
+
+    try:
+        async for event in device.async_read_loop():
+            if event.type == ecodes.EV_ABS:
+                if event.code == ecodes.ABS_X:
+                    # Scale to display coordinates (guard against None and zero max)
+                    if x_info and x_info.max:
+                        x = int(event.value * WIDTH / x_info.max)
+                    else:
+                        x = event.value
+                elif event.code == ecodes.ABS_Y:
+                    if y_info and y_info.max:
+                        y = int(event.value * HEIGHT / y_info.max)
+                    else:
+                        y = event.value
+                detector.on_touch_move(x, y)
+
+            elif event.type == ecodes.EV_KEY and event.code == ecodes.BTN_TOUCH:
+                if event.value == 1:  # Touch down
+                    detector.on_touch_down(x, y)
+                else:  # Touch up
+                    gesture = detector.on_touch_up()
+                    if gesture:
+                        await handle_gesture(gesture)
+    except Exception as e:
+        logger.warning(f"Touch input error: {e}")
 
 
 def is_spectrum_active() -> bool:
@@ -1119,6 +1286,7 @@ async def main() -> None:
         render_loop(),
         spectrum_ws_reader(),
         metadata_ws_reader(),
+        touch_input_handler(),
     )
 
 

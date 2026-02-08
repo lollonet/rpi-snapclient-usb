@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Touch Screen Controls** ([#33](https://github.com/lollonet/rpi-snapclient-usb/pull/33)) - Tap to toggle play/pause, swipe up/down for volume control. Gracefully degrades on non-touch displays
+
 ### Fixed
 - **Metadata stale connection** ([#31](https://github.com/lollonet/rpi-snapclient-usb/pull/31)) - Add 10s socket timeout and 30s staleness threshold to detect half-open TCP connections to snapserver
 - **Spectrum analyzer accuracy** ([#32](https://github.com/lollonet/rpi-snapclient-usb/pull/32)) - Increase FFT size to 8192 for better low-frequency resolution (5.4 Hz/bin), tune smoothing for smoother visuals
