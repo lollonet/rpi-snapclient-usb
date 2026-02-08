@@ -548,6 +548,13 @@ class SnapcastMetadataService:
 
     def set_client_volume(self, volume: int) -> bool:
         """Set volume for this client (0-100)."""
+        # Check for stale connection and force reconnect (same pattern as get_metadata_from_snapserver)
+        if (self._snap_sock is not None and
+                self._last_snap_response > 0 and
+                time.monotonic() - self._last_snap_response > self._snap_stale_threshold):
+            logger.debug("Stale connection detected in set_client_volume, reconnecting")
+            self._close_snap_socket()
+
         sock = self._get_snap_socket()
         if not sock:
             return False

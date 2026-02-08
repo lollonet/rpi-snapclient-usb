@@ -1140,14 +1140,14 @@ async def touch_input_handler() -> None:
         async for event in device.async_read_loop():
             if event.type == ecodes.EV_ABS:
                 if event.code == ecodes.ABS_X:
-                    # Scale to display coordinates
-                    if x_info:
-                        x = int(event.value * WIDTH / x_info.max) if x_info.max else event.value
+                    # Scale to display coordinates (guard against None and zero max)
+                    if x_info and x_info.max:
+                        x = int(event.value * WIDTH / x_info.max)
                     else:
                         x = event.value
                 elif event.code == ecodes.ABS_Y:
-                    if y_info:
-                        y = int(event.value * HEIGHT / y_info.max) if y_info.max else event.value
+                    if y_info and y_info.max:
+                        y = int(event.value * HEIGHT / y_info.max)
                     else:
                         y = event.value
                 detector.on_touch_move(x, y)
