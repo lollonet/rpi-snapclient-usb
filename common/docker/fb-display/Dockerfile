@@ -5,9 +5,12 @@ WORKDIR /app
 # Install uv for fast dependency installation
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install font for text rendering
+# Install fonts and build dependencies for evdev
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
+    gcc \
+    libc-dev \
+    linux-libc-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
