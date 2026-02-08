@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Metadata stale connection** ([#31](https://github.com/lollonet/rpi-snapclient-usb/pull/31)) - Add 10s socket timeout and 30s staleness threshold to detect half-open TCP connections to snapserver
+
 ## [0.1.1] - 2026-02-07
 
 ### Added
