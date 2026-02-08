@@ -76,6 +76,8 @@ class SnapcastMetadataService:
         self._failed_downloads: set[str] = set()
         self._snap_sock: socket.socket | None = None
         self._snap_buffer: bytes = b""
+        self._last_snap_response: float = 0.0
+        self._snap_stale_threshold: float = 30.0  # Force reconnect if no response in 30s
 
     def _create_socket_connection(self, host: str, port: int, timeout: int = 5, log_errors: bool = True) -> socket.socket | None:
         """Create a socket connection with standard settings"""
@@ -97,6 +99,9 @@ class SnapcastMetadataService:
             self.snapserver_host, self.snapserver_port
         )
         if self._snap_sock:
+            # Set recv timeout to detect stale connections (half-open sockets)
+            self._snap_sock.settimeout(10.0)
+            self._last_snap_response = time.monotonic()
             logger.info(f"Connected to snapserver {self.snapserver_host}:{self.snapserver_port}")
         return self._snap_sock
 
@@ -391,7 +396,11 @@ class SnapcastMetadataService:
             "method": method,
             "params": params or {}
         }
-        sock.sendall((json.dumps(request) + "\r\n").encode())
+        try:
+            sock.sendall((json.dumps(request) + "\r\n").encode())
+        except (OSError, socket.error) as e:
+            logger.warning(f"Failed to send RPC request: {e}")
+            return None
 
         while True:
             # Process complete messages already in the buffer
@@ -404,20 +413,36 @@ class SnapcastMetadataService:
                 except json.JSONDecodeError:
                     continue
                 if "id" in msg:
+                    self._last_snap_response = time.monotonic()
                     return msg  # Our response
                 # else: unsolicited notification — discard
 
             # Need more data from the socket
-            chunk = sock.recv(8192)
-            if not chunk:
-                return None  # Connection closed
-            self._snap_buffer += chunk
+            try:
+                chunk = sock.recv(8192)
+                if not chunk:
+                    return None  # Connection closed
+                self._snap_buffer += chunk
+            except socket.timeout:
+                logger.warning("Snapserver socket timeout - connection stale")
+                return None
+            except (OSError, socket.error) as e:
+                logger.warning(f"Snapserver socket error: {e}")
+                return None
 
     def get_metadata_from_snapserver(self) -> dict[str, Any]:
         """Get metadata from Snapserver JSON-RPC for our client's stream.
 
         Uses a persistent socket. On failure, reconnects once before giving up.
+        Forces reconnect if no successful response in _snap_stale_threshold seconds.
         """
+        # Check for stale connection and force reconnect
+        if (self._snap_sock is not None and
+                self._last_snap_response > 0 and
+                time.monotonic() - self._last_snap_response > self._snap_stale_threshold):
+            logger.warning(f"Snapserver connection stale ({self._snap_stale_threshold}s), reconnecting")
+            self._close_snap_socket()
+
         sock = self._get_snap_socket()
         if not sock:
             return {"playing": False}
