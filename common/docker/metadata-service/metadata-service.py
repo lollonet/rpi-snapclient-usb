@@ -11,13 +11,14 @@ import asyncio
 import html
 import ipaddress
 import json
-import time
-import socket
-import os
 import logging
+import os
+import socket
 import hashlib
-import urllib.request
+import threading
+import time
 import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +79,7 @@ class SnapcastMetadataService:
         self._failed_downloads: set[str] = set()
         self._snap_sock: socket.socket | None = None
         self._snap_buffer: bytes = b""
+        self._snap_lock = threading.Lock()  # Protect socket from concurrent access
         self._last_snap_response: float = 0.0
         self._snap_stale_threshold: float = 30.0  # Force reconnect if no response in 30s
 
@@ -437,83 +439,85 @@ class SnapcastMetadataService:
 
         Uses a persistent socket. On failure, reconnects once before giving up.
         Forces reconnect if no successful response in _snap_stale_threshold seconds.
+        Thread-safe: uses _snap_lock to prevent concurrent socket access.
         """
-        # Check for stale connection and force reconnect
-        if (self._snap_sock is not None and
-                self._last_snap_response > 0 and
-                time.monotonic() - self._last_snap_response > self._snap_stale_threshold):
-            logger.warning(f"Snapserver connection stale ({self._snap_stale_threshold}s), reconnecting")
-            self._close_snap_socket()
-
-        sock = self._get_snap_socket()
-        if not sock:
-            return {"playing": False}
-
-        try:
-            status = self.send_rpc_request(sock, "Server.GetStatus")
-            if not status:
-                # Connection dead — retry once
+        with self._snap_lock:
+            # Check for stale connection and force reconnect
+            if (self._snap_sock is not None and
+                    self._last_snap_response > 0 and
+                    time.monotonic() - self._last_snap_response > self._snap_stale_threshold):
+                logger.warning(f"Snapserver connection stale ({self._snap_stale_threshold}s), reconnecting")
                 self._close_snap_socket()
-                sock = self._get_snap_socket()
-                if not sock:
-                    return {"playing": False}
+
+            sock = self._get_snap_socket()
+            if not sock:
+                return {"playing": False}
+
+            try:
                 status = self.send_rpc_request(sock, "Server.GetStatus")
-            if not status:
+                if not status:
+                    # Connection dead — retry once
+                    self._close_snap_socket()
+                    sock = self._get_snap_socket()
+                    if not sock:
+                        return {"playing": False}
+                    status = self.send_rpc_request(sock, "Server.GetStatus")
+                if not status:
+                    self._close_snap_socket()
+                    return {"playing": False}
+
+                # Find our client and its stream
+                server = status.get("result", {}).get("server", {})
+                client_stream_id, volume_info = self._find_client_stream(server)
+
+                if not client_stream_id:
+                    logger.warning(f"Client {self.client_id} not found in server status")
+                    return {"playing": False}
+
+                # Find metadata for this stream
+                for stream in server.get("streams", []):
+                    if stream.get("id") == client_stream_id:
+                        props = stream.get("properties", {})
+                        meta = props.get("metadata", {})
+
+                        # Handle artist which can be a string or list
+                        artist = meta.get("artist", "")
+                        if isinstance(artist, list):
+                            artist = ", ".join(artist)
+
+                        # Get artwork URL - prefer artUrl, fall back to artData
+                        artwork = meta.get("artUrl", "")
+                        # Fix internal snapcast URLs to use actual server IP
+                        if artwork and "://snapcast:" in artwork:
+                            artwork = artwork.replace("://snapcast:", f"://{self.snapserver_host}:")
+
+                        # Extract audio format from stream URI query params
+                        uri_query = stream.get("uri", {}).get("query", {})
+                        snap_codec = uri_query.get("codec", "")
+                        snap_fmt = uri_query.get("sampleformat", "")
+                        sample_rate, bit_depth = self._parse_audio_format(snap_fmt)
+
+                        return {
+                            "playing": stream.get("status") == "playing",
+                            "title": meta.get("title", ""),
+                            "artist": artist,
+                            "album": meta.get("album", ""),
+                            "artwork": artwork,
+                            "stream_id": client_stream_id,
+                            "source": stream.get("id", ""),
+                            "volume": volume_info.get("percent", 100),
+                            "muted": volume_info.get("muted", False),
+                            "codec": snap_codec.upper() if snap_codec else "",
+                            "sample_rate": sample_rate,
+                            "bit_depth": bit_depth,
+                        }
+
+                return {"playing": False}
+
+            except Exception as e:
+                logger.error(f"Error getting Snapserver metadata: {e}")
                 self._close_snap_socket()
                 return {"playing": False}
-
-            # Find our client and its stream
-            server = status.get("result", {}).get("server", {})
-            client_stream_id, volume_info = self._find_client_stream(server)
-
-            if not client_stream_id:
-                logger.warning(f"Client {self.client_id} not found in server status")
-                return {"playing": False}
-
-            # Find metadata for this stream
-            for stream in server.get("streams", []):
-                if stream.get("id") == client_stream_id:
-                    props = stream.get("properties", {})
-                    meta = props.get("metadata", {})
-
-                    # Handle artist which can be a string or list
-                    artist = meta.get("artist", "")
-                    if isinstance(artist, list):
-                        artist = ", ".join(artist)
-
-                    # Get artwork URL - prefer artUrl, fall back to artData
-                    artwork = meta.get("artUrl", "")
-                    # Fix internal snapcast URLs to use actual server IP
-                    if artwork and "://snapcast:" in artwork:
-                        artwork = artwork.replace("://snapcast:", f"://{self.snapserver_host}:")
-
-                    # Extract audio format from stream URI query params
-                    uri_query = stream.get("uri", {}).get("query", {})
-                    snap_codec = uri_query.get("codec", "")
-                    snap_fmt = uri_query.get("sampleformat", "")
-                    sample_rate, bit_depth = self._parse_audio_format(snap_fmt)
-
-                    return {
-                        "playing": stream.get("status") == "playing",
-                        "title": meta.get("title", ""),
-                        "artist": artist,
-                        "album": meta.get("album", ""),
-                        "artwork": artwork,
-                        "stream_id": client_stream_id,
-                        "source": stream.get("id", ""),
-                        "volume": volume_info.get("percent", 100),
-                        "muted": volume_info.get("muted", False),
-                        "codec": snap_codec.upper() if snap_codec else "",
-                        "sample_rate": sample_rate,
-                        "bit_depth": bit_depth,
-                    }
-
-            return {"playing": False}
-
-        except Exception as e:
-            logger.error(f"Error getting Snapserver metadata: {e}")
-            self._close_snap_socket()
-            return {"playing": False}
 
     def _find_client_stream(self, server: dict) -> tuple[str | None, dict]:
         """Find the stream ID and volume info for our client.
@@ -547,48 +551,49 @@ class SnapcastMetadataService:
         )
 
     def set_client_volume(self, volume: int) -> bool:
-        """Set volume for this client (0-100)."""
-        # Check for stale connection and force reconnect (same pattern as get_metadata_from_snapserver)
-        if (self._snap_sock is not None and
-                self._last_snap_response > 0 and
-                time.monotonic() - self._last_snap_response > self._snap_stale_threshold):
-            logger.debug("Stale connection detected in set_client_volume, reconnecting")
-            self._close_snap_socket()
+        """Set volume for this client (0-100). Thread-safe."""
+        with self._snap_lock:
+            # Check for stale connection and force reconnect
+            if (self._snap_sock is not None and
+                    self._last_snap_response > 0 and
+                    time.monotonic() - self._last_snap_response > self._snap_stale_threshold):
+                logger.debug("Stale connection detected in set_client_volume, reconnecting")
+                self._close_snap_socket()
 
-        sock = self._get_snap_socket()
-        if not sock:
-            return False
+            sock = self._get_snap_socket()
+            if not sock:
+                return False
 
-        # Get client ID from snapserver
-        status = self.send_rpc_request(sock, "Server.GetStatus")
-        if not status:
-            return False
+            # Get client ID from snapserver
+            status = self.send_rpc_request(sock, "Server.GetStatus")
+            if not status:
+                return False
 
-        server = status.get("result", {}).get("server", {})
-        snap_client_id = None
-        for group in server.get("groups", []):
-            for client in group.get("clients", []):
-                if self._is_matching_client(client):
-                    snap_client_id = client.get("id")
+            server = status.get("result", {}).get("server", {})
+            snap_client_id = None
+            for group in server.get("groups", []):
+                for client in group.get("clients", []):
+                    if self._is_matching_client(client):
+                        snap_client_id = client.get("id")
+                        break
+                if snap_client_id:
                     break
-            if snap_client_id:
-                break
 
-        if not snap_client_id:
-            logger.warning(f"Client {self.client_id} not found for volume control")
+            if not snap_client_id:
+                logger.warning(f"Client {self.client_id} not found for volume control")
+                return False
+
+            volume = max(0, min(100, volume))
+            params = {
+                "id": snap_client_id,
+                "volume": {"percent": volume, "muted": False}
+            }
+
+            response = self.send_rpc_request(sock, "Client.SetVolume", params)
+            if response and "result" in response:
+                logger.info(f"Set client volume to {volume}%")
+                return True
             return False
-
-        volume = max(0, min(100, volume))
-        params = {
-            "id": snap_client_id,
-            "volume": {"percent": volume, "muted": False}
-        }
-
-        response = self.send_rpc_request(sock, "Client.SetVolume", params)
-        if response and "result" in response:
-            logger.info(f"Set client volume to {volume}%")
-            return True
-        return False
 
     def adjust_volume(self, delta: int) -> bool:
         """Adjust volume by delta (-100 to +100)."""
