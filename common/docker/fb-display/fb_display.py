@@ -1106,13 +1106,15 @@ async def handle_gesture(gesture: dict) -> None:
         await send_control_command({"cmd": "toggle_play"})
     elif gesture["gesture"] == "swipe_v":
         delta = gesture["delta"]
-        vol_change = int(delta / 10)  # Scale swipe to volume units
+        # Scale swipe to volume: ~5% per 100px, capped at ±10 per gesture
+        vol_change = int(delta * 5 / HEIGHT) if HEIGHT else int(delta / 100)
+        vol_change = max(-10, min(10, vol_change))  # Cap at ±10
         if vol_change != 0:
             logger.info(f"Vertical swipe - volume {vol_change:+d}")
             await send_control_command({"cmd": "volume", "delta": vol_change})
     elif gesture["gesture"] == "swipe_h":
         delta = gesture["delta"]
-        logger.debug(f"Horizontal swipe - seek {delta} (not supported)")
+        logger.info(f"Horizontal swipe - seek {delta} (not supported by Snapcast)")
         # Seek not supported by most Snapcast stream types
 
 
