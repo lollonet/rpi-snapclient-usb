@@ -144,6 +144,11 @@ def analyze_pcm(new_samples: np.ndarray) -> str | None:
     # Normalize to [-1.0, 1.0] (0 dBFS = 32768)
     normalized = audio_ring / 32768.0
 
+    # Remove DC offset — prevents energy leaking into lowest bands
+    # This is critical: microphone/ADC offsets and codec artifacts create
+    # DC components that would otherwise show as false 20 Hz activity
+    normalized = normalized - np.mean(normalized)
+
     # Apply window
     windowed = normalized * WINDOW
 
