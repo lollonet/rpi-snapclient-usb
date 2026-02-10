@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-02-10
+
 ### Added
-- **Touch Screen Controls** ([#33](https://github.com/lollonet/rpi-snapclient-usb/pull/33)) - Tap to toggle play/pause, swipe up/down for volume control. Gracefully degrades on non-touch displays
+- **Touch Screen Controls** ([#34](https://github.com/lollonet/rpi-snapclient-usb/pull/34)) - Tap to toggle play/pause, swipe up/down for volume control. Gracefully degrades on non-touch displays
 
 ### Fixed
+- **Spectrum DC offset** - Remove DC component before FFT to prevent false 20 Hz activity during speech/radio content
+- **Metadata thread safety** - Add lock for socket operations to prevent JSON-RPC stream corruption when control commands arrive during polling
+- **Touch volume sensitivity** - Scale swipe distance by screen height and cap at ±10 per gesture for more predictable control
+- **evdev build dependencies** - Add gcc, libc-dev, linux-libc-dev to fb-display Dockerfile for evdev compilation
 - **Metadata stale connection** ([#31](https://github.com/lollonet/rpi-snapclient-usb/pull/31)) - Add 10s socket timeout and 30s staleness threshold to detect half-open TCP connections to snapserver
 - **Spectrum analyzer accuracy** ([#32](https://github.com/lollonet/rpi-snapclient-usb/pull/32)) - Increase FFT size to 8192 for better low-frequency resolution (5.4 Hz/bin), tune smoothing for smoother visuals
 
