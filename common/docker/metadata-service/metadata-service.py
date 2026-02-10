@@ -640,6 +640,7 @@ class SnapcastMetadataService:
         try:
             cmd = json.loads(message)
             cmd_type = cmd.get("cmd")
+            logger.info(f"Received control command: {cmd_type} - {cmd}")
 
             if cmd_type == "toggle_play":
                 await asyncio.get_event_loop().run_in_executor(

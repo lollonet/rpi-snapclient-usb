@@ -1089,13 +1089,14 @@ async def send_control_command(cmd: dict) -> bool:
     async with _control_ws_lock:
         ws = _control_ws
     if ws is None:
-        logger.debug("No WebSocket connection for control command")
+        logger.warning("No WebSocket connection for control command")
         return False
     try:
         await ws.send(json.dumps(cmd))
+        logger.debug(f"Sent control command: {cmd}")
         return True
     except Exception as e:
-        logger.debug(f"Failed to send control command: {e}")
+        logger.warning(f"Failed to send control command: {e}")
         return False
 
 
