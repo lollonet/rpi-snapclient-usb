@@ -168,7 +168,6 @@ services:
     <<: *default-security
     devices:
       - /dev/fb0:/dev/fb0
-      - /dev/input:/dev/input
     volumes:
       - ./public:/app/public:ro
       - ./docker/fb-display/fb_display.py:/app/fb_display.py:ro
