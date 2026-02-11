@@ -118,6 +118,12 @@ metadata_version: int = 0  # bumped on change
 cached_artwork: Image.Image | None = None
 cached_artwork_url: str = ""
 
+# Playback time tracking (local clock for smooth updates)
+_playback_start: float = 0.0      # monotonic time when playback started
+_playback_offset: float = 0.0     # initial elapsed position from MPD (seconds)
+_is_playing: bool = False
+_last_duration: int = 0           # to detect track changes
+
 # Framebuffer
 fb_fd = None
 fb_mmap = None
@@ -135,6 +141,9 @@ spectrum_bg_fb: np.ndarray | None = None  # native FB format (RGB565 or BGRA32)
 
 # Cached clock overlay (re-rendered every second)
 _clock_cache: dict = {"time_str": None, "fb": None, "width": 0, "height": 0}
+
+# Cached progress bar overlay (re-rendered every second)
+_progress_cache: dict = {"elapsed": -1, "duration": 0, "fb": None, "width": 0, "height": 0}
 
 # Logo and brand text images (loaded once at startup)
 _logo_img: Image.Image | None = None
@@ -320,6 +329,24 @@ def rainbow_color(i: int, total: int) -> tuple[int, int, int]:
     hue = (i / total) * (300 / 360)  # 0 to 300 degrees
     r, g, b = colorsys.hsv_to_rgb(hue, 0.85, 0.85)
     return (int(r * 255), int(g * 255), int(b * 255))
+
+
+def get_current_elapsed() -> int:
+    """Get current elapsed time using local clock for smooth updates."""
+    if not _is_playing:
+        return int(_playback_offset)
+    return int(_playback_offset + (time.monotonic() - _playback_start))
+
+
+def format_time(seconds: int) -> str:
+    """Format seconds as M:SS or H:MM:SS."""
+    if seconds < 0:
+        seconds = 0
+    m, s = divmod(seconds, 60)
+    if m >= 60:
+        h, m = divmod(m, 60)
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
 
 
 # Pre-computed rainbow colors
@@ -852,6 +879,119 @@ def render_clock() -> tuple[np.ndarray, int, int] | None:
     return fb_pixels, img_w, img_h
 
 
+def render_progress_overlay() -> tuple[np.ndarray, int, int, int, int] | None:
+    """Render progress bar overlay. Returns (fb_pixels, width, height, x, y) or None."""
+    L = layout
+    if not L or not current_metadata:
+        return None
+
+    duration = current_metadata.get("duration", 0)
+    if duration <= 0:
+        return None
+
+    elapsed = min(get_current_elapsed(), duration)
+
+    # Check cache (changes every second)
+    cache_key = elapsed  # Update every second
+    if (cache_key == _progress_cache["elapsed"] and
+            duration == _progress_cache["duration"] and
+            _progress_cache["fb"] is not None):
+        return (
+            _progress_cache["fb"],
+            _progress_cache["width"],
+            _progress_cache["height"],
+            _progress_cache["x"],
+            _progress_cache["y"],
+        )
+
+    progress = min(elapsed / duration, 1.0)
+
+    # Proportional sizing (larger for visibility)
+    time_font_size = max(16, HEIGHT // 32)
+    bar_height = max(8, HEIGHT // 90)
+    time_font = _get_font(time_font_size)
+
+    # Format times
+    elapsed_text = format_time(elapsed)
+    duration_text = format_time(duration)
+
+    # Measure text
+    elapsed_bbox = time_font.getbbox(elapsed_text)
+    duration_bbox = time_font.getbbox(duration_text)
+    elapsed_w = elapsed_bbox[2] - elapsed_bbox[0]
+    duration_w = duration_bbox[2] - duration_bbox[0]
+    text_h = elapsed_bbox[3] - elapsed_bbox[1]
+
+    # Layout calculations (use more of the available width)
+    max_width = L["right_w"]
+    bar_margin = 16
+    total_bar_width = min(int(max_width * 0.85), 600)
+    bar_width = total_bar_width - elapsed_w - duration_w - (bar_margin * 2)
+
+    if bar_width < 40:
+        return None
+
+    # Image dimensions with padding
+    img_w = total_bar_width + 8
+    img_h = text_h + 12
+
+    # Create image
+    img = Image.new("RGB", (img_w, img_h), (10, 10, 15))  # Match spectrum bg
+    draw = ImageDraw.Draw(img)
+
+    # Positions relative to image
+    pad = 2
+    bar_x = pad + elapsed_w + bar_margin
+    bar_y = (img_h - bar_height) // 2
+
+    # Colors
+    text_dim = (130, 130, 135)
+    bar_bg = (50, 50, 55)
+    bar_fg = (90, 160, 230)
+
+    # Draw elapsed time (left)
+    draw.text((pad, pad), elapsed_text, fill=text_dim, font=time_font)
+
+    # Draw duration (right)
+    draw.text((img_w - duration_w - pad, pad), duration_text, fill=text_dim, font=time_font)
+
+    # Draw bar background (rounded corners proportional to height)
+    bar_radius = max(3, bar_height // 2)
+    draw.rounded_rectangle(
+        [bar_x, bar_y, bar_x + bar_width, bar_y + bar_height],
+        radius=bar_radius, fill=bar_bg
+    )
+
+    # Draw progress fill
+    fill_width = int(bar_width * progress)
+    if fill_width > bar_radius * 2:
+        draw.rounded_rectangle(
+            [bar_x, bar_y, bar_x + fill_width, bar_y + bar_height],
+            radius=bar_radius, fill=bar_fg
+        )
+
+    # Convert to native FB format
+    rgb = np.array(img)
+    fb_pixels = _rgb_to_fb_native(rgb)
+
+    # Calculate position: right-aligned, below info area (above spectrum)
+    text_right = L["right_x"] + L["right_w"]
+    overlay_x = text_right - img_w
+    # Position just above spectrum area
+    overlay_y = L["spec_y"] - img_h - 4
+
+    # Update cache
+    _progress_cache["elapsed"] = cache_key
+    _progress_cache["duration"] = duration
+    _progress_cache["fb"] = fb_pixels
+    _progress_cache["width"] = img_w
+    _progress_cache["height"] = img_h
+    _progress_cache["x"] = overlay_x
+    _progress_cache["y"] = overlay_y
+
+    return fb_pixels, img_w, img_h, overlay_x, overlay_y
+
+
 def render_spectrum() -> np.ndarray:
     """Render spectrum bars in native FB format (RGB565 or BGRA32).
 
@@ -969,6 +1109,7 @@ async def spectrum_ws_reader() -> None:
 async def metadata_ws_reader() -> None:
     """Connect to metadata WebSocket and receive pushed updates."""
     global current_metadata, metadata_version
+    global _playback_start, _playback_offset, _is_playing, _last_duration
     ws_url = f"ws://localhost:{METADATA_WS_PORT}"
 
     while True:
@@ -978,8 +1119,30 @@ async def metadata_ws_reader() -> None:
                 async for message in ws:
                     try:
                         data = json.loads(message)
+
+                        # Sync playback clock for progress bar
+                        new_elapsed = data.get("elapsed", 0)
+                        new_duration = data.get("duration", 0)
+                        new_playing = data.get("playing", False)
+
+                        # Resync clock if: track changed, significant seek, or state changed
+                        local_elapsed = get_current_elapsed()
+                        track_changed = new_duration != _last_duration and new_duration > 0
+                        significant_seek = abs(new_elapsed - local_elapsed) > 3
+                        state_changed = new_playing != _is_playing
+
+                        if track_changed or significant_seek or state_changed:
+                            _playback_offset = new_elapsed
+                            _playback_start = time.monotonic()
+                            _last_duration = new_duration
+                            _is_playing = new_playing
+                            if track_changed:
+                                logger.debug(f"Clock sync: new track ({new_duration}s)")
+                            elif significant_seek:
+                                logger.debug(f"Clock sync: seek to {new_elapsed}s")
+
                         # Ignore volatile fields for change detection (must match metadata-service)
-                        _VOLATILE = {"bitrate", "artwork", "artist_image"}
+                        _VOLATILE = {"bitrate", "artwork", "artist_image", "elapsed"}
                         old_stable = {k: v for k, v in (current_metadata or {}).items()
                                       if k not in _VOLATILE}
                         new_stable = {k: v for k, v in data.items() if k not in _VOLATILE}
@@ -988,7 +1151,7 @@ async def metadata_ws_reader() -> None:
                             metadata_version += 1
                             logger.debug(f"Metadata updated: {data.get('title', 'N/A')}")
                         else:
-                            current_metadata = data  # update bitrate silently
+                            current_metadata = data  # update volatile fields silently
                     except json.JSONDecodeError as e:
                         logger.warning(f"Invalid metadata JSON: {e}")
         except Exception as e:
@@ -1069,6 +1232,18 @@ async def render_loop() -> None:
                 None, write_region_to_fb_fast,
                 clock_fb, clock_x, clock_y,
             )
+
+        # Render progress bar overlay (updates every second, only for file playback)
+        if is_playing:
+            progress_result = await asyncio.get_event_loop().run_in_executor(
+                None, render_progress_overlay
+            )
+            if progress_result:
+                prog_fb, prog_w, prog_h, prog_x, prog_y = progress_result
+                await asyncio.get_event_loop().run_in_executor(
+                    None, write_region_to_fb_fast,
+                    prog_fb, prog_x, prog_y,
+                )
 
         elapsed = time.monotonic() - start
         sleep_time = (1.0 / fps) - elapsed

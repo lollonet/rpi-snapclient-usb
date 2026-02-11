@@ -214,8 +214,13 @@ class SnapcastMetadataService:
             sock.sendall(b"status\n")
             status = self._parse_mpd_response(self._read_mpd_response(sock))
 
-            if status.get('state') != 'play':
+            state = status.get('state', 'stop')
+            if state != 'play':
                 return {"playing": False, "source": "MPD"}
+
+            # Parse playback time fields for progress display
+            elapsed = float(status.get('elapsed', 0))
+            duration = float(status.get('duration', 0))
 
             # Get current song
             sock.sendall(b"currentsong\n")
@@ -249,6 +254,8 @@ class SnapcastMetadataService:
                 "bit_depth": bit_depth,
                 "file": file_path,
                 "station_name": song.get("Name", ""),
+                "elapsed": int(elapsed),
+                "duration": int(duration),
             }
 
         except Exception as e:
@@ -497,6 +504,10 @@ class SnapcastMetadataService:
                         snap_fmt = uri_query.get("sampleformat", "")
                         sample_rate, bit_depth = self._parse_audio_format(snap_fmt)
 
+                        # Extract position/duration from stream properties (MPRIS)
+                        position = props.get("position", 0)
+                        duration = meta.get("duration", 0)
+
                         return {
                             "playing": stream.get("status") == "playing",
                             "title": meta.get("title", ""),
@@ -510,6 +521,8 @@ class SnapcastMetadataService:
                             "codec": snap_codec.upper() if snap_codec else "",
                             "sample_rate": sample_rate,
                             "bit_depth": bit_depth,
+                            "elapsed": int(position),
+                            "duration": int(duration),
                         }
 
                 return {"playing": False}
@@ -894,8 +907,9 @@ class SnapcastMetadataService:
             return ""
 
         # Block private/loopback IPs to prevent SSRF to internal services
-        # Check both IPv4 and IPv6 addresses
+        # Exception: allow Snapserver host (trusted internal service for artwork)
         try:
+            is_snapserver = parsed.hostname == self.snapserver_host
             for family, _, _, _, sockaddr in socket.getaddrinfo(
                 parsed.hostname or "", None, socket.AF_UNSPEC
             ):
@@ -903,6 +917,9 @@ class SnapcastMetadataService:
                 ip = ipaddress.ip_address(addr)
                 if (ip.is_private or ip.is_loopback or ip.is_link_local or
                         ip.is_multicast or ip.is_reserved):
+                    if is_snapserver:
+                        logger.debug(f"Allowing artwork from Snapserver: {addr}")
+                        break  # Allow Snapserver
                     logger.warning(f"Blocked artwork download to restricted IP: {addr}")
                     self._failed_downloads.add(url)
                     return ""
@@ -961,7 +978,7 @@ class SnapcastMetadataService:
             return ""  # Don't fall back to broken URL
 
     # Fields that fluctuate and should not trigger a "metadata changed" event
-    _VOLATILE_FIELDS = {"bitrate", "artwork", "artist_image"}
+    _VOLATILE_FIELDS = {"bitrate", "artwork", "artist_image", "elapsed"}
 
     def _metadata_changed(self, new: dict, old: dict) -> bool:
         """Check if metadata changed, ignoring volatile fields like bitrate."""
