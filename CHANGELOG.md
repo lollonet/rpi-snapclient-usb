@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-02-11
+
+### Added
+- **Song Progress Bar** - Display elapsed/duration time with visual progress bar for file playback. Uses Snapserver MPRIS properties (position, duration) with local clock for smooth updates
+
+### Changed
+- **Touch Controls Reverted** - Touch screen controls removed pending UX redesign. Will return in a future release
+
+### Fixed
+- **Snapserver Artwork SSRF** - Allow artwork downloads from Snapserver host (was blocked by private IP protection)
+
 ## [0.1.3] - 2026-02-10
 
 ### Added
