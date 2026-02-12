@@ -1072,88 +1072,115 @@ def _render_spectrum_locked() -> np.ndarray:
     return buf
 
 
+async def websocket_client_loop(
+    url: str,
+    name: str,
+    message_handler: callable,
+    error_handler: callable | None = None,
+) -> None:
+    """Generic WebSocket client with reconnection.
+
+    Args:
+        url: WebSocket URL to connect to
+        name: Client name for logging (e.g., "spectrum", "metadata")
+        message_handler: Async function called for each message
+        error_handler: Optional async function called on error (before reconnect)
+    """
+    while True:
+        try:
+            async with websockets.connect(url) as ws:
+                logger.info(f"Connected to {name} WebSocket: {url}")
+                async for message in ws:
+                    await message_handler(message)
+        except Exception as e:
+            logger.debug(f"{name} WS error: {e}")
+            if error_handler:
+                await error_handler(e)
+            await asyncio.sleep(5)
+
+
+async def _handle_spectrum_message(message: str) -> None:
+    """Process spectrum WebSocket message."""
+    values = message.split(";")
+    new_num_bands = len(values)
+    resize_bands(new_num_bands)
+
+    # Parse new values safely
+    new_vals = np.full(new_num_bands, NOISE_FLOOR, dtype=np.float64)
+    for i in range(new_num_bands):
+        try:
+            v = float(values[i])
+            new_vals[i] = v if not np.isnan(v) else NOISE_FLOOR
+        except (ValueError, IndexError):
+            pass
+
+    # Thread-safe assignment using current NUM_BANDS
+    with _band_lock:
+        if len(new_vals) == NUM_BANDS:
+            bands[:] = new_vals
+
+
+async def _handle_spectrum_error(error: Exception) -> None:
+    """Handle spectrum WebSocket error."""
+    bands[:] = NOISE_FLOOR
+
+
 async def spectrum_ws_reader() -> None:
     """Connect to spectrum WebSocket and update band dBFS values."""
     ws_url = f"ws://localhost:{SPECTRUM_WS_PORT}"
-    while True:
-        try:
-            async with websockets.connect(ws_url) as ws:
-                logger.info(f"Connected to spectrum WebSocket: {ws_url}")
-                async for message in ws:
-                    values = message.split(";")
-                    new_num_bands = len(values)
-                    resize_bands(new_num_bands)
+    await websocket_client_loop(
+        ws_url, "spectrum", _handle_spectrum_message, _handle_spectrum_error
+    )
 
-                    # Parse new values safely
-                    new_vals = np.full(new_num_bands, NOISE_FLOOR, dtype=np.float64)
-                    for i in range(new_num_bands):
-                        try:
-                            v = float(values[i])
-                            new_vals[i] = v if not np.isnan(v) else NOISE_FLOOR
-                        except (ValueError, IndexError):
-                            pass
 
-                    # Thread-safe assignment using current NUM_BANDS
-                    with _band_lock:
-                        if len(new_vals) == NUM_BANDS:
-                            bands[:] = new_vals
-        except Exception as e:
-            logger.debug(f"Spectrum WS error: {e}")
-            bands[:] = NOISE_FLOOR
-            await asyncio.sleep(5)
+async def _handle_metadata_message(message: str) -> None:
+    """Process metadata WebSocket message."""
+    global current_metadata, metadata_version
+    global _playback_start, _playback_offset, _is_playing, _last_duration
+
+    try:
+        data = json.loads(message)
+
+        # Sync playback clock for progress bar
+        new_elapsed = data.get("elapsed", 0)
+        new_duration = data.get("duration", 0)
+        new_playing = data.get("playing", False)
+
+        # Resync clock if: track changed, significant seek, or state changed
+        local_elapsed = get_current_elapsed()
+        track_changed = new_duration != _last_duration and new_duration > 0
+        significant_seek = abs(new_elapsed - local_elapsed) > 3
+        state_changed = new_playing != _is_playing
+
+        if track_changed or significant_seek or state_changed:
+            _playback_offset = new_elapsed
+            _playback_start = time.monotonic()
+            _last_duration = new_duration
+            _is_playing = new_playing
+            if track_changed:
+                logger.debug(f"Clock sync: new track ({new_duration}s)")
+            elif significant_seek:
+                logger.debug(f"Clock sync: seek to {new_elapsed}s")
+
+        # Ignore volatile fields for change detection (must match metadata-service)
+        _VOLATILE = {"bitrate", "artwork", "artist_image", "elapsed"}
+        old_stable = {k: v for k, v in (current_metadata or {}).items()
+                      if k not in _VOLATILE}
+        new_stable = {k: v for k, v in data.items() if k not in _VOLATILE}
+        if new_stable != old_stable:
+            current_metadata = data
+            metadata_version += 1
+            logger.debug(f"Metadata updated: {data.get('title', 'N/A')}")
+        else:
+            current_metadata = data  # update volatile fields silently
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid metadata JSON: {e}")
 
 
 async def metadata_ws_reader() -> None:
     """Connect to metadata WebSocket and receive pushed updates."""
-    global current_metadata, metadata_version
-    global _playback_start, _playback_offset, _is_playing, _last_duration
     ws_url = f"ws://localhost:{METADATA_WS_PORT}"
-
-    while True:
-        try:
-            async with websockets.connect(ws_url) as ws:
-                logger.info(f"Connected to metadata WebSocket: {ws_url}")
-                async for message in ws:
-                    try:
-                        data = json.loads(message)
-
-                        # Sync playback clock for progress bar
-                        new_elapsed = data.get("elapsed", 0)
-                        new_duration = data.get("duration", 0)
-                        new_playing = data.get("playing", False)
-
-                        # Resync clock if: track changed, significant seek, or state changed
-                        local_elapsed = get_current_elapsed()
-                        track_changed = new_duration != _last_duration and new_duration > 0
-                        significant_seek = abs(new_elapsed - local_elapsed) > 3
-                        state_changed = new_playing != _is_playing
-
-                        if track_changed or significant_seek or state_changed:
-                            _playback_offset = new_elapsed
-                            _playback_start = time.monotonic()
-                            _last_duration = new_duration
-                            _is_playing = new_playing
-                            if track_changed:
-                                logger.debug(f"Clock sync: new track ({new_duration}s)")
-                            elif significant_seek:
-                                logger.debug(f"Clock sync: seek to {new_elapsed}s")
-
-                        # Ignore volatile fields for change detection (must match metadata-service)
-                        _VOLATILE = {"bitrate", "artwork", "artist_image", "elapsed"}
-                        old_stable = {k: v for k, v in (current_metadata or {}).items()
-                                      if k not in _VOLATILE}
-                        new_stable = {k: v for k, v in data.items() if k not in _VOLATILE}
-                        if new_stable != old_stable:
-                            current_metadata = data
-                            metadata_version += 1
-                            logger.debug(f"Metadata updated: {data.get('title', 'N/A')}")
-                        else:
-                            current_metadata = data  # update volatile fields silently
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Invalid metadata JSON: {e}")
-        except Exception as e:
-            logger.debug(f"Metadata WS error: {e}")
-            await asyncio.sleep(5)
+    await websocket_client_loop(ws_url, "metadata", _handle_metadata_message)
 
 
 def is_spectrum_active() -> bool:
