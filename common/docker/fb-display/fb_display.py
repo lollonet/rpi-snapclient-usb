@@ -311,12 +311,6 @@ def _get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     return font
 
 
-def load_font(size: int) -> ImageFont.FreeTypeFont:
-    return _get_font(size, bold=False)
-
-
-def load_bold_font(size: int) -> ImageFont.FreeTypeFont:
-    return _get_font(size, bold=True)
 
 
 def lerp_color(c1: tuple, c2: tuple, t: float) -> tuple:
@@ -698,7 +692,7 @@ def render_base_frame() -> Image.Image:
 
         # Line 1: Ready status
         msg1 = "Ready to Play"
-        ft1 = load_bold_font(base_title_size)
+        ft1 = _get_font(base_title_size, bold=True)
 
         # Line 2: Hostname/client ID
         msg2 = f"▸ {hostname}"
