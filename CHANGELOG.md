@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **MIT License** - Added MIT license to project (Feb 12)
+
+### Changed
+- **Documentation Updates** - Synced README, CLAUDE.md, and CHANGELOG with current project state (Feb 12)
+- **Code Architecture** ([#36](https://github.com/lollonet/rpi-snapclient-usb/pull/36)) - Consolidated code duplication across three areas:
+  - Removed dead font wrapper functions (simplified API)
+  - Extracted generic `websocket_client_loop()` utility (85% duplication eliminated)
+  - Consolidated MPD greeting pattern into reusable helper (3 duplicate patterns eliminated)
+
+### Fixed
+- **Error Handling and Logging** ([#35](https://github.com/lollonet/rpi-snapclient-usb/pull/35)) - Improved error visibility:
+  - Log MPD binary size parsing failures instead of silently passing
+  - Separate network/IO errors from unexpected errors in MPD operations
+  - Log malformed JSON from Snapserver with sample data for debugging
+  - Escalate framebuffer write failures from warning to error level
+- **Python 3.9 Compatibility** - Replace Python 3.10+ union type hints (`callable | None`) with `Optional[Callable]` for older Python versions (Feb 12)
+
 ## [0.1.4] - 2026-02-11
 
 ### Added
