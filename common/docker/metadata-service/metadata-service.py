@@ -138,6 +138,24 @@ class SnapcastMetadataService:
             for key, value in [line.split(': ', 1)]
         }
 
+    def _read_mpd_greeting(self, sock: socket.socket, validate: bool = False) -> bool:
+        """Read MPD greeting from socket.
+
+        Args:
+            sock: Connected MPD socket
+            validate: If True, validate greeting starts with 'OK MPD'
+
+        Returns:
+            True if greeting valid (or validation skipped), False if invalid
+        """
+        try:
+            greeting = sock.recv(1024)
+            if validate and not greeting.startswith(b"OK MPD"):
+                return False
+            return True
+        except (socket.error, socket.timeout):
+            return False
+
     @staticmethod
     def _detect_codec(file_path: str, audio_fmt: str) -> str:
         """Detect codec from file extension or audio format string."""
@@ -208,7 +226,8 @@ class SnapcastMetadataService:
                 self._mpd_was_connected = True
 
             # Read MPD greeting
-            sock.recv(1024)
+            if not self._read_mpd_greeting(sock):
+                return {"playing": False, "source": "MPD"}
 
             # Get status
             sock.sendall(b"status\n")
@@ -301,8 +320,7 @@ class SnapcastMetadataService:
             sock.settimeout(10)  # 10s timeout for all recv() calls
 
             # Read and validate MPD greeting
-            greeting = sock.recv(1024)
-            if not greeting.startswith(b"OK MPD"):
+            if not self._read_mpd_greeting(sock, validate=True):
                 return ""
 
             # Escape per MPD protocol to prevent command injection
@@ -629,7 +647,8 @@ class SnapcastMetadataService:
 
         try:
             # Read MPD greeting
-            sock.recv(1024)
+            if not self._read_mpd_greeting(sock):
+                return False
 
             # Get current status
             sock.sendall(b"status\n")
