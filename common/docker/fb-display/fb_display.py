@@ -50,8 +50,8 @@ ALBUM_COLOR = (153, 153, 153)
 DIM_COLOR = (85, 85, 85)
 PANEL_BG = (17, 17, 17)
 
-# Spectrum state — NUM_BANDS auto-detected from first WS message
-NUM_BANDS = 21  # default, updated on first WS message
+# Spectrum state — NUM_BANDS initialized to default, updated when first WS message received
+NUM_BANDS = 21  # default (21 for half-octave, 31 for third-octave)
 NOISE_FLOOR = -72.0  # dBFS
 
 bands = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
@@ -240,7 +240,7 @@ def write_region_to_fb_fast(fb_pixels: np.ndarray, x: int, y: int) -> None:
             fb_mmap.seek(offset)
             fb_mmap.write(fb_pixels[row].tobytes())
     except (ValueError, OSError) as e:
-        logger.warning(f"Framebuffer write failed: {e}")
+        logger.error(f"Framebuffer write failed: {e}")
 
 
 def write_full_frame(img: Image.Image) -> None:
@@ -281,7 +281,7 @@ def write_full_frame(img: Image.Image) -> None:
                     fb_mmap.seek((fb_y0 + row) * fb_stride)
                     fb_mmap.write(chunk_fb[row].tobytes())
     except (ValueError, OSError) as e:
-        logger.warning(f"Framebuffer full-frame write failed: {e}")
+        logger.error(f"Framebuffer full-frame write failed: {e}")
 
 
 def _get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -891,9 +891,8 @@ def render_progress_overlay() -> tuple[np.ndarray, int, int, int, int] | None:
 
     elapsed = min(get_current_elapsed(), duration)
 
-    # Check cache (changes every second)
-    cache_key = elapsed  # Update every second
-    if (cache_key == _progress_cache["elapsed"] and
+    # Check cache (updates every second)
+    if (elapsed == _progress_cache["elapsed"] and
             duration == _progress_cache["duration"] and
             _progress_cache["fb"] is not None):
         return (
@@ -916,11 +915,13 @@ def render_progress_overlay() -> tuple[np.ndarray, int, int, int, int] | None:
     duration_text = format_time(duration)
 
     # Measure text
-    elapsed_bbox = time_font.getbbox(elapsed_text)
-    duration_bbox = time_font.getbbox(duration_text)
-    elapsed_w = elapsed_bbox[2] - elapsed_bbox[0]
-    duration_w = duration_bbox[2] - duration_bbox[0]
-    text_h = elapsed_bbox[3] - elapsed_bbox[1]
+    def get_text_width(text: str) -> int:
+        bbox = time_font.getbbox(text)
+        return bbox[2] - bbox[0]
+
+    elapsed_w = get_text_width(elapsed_text)
+    duration_w = get_text_width(duration_text)
+    text_h = time_font.getbbox(elapsed_text)[3] - time_font.getbbox(elapsed_text)[1]
 
     # Layout calculations (use more of the available width)
     max_width = L["right_w"]
@@ -981,13 +982,15 @@ def render_progress_overlay() -> tuple[np.ndarray, int, int, int, int] | None:
     overlay_y = L["spec_y"] - img_h - 4
 
     # Update cache
-    _progress_cache["elapsed"] = cache_key
-    _progress_cache["duration"] = duration
-    _progress_cache["fb"] = fb_pixels
-    _progress_cache["width"] = img_w
-    _progress_cache["height"] = img_h
-    _progress_cache["x"] = overlay_x
-    _progress_cache["y"] = overlay_y
+    _progress_cache.update({
+        "elapsed": elapsed,
+        "duration": duration,
+        "fb": fb_pixels,
+        "width": img_w,
+        "height": img_h,
+        "x": overlay_x,
+        "y": overlay_y,
+    })
 
     return fb_pixels, img_w, img_h, overlay_x, overlay_y
 

@@ -214,8 +214,7 @@ class SnapcastMetadataService:
             sock.sendall(b"status\n")
             status = self._parse_mpd_response(self._read_mpd_response(sock))
 
-            state = status.get('state', 'stop')
-            if state != 'play':
+            if status.get('state', 'stop') != 'play':
                 return {"playing": False, "source": "MPD"}
 
             # Parse playback time fields for progress display
@@ -337,8 +336,9 @@ class SnapcastMetadataService:
                     if line.startswith(b"binary: "):
                         try:
                             bin_size = int(line.split(b": ", 1)[1])
-                        except (ValueError, IndexError):
-                            pass
+                        except (ValueError, IndexError) as e:
+                            logger.warning(f"Failed to parse MPD binary size from line: {line[:50]!r}: {e}")
+                            bin_size = 0
                         break
                 else:
                     break
@@ -389,8 +389,11 @@ class SnapcastMetadataService:
 
             return ""
 
+        except (socket.error, socket.timeout, OSError) as e:
+            logger.warning(f"MPD readpicture network/IO failed: {e}")
+            return ""
         except Exception as e:
-            logger.warning(f"MPD readpicture failed: {e}")
+            logger.error(f"Unexpected error in MPD readpicture: {e}")
             return ""
         finally:
             sock.close()
@@ -421,7 +424,8 @@ class SnapcastMetadataService:
                     continue
                 try:
                     msg = json.loads(line.decode('utf-8', errors='replace'))
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Malformed JSON from Snapserver: {line[:100]!r}: {e}")
                     continue
                 if "id" in msg:
                     self._last_snap_response = time.monotonic()
@@ -670,10 +674,12 @@ class SnapcastMetadataService:
                 logger.debug(f"Seek command ignored: {cmd.get('delta')}")
             else:
                 logger.debug(f"Unknown control command: {cmd_type}")
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            logger.warning(f"Invalid control command JSON: {e}")
+        except (socket.error, OSError) as e:
+            logger.warning(f"Control command network error: {e}")
         except Exception as e:
-            logger.warning(f"Control command error: {e}")
+            logger.error(f"Unexpected control command error: {e}")
 
     def _make_api_request(self, url: str, timeout: int = 5) -> dict | None:
         """Make an API request and return JSON response"""
@@ -910,6 +916,8 @@ class SnapcastMetadataService:
         # Exception: allow Snapserver host (trusted internal service for artwork)
         try:
             is_snapserver = parsed.hostname == self.snapserver_host
+            blocked_addr = None
+
             for family, _, _, _, sockaddr in socket.getaddrinfo(
                 parsed.hostname or "", None, socket.AF_UNSPEC
             ):
@@ -919,10 +927,14 @@ class SnapcastMetadataService:
                         ip.is_multicast or ip.is_reserved):
                     if is_snapserver:
                         logger.debug(f"Allowing artwork from Snapserver: {addr}")
-                        break  # Allow Snapserver
-                    logger.warning(f"Blocked artwork download to restricted IP: {addr}")
-                    self._failed_downloads.add(url)
-                    return ""
+                    else:
+                        blocked_addr = addr
+                        break
+
+            if blocked_addr:
+                logger.warning(f"Blocked artwork download to restricted IP: {blocked_addr}")
+                self._failed_downloads.add(url)
+                return ""
         except (socket.gaierror, ValueError, OSError) as e:
             logger.warning(f"Cannot resolve artwork host {parsed.hostname}: {e}")
             self._failed_downloads.add(url)
