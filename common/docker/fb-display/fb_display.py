@@ -20,6 +20,7 @@ import signal
 import sys
 import threading
 import time
+from typing import Callable, Optional
 
 import numpy as np
 import requests
@@ -1075,8 +1076,8 @@ def _render_spectrum_locked() -> np.ndarray:
 async def websocket_client_loop(
     url: str,
     name: str,
-    message_handler: callable,
-    error_handler: callable | None = None,
+    message_handler: Callable,
+    error_handler: Optional[Callable] = None,
 ) -> None:
     """Generic WebSocket client with reconnection.
 
