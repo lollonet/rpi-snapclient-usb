@@ -528,7 +528,7 @@ if [ "$AUTO_MODE" = true ]; then
 else
     echo "Select spectrum analyzer band resolution:"
     echo "1) Third-octave (31 bands) — recommended"
-    echo "2) Half-octave (19 bands)"
+    echo "2) Half-octave (21 bands)"
     read -rp "Enter choice [1-2]: " band_mode_choice
 
     case "${band_mode_choice:-1}" in

@@ -56,6 +56,7 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 
 - 🎵 **Synchronized Audio**: Multi-room playback via Snapcast
 - 🎨 **Cover Display**: Full-screen album art with track metadata (MPD embedded art → iTunes → MusicBrainz)
+- ⏱️ **Song Progress Bar**: Elapsed/duration time with visual progress for file playback (uses local clock for smooth updates)
 - 📊 **Real-Time Spectrum Analyzer**: dBFS FFT visualizer with half/third-octave bands, auto-gain normalization
 - 😴 **Standby Screen**: Retro hi-fi artwork with breathing animation when idle
 - 🔍 **mDNS Autodiscovery**: Snapserver found automatically — no IP configuration needed
@@ -65,6 +66,8 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 - 🐳 **Docker-based**: Pre-built images for easy deployment
 - 🔄 **Auto-start**: Systemd services for automatic startup
 - 🔒 **Security Hardened**: Input validation, SSRF protection, granular capabilities
+- 💾 **Read-Only Filesystem**: Optional SD card protection with overlayfs (preserves SD card lifespan)
+- 📡 **WebSocket Metadata**: Real-time track info push to display (no polling from clients)
 - 📊 **Resource Limits**: Auto-detected CPU/memory limits based on Pi RAM
 
 ## Supported Audio HATs
@@ -189,7 +192,7 @@ DISPLAY_RESOLUTION=1920x1080
 # Display mode: browser (X11 + Chromium) or framebuffer (direct /dev/fb0)
 DISPLAY_MODE=framebuffer
 
-# Spectrum band resolution: third-octave (31 bands) or half-octave (19 bands)
+# Spectrum band resolution: third-octave (31 bands) or half-octave (21 bands)
 BAND_MODE=third-octave
 ```
 
@@ -288,6 +291,6 @@ To bypass: `git push --no-verify`
 - The setup script installs **Docker CE** (official Docker Community Edition), not the Debian `docker.io` package
 - ALSA configuration is automatically generated based on the selected audio HAT
 - The script supports 11 different audio HATs with appropriate device tree overlays and card names
-- Cover display polls the Snapserver metadata API every 2 seconds
+- Metadata service polls Snapserver every 2 seconds and pushes updates to display via WebSocket
 - All configuration is done via `.env` files - no hardcoded IP addresses in the code
 - USB audio devices are supported without requiring device tree overlays

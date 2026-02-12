@@ -40,8 +40,15 @@ Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = st
 - `fb_display.py` bind-mounted into container (live updates without image rebuild)
 - Resolution scaling: renders at internal res, scales to actual FB on output
 - Bottom bar: logo (left), date+time (center), volume knob (right)
+- **Progress bar**: elapsed/duration for file playback, uses local clock for smooth updates
 - Timezone: mount `/etc/localtime` and `/etc/timezone` into container
 - Install progress screen: `video=HDMI-A-1:800x600@60` in cmdline.txt (KMS ignores hdmi_group/hdmi_mode); remove after install
+
+### Metadata Service
+- Polls Snapserver JSON-RPC every 2s, pushes to clients via WebSocket (port 8082)
+- Extracts `position` and `duration` from Snapserver MPRIS properties
+- fb-display uses local clock between updates for smooth progress bar animation
+- Artwork: embedded MPD → iTunes → MusicBrainz → Radio-Browser (for stations)
 
 ### Spectrum Analyzer
 - Half-octave default: 21 bands, 20 Hz–20 kHz

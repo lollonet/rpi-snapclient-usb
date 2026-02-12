@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Snapserver Artwork SSRF** - Allow artwork downloads from Snapserver host (was blocked by private IP protection)
+- **Control Command Logging** - Improved logging for debugging control commands
 
 ## [0.1.3] - 2026-02-10
 
