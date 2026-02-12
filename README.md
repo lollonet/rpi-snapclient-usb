@@ -286,6 +286,10 @@ To bypass: `git push --no-verify`
 4. Push and create a PR
 5. CI must pass before merge
 
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 ## Notes
 
 - The setup script installs **Docker CE** (official Docker Community Edition), not the Debian `docker.io` package
