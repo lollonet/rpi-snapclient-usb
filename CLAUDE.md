@@ -51,8 +51,8 @@ Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = st
 - Artwork: embedded MPD → iTunes → MusicBrainz → Radio-Browser (for stations)
 
 ### Spectrum Analyzer
-- Half-octave default: 21 bands, 20 Hz–20 kHz
-- Third-octave option: 31 bands (ISO 266), set `BAND_MODE=third-octave`
+- Third-octave default: 31 bands (ISO 266), 20 Hz–20 kHz
+- Half-octave option: 21 bands, set `BAND_MODE=half-octave`
 - Band count auto-detected by display from first WebSocket message
 
 ### Deployment

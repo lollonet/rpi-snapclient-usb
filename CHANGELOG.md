@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Log malformed JSON from Snapserver with sample data for debugging
   - Escalate framebuffer write failures from warning to error level
 - **Python 3.9 Compatibility** - Replace Python 3.10+ union type hints (`callable | None`) with `Optional[Callable]` for older Python versions (Feb 12)
+- **Documentation Default Values** - Corrected default values in documentation to match setup.sh behavior:
+  - `ENABLE_READONLY=true` (was incorrectly documented as false in .env.example)
+  - `DISPLAY_MODE=framebuffer` (was incorrectly documented as browser in .env.example)
+  - `BAND_MODE=third-octave` default (CLAUDE.md incorrectly stated half-octave as default)
 
 ## [0.1.4] - 2026-02-11
 
