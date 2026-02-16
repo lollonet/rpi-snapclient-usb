@@ -66,7 +66,7 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 - 🐳 **Docker-based**: Pre-built images for easy deployment
 - 🔄 **Auto-start**: Systemd services for automatic startup
 - 🔒 **Security Hardened**: Input validation, SSRF protection, granular capabilities
-- 💾 **Read-Only Filesystem**: Optional SD card protection with overlayfs (preserves SD card lifespan)
+- 💾 **Read-Only Filesystem**: SD card protection with overlayfs, enabled by default (preserves SD card lifespan)
 - 📡 **WebSocket Metadata**: Real-time track info push to display (no polling from clients)
 - 📊 **Resource Limits**: Auto-detected CPU/memory limits based on Pi RAM
 
@@ -237,9 +237,9 @@ curl http://localhost:8080/metadata.json
 ## Docker Image
 
 This project uses pre-built Docker images:
-- **Images**: `ghcr.io/lollonet/rpi-snapclient-usb:latest` and related service images
+- **Images**: `ghcr.io/lollonet/rpi-snapclient-usb-*:latest` (snapclient, metadata, visualizer, fb-display) + `nginx:alpine`
 - **Platform**: ARM64 (Raspberry Pi 4)
-- **Services**: snapclient, metadata-service, nginx, audio-visualizer, fb-display
+- **Requires**: Docker Compose v2+ (installed automatically by setup.sh via Docker CE)
 
 All containers run with:
 - **Healthchecks** with dependency ordering (fb-display waits for visualizer, etc.)
@@ -292,7 +292,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Notes
 
-- The setup script installs **Docker CE** (official Docker Community Edition), not the Debian `docker.io` package
+- The setup script installs **Docker CE** (official Docker Community Edition) with Compose v2 plugin, not the Debian `docker.io` package
 - ALSA configuration is automatically generated based on the selected audio HAT
 - The script supports 11 different audio HATs with appropriate device tree overlays and card names
 - Metadata service polls Snapserver every 2 seconds and pushes updates to display via WebSocket
