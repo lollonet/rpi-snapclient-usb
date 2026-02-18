@@ -49,6 +49,7 @@ Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = st
 - Extracts `position` and `duration` from Snapserver MPRIS properties
 - fb-display uses local clock between updates for smooth progress bar animation
 - Artwork: embedded MPD → iTunes → MusicBrainz → Radio-Browser (for stations)
+- **Known limitation**: mDNS discovery runs once at startup; no failover or re-discovery if the connected server goes down. Set `SNAPSERVER_HOST` explicitly to pin to a specific server
 
 ### Spectrum Analyzer
 - Third-octave default: 31 bands (ISO 266), 20 Hz–20 kHz

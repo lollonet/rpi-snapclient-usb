@@ -186,8 +186,8 @@ CLIENT_ID=snapclient-raspberrypi
 # Audio device — must be "default" to route through DAC + loopback for spectrum
 SOUNDCARD=default
 
-# Display resolution (auto-configured)
-DISPLAY_RESOLUTION=1920x1080
+# Display resolution (leave empty to auto-detect from framebuffer, capped at 1920x1080)
+DISPLAY_RESOLUTION=
 
 # Display mode: browser (X11 + Chromium) or framebuffer (direct /dev/fb0)
 DISPLAY_MODE=framebuffer

@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-02-18
+
 ### Added
-- **MIT License** - Added MIT license to project (Feb 12)
+- **MIT License** - Added MIT license to project
 
 ### Changed
-- **Documentation Updates** - Synced README, CLAUDE.md, and CHANGELOG with current project state (Feb 12)
+- **Python 3.13** - Upgraded all Python Docker images from 3.11-slim to 3.13-slim (metadata-service, audio-visualizer, fb-display)
+- **CI Parallelization** - All 4 Docker image builds now run in parallel (removed sequential dependencies). Deployed 4 self-hosted runners on raspy for faster builds (~3 min vs ~12 min)
+- **Documentation Updates** - Synced README, CLAUDE.md, and CHANGELOG with current project state
 - **Code Architecture** ([#36](https://github.com/lollonet/rpi-snapclient-usb/pull/36)) - Consolidated code duplication across three areas:
   - Removed dead font wrapper functions (simplified API)
   - Extracted generic `websocket_client_loop()` utility (85% duplication eliminated)
@@ -23,11 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Separate network/IO errors from unexpected errors in MPD operations
   - Log malformed JSON from Snapserver with sample data for debugging
   - Escalate framebuffer write failures from warning to error level
-- **Python 3.9 Compatibility** - Replace Python 3.10+ union type hints (`callable | None`) with `Optional[Callable]` for older Python versions (Feb 12)
+- **Python 3.9 Compatibility** - Replace Python 3.10+ union type hints (`callable | None`) with `Optional[Callable]` for older Python versions
 - **Documentation Default Values** - Corrected default values in documentation to match setup.sh behavior:
   - `ENABLE_READONLY=true` (was incorrectly documented as false in .env.example)
   - `DISPLAY_MODE=framebuffer` (was incorrectly documented as browser in .env.example)
   - `BAND_MODE=third-octave` default (CLAUDE.md incorrectly stated half-octave as default)
+- **Documentation Accuracy** - Fixed README and CLAUDE.md inconsistencies found during 10-pass review:
+  - Standardized Docker image naming across all docs
+  - Added Docker Compose v2+ requirement
+  - Clarified read-only filesystem is enabled by default
 
 ## [0.1.4] - 2026-02-11
 
