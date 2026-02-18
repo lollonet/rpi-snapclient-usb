@@ -63,5 +63,5 @@ Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = st
 
 ### Git & CI
 - Pre-push hook runs shellcheck, bash syntax, HAT config validation
-- Docker images: `ghcr.io/lollonet/rpi-snapclient-usb[-*]:latest` + `nginx:alpine` (ARM64 only)
+- Docker images: `lollonet/rpi-snapclient-usb[-*]:latest` (Docker Hub) + `nginx:alpine` (ARM64 only)
 - Branch naming: `feature/<desc>` or `fix/<desc>`, always use PRs
