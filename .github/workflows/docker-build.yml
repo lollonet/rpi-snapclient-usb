@@ -66,7 +66,6 @@ jobs:
 
   build-metadata:
     name: Build Metadata Service Image
-    needs: build-snapclient
     runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
@@ -114,7 +113,6 @@ jobs:
 
   build-visualizer:
     name: Build Audio Visualizer Image
-    needs: build-metadata
     runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
@@ -162,7 +160,6 @@ jobs:
 
   build-fb-display:
     name: Build Framebuffer Display Image
-    needs: build-visualizer
     runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
