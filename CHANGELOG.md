@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-02-19
+
+### Changed
+- **Docker Hub Registry** ([#41](https://github.com/lollonet/rpi-snapclient-usb/pull/41)) - Moved all container images from GHCR to Docker Hub (`lollonet/rpi-snapclient-usb-*`) for faster pull speeds. CI workflow updated to use Docker Hub credentials
+- **Simplified Clock** ([#40](https://github.com/lollonet/rpi-snapclient-usb/pull/40)) - Replaced retro-styled decorated clock (double borders, text shadow, corner dots) with a small muted plain-text clock at half the font size
+
+### Fixed
+- **Display Flicker** ([#40](https://github.com/lollonet/rpi-snapclient-usb/pull/40)) - Added dirty flag to clock and progress bar caches so framebuffer writes only happen when content actually changes (~1x/sec instead of every frame)
+- **Setup Hard-Fail** ([#42](https://github.com/lollonet/rpi-snapclient-usb/pull/42)) - Critical setup errors (Docker pull failure, missing Chromium, missing boot config) now exit with error instead of printing a warning and reporting "Setup Complete!"
+- **grep -c Bug** ([#43](https://github.com/lollonet/rpi-snapclient-usb/pull/43)) - Fixed `setup.sh` progress renderer outputting `"0\n0"` when input was empty due to `grep -c` returning non-zero exit on no match
+- **Artwork Port Default** ([#43](https://github.com/lollonet/rpi-snapclient-usb/pull/43)) - Fixed `METADATA_HTTP_PORT` default from 8083 to 8080 to match nginx cover-webserver port
+- **Missing fb-display Env Vars** ([#43](https://github.com/lollonet/rpi-snapclient-usb/pull/43)) - Added `METADATA_HOST`, `METADATA_HTTP_PORT`, and `CLIENT_ID` to docker-compose.yml for fb-display service
+
+## [0.1.6] - 2026-02-19
+
+### Changed
+- **Docker Hub Registry** ([#41](https://github.com/lollonet/rpi-snapclient-usb/pull/41)) - Initial registry switch from GHCR to Docker Hub
+
+### Documentation
+- **DISPLAY_RESOLUTION** - Fixed README example to show empty value (auto-detect) instead of hardcoded `1920x1080`
+- **mDNS Limitation** - Documented that metadata-service mDNS discovery runs once at startup with no failover
+
 ## [0.1.5] - 2026-02-18
 
 ### Added
