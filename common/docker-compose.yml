@@ -55,69 +55,9 @@ services:
         reservations:
           memory: ${SNAPCLIENT_MEM_RESERVE:-64M}
 
-  metadata-service:
-    image: lollonet/rpi-snapclient-usb-metadata:latest
-    build: ./docker/metadata-service
-    container_name: metadata-service
-    restart: unless-stopped
-    network_mode: host
-    <<: *default-security
-    read_only: true
-    tmpfs:
-      - /tmp:size=32M,noexec,nosuid,nodev
-    environment:
-      - SNAPSERVER_HOST=${SNAPSERVER_HOST:-}
-      - SNAPSERVER_PORT=${SNAPSERVER_RPC_PORT:-1705}
-      - CLIENT_ID=${CLIENT_ID:?CLIENT_ID not set in .env}
-      - METADATA_WS_PORT=8082
-    volumes:
-      - ./public:/app/public
-      - ./docker/metadata-service/metadata-service.py:/app/metadata-service.py:ro
-    logging: *default-logging
-    healthcheck:
-      # Use process check - WebSocket server doesn't respond to HTTP
-      test: ["CMD-SHELL", "pidof python3 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: ${METADATA_MEM_LIMIT:-128M}
-          cpus: '${METADATA_CPU_LIMIT:-0.5}'
-        reservations:
-          memory: ${METADATA_MEM_RESERVE:-64M}
-
-  nginx:
-    image: nginx:alpine
-    container_name: cover-webserver
-    restart: unless-stopped
-    # nginx:alpine needs CAP_CHOWN for startup, can't use full security anchor
-    security_opt:
-      - no-new-privileges:true
-    tmpfs:
-      - /tmp:size=16M,noexec,nosuid,nodev
-      - /var/cache/nginx:size=32M,noexec,nosuid,nodev
-      - /run:size=16M,noexec,nosuid,nodev
-    ports:
-      - "8080:80"
-    volumes:
-      - ./public:/usr/share/nginx/html:ro
-    logging: *default-logging
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
-    deploy:
-      resources:
-        limits:
-          memory: ${NGINX_MEM_LIMIT:-64M}
-          cpus: '${NGINX_CPU_LIMIT:-0.25}'
-        reservations:
-          memory: ${NGINX_MEM_RESERVE:-32M}
+  # Metadata is served by the snapMULTI server (ports 8082 WS, 8083 HTTP).
+  # Set METADATA_HOST in .env to the server's IP (or leave as localhost for
+  # server+player on the same Pi).
 
   audio-visualizer:
     image: lollonet/rpi-snapclient-usb-visualizer:latest
@@ -180,7 +120,7 @@ services:
       - VISUALIZER_WS_PORT=8081
       - METADATA_WS_PORT=8082
       - METADATA_HOST=${METADATA_HOST:-localhost}
-      - METADATA_HTTP_PORT=${METADATA_HTTP_PORT:-8080}
+      - METADATA_HTTP_PORT=${METADATA_HTTP_PORT:-8083}
       - CLIENT_ID=${CLIENT_ID:?CLIENT_ID not set in .env}
     logging: *default-logging
     healthcheck:
@@ -190,8 +130,6 @@ services:
       retries: 3
       start_period: 10s
     depends_on:
-      metadata-service:
-        condition: service_healthy
       audio-visualizer:
         condition: service_healthy
     deploy:

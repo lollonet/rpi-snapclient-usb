@@ -10,7 +10,6 @@ common/
 ├── .env.example                # Full config reference
 ├── docker/
 │   ├── snapclient/             # Core audio client (ALSA → Snapserver)
-│   ├── metadata-service/       # Track info via WebSocket (port 8082)
 │   ├── audio-visualizer/       # FFT spectrum via WebSocket (port 8081)
 │   └── fb-display/             # Framebuffer renderer (/dev/fb0)
 ├── scripts/setup.sh            # Main installer (--auto supported)
@@ -44,12 +43,12 @@ Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = st
 - Timezone: mount `/etc/localtime` and `/etc/timezone` into container
 - Install progress screen: `video=HDMI-A-1:800x600@60` in cmdline.txt (KMS ignores hdmi_group/hdmi_mode); remove after install
 
-### Metadata Service
-- Polls Snapserver JSON-RPC every 2s, pushes to clients via WebSocket (port 8082)
-- Extracts `position` and `duration` from Snapserver MPRIS properties
+### Metadata (Centralized on Server)
+- Metadata is served by the snapMULTI server (`metadata-service` container, ports 8082 WS + 8083 HTTP)
+- Clients no longer run their own metadata-service or nginx containers
+- fb-display connects to `METADATA_HOST:8082` (WS) and `METADATA_HOST:8083` (HTTP) for track info and artwork
+- Set `METADATA_HOST` in `.env` to the server's IP/hostname; defaults to `localhost` (for server+player on same Pi)
 - fb-display uses local clock between updates for smooth progress bar animation
-- Artwork: embedded MPD → iTunes → MusicBrainz → Radio-Browser (for stations)
-- **Known limitation**: mDNS discovery runs once at startup; no failover or re-discovery if the connected server goes down. Set `SNAPSERVER_HOST` explicitly to pin to a specific server
 
 ### Spectrum Analyzer
 - Third-octave default: 31 bands (ISO 266), 20 Hz–20 kHz
@@ -59,10 +58,10 @@ Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = st
 ### Deployment
 - **SD card**: `prepare-sd.sh` patches firstrun for auto-install
 - **Live update**: rsync changed files + `docker compose up -d --force-recreate`
-- Bind-mounted files: `fb_display.py`, `visualizer.py`, `metadata-service.py` — no image rebuild needed
+- Bind-mounted files: `fb_display.py`, `visualizer.py` — no image rebuild needed
 - Device hosts: `snapdigi` (192.168.63.5), `snapvideo` — SSH user `claudio`
 
 ### Git & CI
 - Pre-push hook runs shellcheck, bash syntax, HAT config validation
-- Docker images: `lollonet/rpi-snapclient-usb[-*]:latest` (Docker Hub) + `nginx:alpine` (ARM64 only)
+- Docker images: `lollonet/rpi-snapclient-usb[-*]:latest` (Docker Hub)
 - Branch naming: `feature/<desc>` or `fix/<desc>`, always use PRs
