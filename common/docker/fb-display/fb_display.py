@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # Display configuration
 METADATA_HOST = os.environ.get("METADATA_HOST", "") or "localhost"
 METADATA_WS_PORT = int(os.environ.get("METADATA_WS_PORT", "8082"))
-METADATA_HTTP_PORT = int(os.environ.get("METADATA_HTTP_PORT", "8080"))
+METADATA_HTTP_PORT = int(os.environ.get("METADATA_HTTP_PORT", "8083"))
 CLIENT_ID = os.environ.get("CLIENT_ID", "")
 SPECTRUM_WS_PORT = int(os.environ.get("VISUALIZER_WS_PORT", "8081"))
 FB_DEVICE = "/dev/fb0"
