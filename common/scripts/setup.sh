@@ -143,7 +143,7 @@ render_progress() {
         fi
         # Fill remaining lines to make consistent height (10 lines)
         local line_count
-        line_count=$(echo -n "$log_lines" | grep -c '^' || echo 0)
+        line_count=$(printf '%s' "$log_lines" | grep -c '^') || line_count=0
         for ((i=line_count; i<10; i++)); do
             printf '  │ %-64s │\n' ""
         done
@@ -907,12 +907,6 @@ set_resource_limits() {
             SNAPCLIENT_MEM_LIMIT="96M"
             SNAPCLIENT_MEM_RESERVE="48M"
             SNAPCLIENT_CPU_LIMIT="0.5"
-            METADATA_MEM_LIMIT="64M"
-            METADATA_MEM_RESERVE="32M"
-            METADATA_CPU_LIMIT="0.25"
-            NGINX_MEM_LIMIT="32M"
-            NGINX_MEM_RESERVE="16M"
-            NGINX_CPU_LIMIT="0.15"
             VISUALIZER_MEM_LIMIT="128M"
             VISUALIZER_MEM_RESERVE="64M"
             VISUALIZER_CPU_LIMIT="0.5"
@@ -925,12 +919,6 @@ set_resource_limits() {
             SNAPCLIENT_MEM_LIMIT="128M"
             SNAPCLIENT_MEM_RESERVE="64M"
             SNAPCLIENT_CPU_LIMIT="0.5"
-            METADATA_MEM_LIMIT="128M"
-            METADATA_MEM_RESERVE="64M"
-            METADATA_CPU_LIMIT="0.5"
-            NGINX_MEM_LIMIT="64M"
-            NGINX_MEM_RESERVE="32M"
-            NGINX_CPU_LIMIT="0.25"
             VISUALIZER_MEM_LIMIT="256M"
             VISUALIZER_MEM_RESERVE="128M"
             VISUALIZER_CPU_LIMIT="1.0"
@@ -943,12 +931,6 @@ set_resource_limits() {
             SNAPCLIENT_MEM_LIMIT="192M"
             SNAPCLIENT_MEM_RESERVE="96M"
             SNAPCLIENT_CPU_LIMIT="1.0"
-            METADATA_MEM_LIMIT="192M"
-            METADATA_MEM_RESERVE="96M"
-            METADATA_CPU_LIMIT="1.0"
-            NGINX_MEM_LIMIT="96M"
-            NGINX_MEM_RESERVE="48M"
-            NGINX_CPU_LIMIT="0.5"
             VISUALIZER_MEM_LIMIT="384M"
             VISUALIZER_MEM_RESERVE="192M"
             VISUALIZER_CPU_LIMIT="2.0"
@@ -1011,16 +993,15 @@ declare -A env_vars=(
     ["DISPLAY_MODE"]="$DISPLAY_MODE"
     ["BAND_MODE"]="$BAND_MODE"
     ["COMPOSE_PROFILES"]="$DOCKER_COMPOSE_PROFILES"
+    # Server metadata connection (cover art + track info served by snapMULTI server)
+    # Empty = mDNS autodiscovery (same as SNAPSERVER_HOST)
+    ["METADATA_HOST"]="${snapserver_ip}"
+    ["METADATA_WS_PORT"]="8082"
+    ["METADATA_HTTP_PORT"]="8083"
     # Resource limits (auto-detected)
     ["SNAPCLIENT_MEM_LIMIT"]="$SNAPCLIENT_MEM_LIMIT"
     ["SNAPCLIENT_MEM_RESERVE"]="$SNAPCLIENT_MEM_RESERVE"
     ["SNAPCLIENT_CPU_LIMIT"]="$SNAPCLIENT_CPU_LIMIT"
-    ["METADATA_MEM_LIMIT"]="$METADATA_MEM_LIMIT"
-    ["METADATA_MEM_RESERVE"]="$METADATA_MEM_RESERVE"
-    ["METADATA_CPU_LIMIT"]="$METADATA_CPU_LIMIT"
-    ["NGINX_MEM_LIMIT"]="$NGINX_MEM_LIMIT"
-    ["NGINX_MEM_RESERVE"]="$NGINX_MEM_RESERVE"
-    ["NGINX_CPU_LIMIT"]="$NGINX_CPU_LIMIT"
     ["VISUALIZER_MEM_LIMIT"]="$VISUALIZER_MEM_LIMIT"
     ["VISUALIZER_MEM_RESERVE"]="$VISUALIZER_MEM_RESERVE"
     ["VISUALIZER_CPU_LIMIT"]="$VISUALIZER_CPU_LIMIT"
@@ -1204,10 +1185,8 @@ start_progress_animation 9 60 40  # Animate during long image pull
 
 cd "$INSTALL_DIR"
 log_progress "docker compose pull: snapclient"
-log_progress "docker compose pull: metadata-service"
 log_progress "docker compose pull: audio-visualizer"
 log_progress "docker compose pull: fb-display"
-log_progress "docker compose pull: nginx (cover-webserver)"
 if ! docker compose pull 2>&1; then
     stop_progress_animation
     log_progress "ERROR: Failed to pull container images"
