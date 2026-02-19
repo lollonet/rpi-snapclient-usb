@@ -20,7 +20,7 @@ import signal
 import sys
 import threading
 import time
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import numpy as np
 import requests
@@ -31,7 +31,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Display configuration
+METADATA_HOST = os.environ.get("METADATA_HOST", "") or "localhost"
 METADATA_WS_PORT = int(os.environ.get("METADATA_WS_PORT", "8082"))
+METADATA_HTTP_PORT = int(os.environ.get("METADATA_HTTP_PORT", "8083"))
+CLIENT_ID = os.environ.get("CLIENT_ID", "")
 SPECTRUM_WS_PORT = int(os.environ.get("VISUALIZER_WS_PORT", "8081"))
 FB_DEVICE = "/dev/fb0"
 TARGET_FPS = 20
@@ -572,7 +575,7 @@ def fetch_artwork(url: str) -> Image.Image | None:
     try:
         full_url = url
         if url.startswith("/"):
-            full_url = f"http://localhost:8080{url}"
+            full_url = f"http://{METADATA_HOST}:{METADATA_HTTP_PORT}{url}"
         resp = requests.get(full_url, timeout=3)
         if resp.status_code == 200:
             cached_artwork = Image.open(io.BytesIO(resp.content))
@@ -1061,6 +1064,7 @@ async def websocket_client_loop(
     name: str,
     message_handler: Callable,
     error_handler: Optional[Callable] = None,
+    on_connect: Optional[Callable] = None,
 ) -> None:
     """Generic WebSocket client with reconnection.
 
@@ -1069,11 +1073,14 @@ async def websocket_client_loop(
         name: Client name for logging (e.g., "spectrum", "metadata")
         message_handler: Async function called for each message
         error_handler: Optional async function called on error (before reconnect)
+        on_connect: Optional async function called after connection (e.g., subscribe)
     """
     while True:
         try:
             async with websockets.connect(url) as ws:
                 logger.info(f"Connected to {name} WebSocket: {url}")
+                if on_connect:
+                    await on_connect(ws)
                 async for message in ws:
                     await message_handler(message)
         except Exception as e:
@@ -1162,9 +1169,19 @@ async def _handle_metadata_message(message: str) -> None:
 
 
 async def metadata_ws_reader() -> None:
-    """Connect to metadata WebSocket and receive pushed updates."""
-    ws_url = f"ws://localhost:{METADATA_WS_PORT}"
-    await websocket_client_loop(ws_url, "metadata", _handle_metadata_message)
+    """Connect to server metadata WebSocket and subscribe with CLIENT_ID."""
+    ws_url = f"ws://{METADATA_HOST}:{METADATA_WS_PORT}"
+
+    async def _subscribe_and_handle(ws: Any) -> None:
+        """Send subscription on connect, then handle messages."""
+        if CLIENT_ID:
+            await ws.send(json.dumps({"subscribe": CLIENT_ID}))
+            logger.info(f"Subscribed to metadata for client '{CLIENT_ID}'")
+
+    await websocket_client_loop(
+        ws_url, "metadata", _handle_metadata_message,
+        on_connect=_subscribe_and_handle,
+    )
 
 
 def is_spectrum_active() -> bool:
