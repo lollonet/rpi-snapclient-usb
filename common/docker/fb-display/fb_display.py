@@ -1154,11 +1154,18 @@ async def _handle_metadata_message(message: str) -> None:
                 logger.debug(f"Clock sync: seek to {new_elapsed}s")
 
         # Ignore volatile fields for change detection (must match metadata-service)
-        _VOLATILE = {"bitrate", "artwork", "artist_image", "elapsed"}
+        _VOLATILE = {"bitrate", "artwork", "artist_image", "elapsed", "duration"}
         old_stable = {k: v for k, v in (current_metadata or {}).items()
                       if k not in _VOLATILE}
         new_stable = {k: v for k, v in data.items() if k not in _VOLATILE}
-        if new_stable != old_stable:
+
+        # Artwork changes need a base frame redraw even though they're volatile
+        # on the server (artwork URL may arrive after title change)
+        old_art = (current_metadata or {}).get("artwork", "")
+        new_art = data.get("artwork", "")
+        artwork_changed = old_art != new_art and new_art
+
+        if new_stable != old_stable or artwork_changed:
             current_metadata = data
             metadata_version += 1
             logger.debug(f"Metadata updated: {data.get('title', 'N/A')}")
