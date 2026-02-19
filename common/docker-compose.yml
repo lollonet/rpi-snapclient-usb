@@ -15,7 +15,7 @@ x-security: &default-security
 
 services:
   snapclient:
-    image: ghcr.io/lollonet/rpi-snapclient-usb:latest
+    image: lollonet/rpi-snapclient-usb:latest
     container_name: snapclient
     network_mode: host
     restart: unless-stopped
@@ -56,7 +56,7 @@ services:
           memory: ${SNAPCLIENT_MEM_RESERVE:-64M}
 
   metadata-service:
-    image: ghcr.io/lollonet/rpi-snapclient-usb-metadata:latest
+    image: lollonet/rpi-snapclient-usb-metadata:latest
     build: ./docker/metadata-service
     container_name: metadata-service
     restart: unless-stopped
@@ -120,7 +120,7 @@ services:
           memory: ${NGINX_MEM_RESERVE:-32M}
 
   audio-visualizer:
-    image: ghcr.io/lollonet/rpi-snapclient-usb-visualizer:latest
+    image: lollonet/rpi-snapclient-usb-visualizer:latest
     build: ./docker/audio-visualizer
     container_name: audio-visualizer
     restart: unless-stopped
@@ -158,7 +158,7 @@ services:
           memory: ${VISUALIZER_MEM_RESERVE:-128M}
 
   fb-display:
-    image: ghcr.io/lollonet/rpi-snapclient-usb-fb-display:latest
+    image: lollonet/rpi-snapclient-usb-fb-display:latest
     build: ./docker/fb-display
     container_name: fb-display
     restart: unless-stopped

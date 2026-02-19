@@ -237,7 +237,7 @@ curl http://localhost:8080/metadata.json
 ## Docker Image
 
 This project uses pre-built Docker images:
-- **Images**: `ghcr.io/lollonet/rpi-snapclient-usb-*:latest` (snapclient, metadata, visualizer, fb-display) + `nginx:alpine`
+- **Images**: `lollonet/rpi-snapclient-usb-*:latest` (Docker Hub) (snapclient, metadata, visualizer, fb-display) + `nginx:alpine`
 - **Platform**: ARM64 (Raspberry Pi 4)
 - **Requires**: Docker Compose v2+ (installed automatically by setup.sh via Docker CE)
 

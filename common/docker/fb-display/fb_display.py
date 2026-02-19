@@ -141,10 +141,10 @@ spectrum_bg_np: np.ndarray | None = None  # numpy RGB array for alpha blending
 spectrum_bg_fb: np.ndarray | None = None  # native FB format (RGB565 or BGRA32)
 
 # Cached clock overlay (re-rendered every second)
-_clock_cache: dict = {"time_str": None, "fb": None, "width": 0, "height": 0}
+_clock_cache: dict = {"time_str": None, "fb": None, "width": 0, "height": 0, "dirty": True}
 
 # Cached progress bar overlay (re-rendered every second)
-_progress_cache: dict = {"elapsed": -1, "duration": 0, "fb": None, "width": 0, "height": 0}
+_progress_cache: dict = {"elapsed": -1, "duration": 0, "fb": None, "width": 0, "height": 0, "dirty": True}
 
 # Logo and brand text images (loaded once at startup)
 _logo_img: Image.Image | None = None
@@ -811,65 +811,45 @@ def _render_volume_knob(vol: int, muted: bool) -> Image.Image:
 
 
 def render_clock() -> tuple[np.ndarray, int, int] | None:
-    """Render date+time in retro terminal style. Returns (fb_pixels, width, height)."""
+    """Render small date+time text. Returns (fb_pixels, width, height)."""
     L = layout
     if not L:
         return None
 
     date_str = time.strftime("%a %d %b")
     time_str = time.strftime("%H:%M:%S")
-    display_str = f"{date_str}  ·  {time_str}"
+    display_str = f"{date_str}  {time_str}"
 
     # Check cache (changes every second)
     if display_str == _clock_cache["time_str"] and _clock_cache["fb"] is not None:
         return _clock_cache["fb"], _clock_cache["width"], _clock_cache["height"]
 
-    # Clock styling
-    clock_font_size = max(14, L["clock_h"] - 6)
-    font = _get_font(clock_font_size, bold=True)
+    # Small font — roughly half the bottom bar height
+    clock_font_size = max(10, L["clock_h"] // 2)
+    font = _get_font(clock_font_size)
 
-    # Measure text size
     bbox = font.getbbox(display_str)
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
 
-    # Create clock image with padding and retro border
-    pad_x, pad_y = 16, 4
-    img_w = text_w + pad_x * 2 + 4
-    img_h = text_h + pad_y * 2 + 4
+    pad_x, pad_y = 4, 2
+    img_w = text_w + pad_x * 2
+    img_h = text_h + pad_y * 2
 
     img = Image.new("RGB", (img_w, img_h), BG_TOP)
     draw = ImageDraw.Draw(img)
 
-    # Retro scanline/terminal effect: dark border with subtle glow
-    draw.rectangle([0, 0, img_w - 1, img_h - 1], outline=(40, 50, 70), width=1)
-    draw.rectangle([1, 1, img_w - 2, img_h - 2], outline=(25, 35, 55), width=1)
+    text_x = pad_x
+    text_y = pad_y - bbox[1]
+    draw.text((text_x, text_y), display_str, fill=(140, 150, 160), font=font)
 
-    # Cyber/terminal green-cyan color for time
-    time_color = (0, 220, 180)
+    fb_pixels = _rgb_to_fb_native(np.array(img))
 
-    # Draw text with subtle shadow for depth
-    text_x = pad_x + 2
-    text_y = pad_y + 2 - bbox[1]
-    draw.text((text_x + 1, text_y + 1), display_str, fill=(0, 40, 35), font=font)
-    draw.text((text_x, text_y), display_str, fill=time_color, font=font)
-
-    # Decorative corner dots
-    dot_color = (0, 100, 80)
-    draw.ellipse([3, 3, 5, 5], fill=dot_color)
-    draw.ellipse([img_w - 6, 3, img_w - 4, 5], fill=dot_color)
-    draw.ellipse([3, img_h - 6, 5, img_h - 4], fill=dot_color)
-    draw.ellipse([img_w - 6, img_h - 6, img_w - 4, img_h - 4], fill=dot_color)
-
-    # Convert to native FB format
-    rgb = np.array(img)
-    fb_pixels = _rgb_to_fb_native(rgb)
-
-    # Update cache
     _clock_cache["time_str"] = display_str
     _clock_cache["fb"] = fb_pixels
     _clock_cache["width"] = img_w
     _clock_cache["height"] = img_h
+    _clock_cache["dirty"] = True
 
     return fb_pixels, img_w, img_h
 
@@ -985,6 +965,7 @@ def render_progress_overlay() -> tuple[np.ndarray, int, int, int, int] | None:
         "height": img_h,
         "x": overlay_x,
         "y": overlay_y,
+        "dirty": True,
     })
 
     return fb_pixels, img_w, img_h, overlay_x, overlay_y
@@ -1210,6 +1191,9 @@ async def render_loop() -> None:
             await asyncio.get_event_loop().run_in_executor(
                 None, write_full_frame, base_frame
             )
+            # Full frame overwrites clock/progress regions — force redraw
+            _clock_cache["dirty"] = True
+            _progress_cache["dirty"] = True
             logger.info("Base frame updated (metadata changed)")
 
         if spectrum_bg_np is None or spectrum_bg_fb is None:
@@ -1245,11 +1229,11 @@ async def render_loop() -> None:
             spec_rgb, layout["right_x"], layout["spec_y"],
         )
 
-        # Render clock (updates once per second via cache)
+        # Render clock (updates once per second via cache; skip FB write if unchanged)
         clock_result = await asyncio.get_event_loop().run_in_executor(
             None, render_clock
         )
-        if clock_result:
+        if clock_result and _clock_cache["dirty"]:
             clock_fb, clock_w, clock_h = clock_result
             clock_x = (WIDTH - clock_w) // 2
             clock_y = layout["clock_y"]
@@ -1257,18 +1241,20 @@ async def render_loop() -> None:
                 None, write_region_to_fb_fast,
                 clock_fb, clock_x, clock_y,
             )
+            _clock_cache["dirty"] = False
 
         # Render progress bar overlay (updates every second, only for file playback)
         if is_playing:
             progress_result = await asyncio.get_event_loop().run_in_executor(
                 None, render_progress_overlay
             )
-            if progress_result:
+            if progress_result and _progress_cache["dirty"]:
                 prog_fb, prog_w, prog_h, prog_x, prog_y = progress_result
                 await asyncio.get_event_loop().run_in_executor(
                     None, write_region_to_fb_fast,
                     prog_fb, prog_x, prog_y,
                 )
+                _progress_cache["dirty"] = False
 
         elapsed = time.monotonic() - start
         sleep_time = (1.0 / fps) - elapsed
