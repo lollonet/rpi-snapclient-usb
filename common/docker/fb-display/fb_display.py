@@ -610,7 +610,7 @@ def render_base_frame() -> Image.Image:
     )
 
     meta = current_metadata
-    is_playing = meta and meta.get("playing") and meta.get("title")
+    is_playing = meta and meta.get("playing")
 
     if is_playing:
         artwork_url = meta.get("artwork") or meta.get("artist_image") or ""
@@ -1230,7 +1230,6 @@ async def render_loop() -> None:
         is_playing = (
             current_metadata
             and current_metadata.get("playing")
-            and current_metadata.get("title")
         )
         spectrum_active = is_spectrum_active()
 
