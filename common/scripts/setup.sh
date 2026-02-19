@@ -586,8 +586,9 @@ if [ "$DISPLAY_MODE" = "browser" ]; then
     elif apt-cache show chromium-browser > /dev/null 2>&1; then
         CHROMIUM_PKG="chromium-browser"
     else
-        echo "Warning: Could not find chromium package, skipping"
-        CHROMIUM_PKG=""
+        echo "ERROR: Browser display mode requires Chromium, but no chromium package found."
+        echo "  Switch to framebuffer mode or install Chromium manually."
+        exit 1
     fi
 
     apt-get update
@@ -859,7 +860,10 @@ if [ -n "$BOOT_CONFIG" ]; then
         echo "Enabled cgroup memory controller (cmdline.txt updated)"
     fi
 else
-    echo "Warning: Could not find boot config file"
+    echo "ERROR: Could not find boot config (config.txt)."
+    echo "  Audio HAT overlay and display settings cannot be applied."
+    echo "  Expected /boot/firmware/config.txt or /boot/config.txt"
+    exit 1
 fi
 echo ""
 
@@ -1205,15 +1209,15 @@ log_progress "docker compose pull: audio-visualizer"
 log_progress "docker compose pull: fb-display"
 log_progress "docker compose pull: nginx (cover-webserver)"
 if ! docker compose pull 2>&1; then
-    log_progress "WARNING: Some images failed to pull"
+    stop_progress_animation
+    log_progress "ERROR: Failed to pull container images"
     echo ""
-    echo "WARNING: Failed to pull container images."
-    echo "  This may be due to network issues or registry unavailability."
-    echo "  The system will attempt to pull images on first service start."
-    echo "  If problems persist, check: docker compose pull"
-else
-    log_progress "All images pulled successfully"
+    echo "ERROR: Failed to pull container images."
+    echo "  Without images the system cannot start."
+    echo "  Check network connectivity and try: docker compose pull"
+    exit 1
 fi
+log_progress "All images pulled successfully"
 echo ""
 
 # ============================================
@@ -1250,8 +1254,11 @@ if [[ "${ENABLE_READONLY:-false}" == "true" ]]; then
         log_progress "Re-pulling container images..."
         cd "$INSTALL_DIR"
         if ! docker compose pull 2>&1; then
-            echo "WARNING: Failed to pull images after storage driver change."
-            echo "  Run 'docker compose pull' manually after reboot."
+            log_progress "ERROR: Failed to re-pull images after storage driver change"
+            echo "ERROR: Failed to pull images after storage driver change."
+            echo "  Previous images were wiped. The system cannot start without them."
+            echo "  Check network connectivity and try: docker compose pull"
+            exit 1
         fi
     else
         log_progress "Docker already using fuse-overlayfs, skipping reconfiguration..."

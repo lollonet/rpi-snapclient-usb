@@ -822,6 +822,7 @@ def render_clock() -> tuple[np.ndarray, int, int] | None:
 
     # Check cache (changes every second)
     if display_str == _clock_cache["time_str"] and _clock_cache["fb"] is not None:
+        _clock_cache["dirty"] = False
         return _clock_cache["fb"], _clock_cache["width"], _clock_cache["height"]
 
     # Small font — roughly half the bottom bar height
@@ -870,6 +871,7 @@ def render_progress_overlay() -> tuple[np.ndarray, int, int, int, int] | None:
     if (elapsed == _progress_cache["elapsed"] and
             duration == _progress_cache["duration"] and
             _progress_cache["fb"] is not None):
+        _progress_cache["dirty"] = False
         return (
             _progress_cache["fb"],
             _progress_cache["width"],
