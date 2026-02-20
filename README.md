@@ -61,7 +61,7 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 - 😴 **Standby Screen**: Retro hi-fi artwork with breathing animation when idle
 - 🔍 **mDNS Autodiscovery**: Snapserver found automatically — no IP configuration needed
 - 🎛️ **Multiple Audio HATs**: Support for 11 popular Raspberry Pi audio HATs + USB audio
-- 📺 **Flexible Display**: Framebuffer or browser mode, 6 resolution presets (800x480 to 4K)
+- 📺 **Flexible Display**: Direct framebuffer rendering, 6 resolution presets (800x480 to 4K)
 - ⚡ **Zero-Touch Install**: Flash SD, power on, auto-detects HAT with visual progress display
 - 🐳 **Docker-based**: Pre-built images for easy deployment
 - 🔄 **Auto-start**: Systemd services for automatic startup
@@ -158,7 +158,7 @@ rpi-snapclient-usb/
 │       ├── snapclient/         # Snapclient Docker image
 │       ├── audio-visualizer/   # Spectrum analyzer (dBFS)
 │       ├── fb-display/         # Framebuffer display renderer
-│       └── metadata-service/   # Cover display metadata service
+│       └── metadata-service/   # Metadata service (deployed on server)
 │
 ├── scripts/                    # Development scripts
 │   ├── ci-local.sh             # Local CI runner

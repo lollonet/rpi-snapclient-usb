@@ -32,8 +32,8 @@ jobs:
             PR NUMBER: ${{ github.event.pull_request.number }}
 
             ## Project context
-            This is a Raspberry Pi Snapcast client with Docker containers (Python 3.11).
-            Services: snapclient, metadata-service, audio-visualizer (FFT), fb-display (framebuffer).
+            This is a Raspberry Pi Snapcast client with Docker containers (Python 3.13).
+            Services: snapclient, audio-visualizer (FFT), fb-display (framebuffer).
             Target: single-user embedded device on a trusted LAN — not a public-facing server.
 
             ## Review instructions

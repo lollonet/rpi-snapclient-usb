@@ -74,7 +74,7 @@ The script will:
 4. Optionally ask for your Snapserver IP (leave empty for mDNS autodiscovery)
 5. Install Docker CE and dependencies
 6. Configure audio HAT, ALSA, and boot settings
-7. Set up cover display with X11 at selected resolution
+7. Set up framebuffer display at selected resolution
 8. Create systemd services for auto-start
 
 **Note**: The script takes 3-5 minutes. It uses pre-built Docker images from Docker Hub (no building required).
