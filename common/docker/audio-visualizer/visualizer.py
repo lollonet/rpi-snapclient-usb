@@ -83,6 +83,8 @@ DECAY_COEFF = 0.9   # higher = slower decay
 clients: set = set()
 prev_db: np.ndarray = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
 audio_ring: np.ndarray = np.zeros(FFT_SIZE, dtype=np.float32)
+smooth_total_power: float = 0.0  # EMA of total band power for stable normalization
+POWER_SMOOTH = 0.92  # EMA coefficient: higher = more stable (slower to react to dips)
 
 
 def compute_band_bins() -> list[tuple[int, int]]:
@@ -169,14 +171,16 @@ def analyze_pcm(new_samples: np.ndarray) -> str | None:
     cumsum = np.concatenate(([0.0], np.cumsum(spectrum)))
     band_power = np.maximum(cumsum[hi] - cumsum[edges], 0.0)
 
-    # Volume-independent normalization: divide by total power so sum = 1.0
-    # This shows relative spectral shape regardless of playback volume
-    total_power = np.sum(band_power)
-    if total_power > 1e-20:  # guard against floating-point precision issues
-        band_power_norm = band_power / total_power
+    # Volume-independent normalization: divide by smoothed total power
+    # EMA prevents brief power dips (radio gaps, speech pauses) from spiking all bars
+    global smooth_total_power
+    total_power = float(np.sum(band_power))
+    if smooth_total_power < 1e-20:
+        smooth_total_power = total_power  # initialize on first frame
     else:
-        # Set all bands to equal low energy during silence
-        band_power_norm = np.full_like(band_power, 1e-10)
+        smooth_total_power = smooth_total_power * POWER_SMOOTH + total_power * (1.0 - POWER_SMOOTH)
+    ref_power = max(smooth_total_power, 1e-20)
+    band_power_norm = band_power / ref_power
 
     # Convert to dB: 10*log10(normalized_power), clamp to noise floor
     # With normalization, values are relative (sum of linear = 1.0)

@@ -89,10 +89,12 @@ ATTACK_COEFF = 0.7  # fast attack (higher = faster)
 DECAY_COEFF = 0.15  # decay speed (higher = faster)
 PEAK_HOLD_S = 1.5   # seconds before peak marker vanishes
 
-# Auto-gain: track running maximum for volume-independent display
-AUTO_GAIN_ATTACK = 0.3   # how fast gain rises to new peaks
-AUTO_GAIN_DECAY = 0.005  # how slowly gain drops (very slow to avoid pumping)
-auto_gain_ref: float = NOISE_FLOOR + 30  # current auto-gain reference level (dBFS)
+# Fixed display range for volume-independent spectrum
+# Visualizer already normalizes total power to 1.0, so output is relative dB:
+#   0 dB = all energy in one band, -15 dB = even spread across 31 bands
+# 60 dB window preserves low-energy bands (bass) while keeping proportional scaling.
+DISPLAY_FLOOR = -60.0  # dB below which bars show nothing
+DISPLAY_RANGE = 60.0   # maps DISPLAY_FLOOR..0 dB to 0..1
 
 # Idle animation state
 idle_animation_phase: float = 0.0
@@ -111,8 +113,8 @@ def generate_idle_wave() -> np.ndarray:
     for i in range(NUM_BANDS):
         # Slow wave with phase offset per bar
         wave = np.sin(idle_animation_phase + i * 0.3) * 0.5 + 0.5
-        # Scale to very low levels (just above noise floor)
-        idle_vals[i] = NOISE_FLOOR + 8 + wave * 6
+        # Scale to low levels (just above display floor for subtle breathing)
+        idle_vals[i] = DISPLAY_FLOOR + 4 + wave * 6
     return idle_vals
 
 
@@ -982,7 +984,7 @@ def render_spectrum() -> np.ndarray:
     Works directly in framebuffer pixel format to avoid per-frame RGB→RGB565
     conversion (~10ms saved on Pi 4).
     """
-    global auto_gain_ref, display_bands, peak_bands, peak_time
+    global display_bands, peak_bands, peak_time
 
     with _band_lock:
         return _render_spectrum_locked()
@@ -990,7 +992,7 @@ def render_spectrum() -> np.ndarray:
 
 def _render_spectrum_locked() -> np.ndarray:
     """Inner render, called with _band_lock held."""
-    global auto_gain_ref, display_bands, peak_bands, peak_time
+    global display_bands, peak_bands, peak_time
 
     L = layout
     now = time.monotonic()
@@ -1004,24 +1006,15 @@ def _render_spectrum_locked() -> np.ndarray:
     bar_w = L["bar_w"]
     bar_base_y = L["spec_h"] - pad  # relative to region
 
-    # Auto-gain: find current peak across all bands
-    current_max = float(np.max(bands))
-    if current_max > auto_gain_ref:
-        auto_gain_ref += (current_max - auto_gain_ref) * AUTO_GAIN_ATTACK
-    else:
-        auto_gain_ref += (current_max - auto_gain_ref) * AUTO_GAIN_DECAY
-    min_ref = NOISE_FLOOR + 20
-    auto_gain_ref = max(auto_gain_ref, min_ref)
-    gain_range = max(auto_gain_ref - NOISE_FLOOR, 1.0)
-
     # Vectorized asymmetric smoothing
     attack_mask = bands > display_bands
     alpha = np.where(attack_mask, ATTACK_COEFF, DECAY_COEFF)
     display_bands += (bands - display_bands) * alpha
 
-    # Map dBFS to 0..1 (vectorized)
-    db_vals = np.maximum(display_bands, NOISE_FLOOR)
-    fractions = np.clip((db_vals - NOISE_FLOOR) / gain_range, 0.0, 1.0)
+    # Map relative dB to 0..1 using fixed display range
+    # Visualizer output is already volume-independent (normalized to total power)
+    db_vals = np.maximum(display_bands, DISPLAY_FLOOR)
+    fractions = np.clip((db_vals - DISPLAY_FLOOR) / DISPLAY_RANGE, 0.0, 1.0)
 
     # Peak hold — vectorized
     new_peak_mask = fractions >= peak_bands
