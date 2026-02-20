@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Remove Browser Display Mode** - Removed X11/Chromium browser mode from setup.sh (was broken after nginx removal). Framebuffer is now the only display mode. Cleaned up all browser references from docs and configs
+
+### Fixed
+- **Documentation Coherence** - Updated all docs to reflect removal of client-side metadata-service and nginx containers: corrected container lists in README/QUICKSTART, removed stale `curl` command, fixed Docker image list, updated GHCR→Docker Hub reference, fixed `docker compose restart`→`up -d`
+- **METADATA_HTTP_PORT Consistency** ([#45](https://github.com/lollonet/rpi-snapclient-usb/pull/45)) - Aligned all port defaults to 8083 (server's HTTP artwork port) across docker-compose.yml, fb_display.py, and setup.sh
+- **CI Workflow Context** - Updated claude-code-review.yml: Python 3.11→3.13, removed stale metadata-service reference
+
 ## [0.1.7] - 2026-02-19
 
 ### Changed
@@ -143,6 +151,6 @@ Initial release with core feature set.
 
 - **ALSA Loopback** - `snd-aloop` decouples DAC from spectrum analyzer, prevents XRUN
 - **Buffer Tuning** - 150ms buffer, 4 fragments for underrun prevention
-- **Docker-based** - Pre-built ARM64 images on GHCR
+- **Docker-based** - Pre-built ARM64 images on Docker Hub
 - **Systemd Services** - Auto-start on boot
 - **CI/CD** - Shellcheck, Hadolint, HAT config tests, Docker builds on tags

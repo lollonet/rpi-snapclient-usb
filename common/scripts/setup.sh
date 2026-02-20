@@ -55,7 +55,6 @@ if [ "$AUTO_MODE" = true ]; then
     # Defaults for auto mode (can be overridden by config file)
     AUDIO_HAT="${AUDIO_HAT:-auto}"
     DISPLAY_RESOLUTION="${DISPLAY_RESOLUTION:-}"
-    DISPLAY_MODE="${DISPLAY_MODE:-framebuffer}"
     BAND_MODE="${BAND_MODE:-third-octave}"
     SNAPSERVER_HOST="${SNAPSERVER_HOST:-}"
     # ENABLE_READONLY: command line --read-only takes precedence, then config file
@@ -501,27 +500,7 @@ fi
 echo ""
 
 # ============================================
-# Step 3: Select Display Mode
-# ============================================
-if [ "$AUTO_MODE" = true ]; then
-    echo "Display mode: $DISPLAY_MODE"
-else
-    echo "Select display mode:"
-    echo "1) Browser (X11 + Chromium) — recommended"
-    echo "2) Framebuffer (direct rendering, no X11)"
-    read -rp "Enter choice [1-2]: " display_mode_choice
-
-    case "${display_mode_choice:-1}" in
-        2) DISPLAY_MODE="framebuffer" ;;
-        *) DISPLAY_MODE="browser" ;;
-    esac
-
-    echo "Display mode: $DISPLAY_MODE"
-fi
-echo ""
-
-# ============================================
-# Step 3b: Select Spectrum Band Resolution
+# Step 3: Select Spectrum Band Resolution
 # ============================================
 if [ "$AUTO_MODE" = true ]; then
     echo "Band mode: $BAND_MODE"
@@ -579,38 +558,11 @@ start_progress_animation 1 0 12  # Animate during apt-get
 # Base packages (always needed)
 BASE_PACKAGES="ca-certificates curl gnupg alsa-utils avahi-daemon git"
 
-if [ "$DISPLAY_MODE" = "browser" ]; then
-    # Detect chromium package name (chromium on Debian, chromium-browser on older Raspberry Pi OS)
-    if apt-cache show chromium > /dev/null 2>&1; then
-        CHROMIUM_PKG="chromium"
-    elif apt-cache show chromium-browser > /dev/null 2>&1; then
-        CHROMIUM_PKG="chromium-browser"
-    else
-        echo "ERROR: Browser display mode requires Chromium, but no chromium package found."
-        echo "  Switch to framebuffer mode or install Chromium manually."
-        exit 1
-    fi
-
-    apt-get update
-    log_progress "apt-get install: ca-certificates curl gnupg..."
-    log_progress "apt-get install: alsa-utils avahi-daemon git..."
-    log_progress "apt-get install: xinit xserver-xorg openbox..."
-    # shellcheck disable=SC2086
-    apt-get install -y \
-        $BASE_PACKAGES \
-        xinit \
-        x11-xserver-utils \
-        xserver-xorg \
-        ${CHROMIUM_PKG:+$CHROMIUM_PKG} \
-        openbox
-else
-    # Framebuffer mode: no X11 packages needed
-    apt-get update
-    log_progress "apt-get install: ca-certificates curl gnupg..."
-    log_progress "apt-get install: alsa-utils avahi-daemon git..."
-    # shellcheck disable=SC2086
-    apt-get install -y $BASE_PACKAGES
-fi
+apt-get update
+log_progress "apt-get install: ca-certificates curl gnupg..."
+log_progress "apt-get install: alsa-utils avahi-daemon git..."
+# shellcheck disable=SC2086
+apt-get install -y $BASE_PACKAGES
 log_progress "System packages installed"
 
 progress 2 "Installing Docker CE..."
@@ -965,12 +917,8 @@ fi
 # (DAC + loopback for spectrum analyzer). Direct hw: would bypass the loopback.
 SOUNDCARD_VALUE="default"
 
-# Build Docker Compose profiles based on display mode
-if [ "$DISPLAY_MODE" = "framebuffer" ]; then
-    DOCKER_COMPOSE_PROFILES="framebuffer"
-else
-    DOCKER_COMPOSE_PROFILES=""
-fi
+# Docker Compose profile: always framebuffer (direct /dev/fb0 rendering)
+DOCKER_COMPOSE_PROFILES="framebuffer"
 
 # Update .env with all settings (idempotent - works on existing or new file)
 update_env_var() {
@@ -990,13 +938,11 @@ declare -A env_vars=(
     ["CLIENT_ID"]="$CLIENT_ID"
     ["SOUNDCARD"]="$SOUNDCARD_VALUE"
     ["DISPLAY_RESOLUTION"]="$DISPLAY_RESOLUTION"
-    ["DISPLAY_MODE"]="$DISPLAY_MODE"
     ["BAND_MODE"]="$BAND_MODE"
     ["COMPOSE_PROFILES"]="$DOCKER_COMPOSE_PROFILES"
     # Server metadata connection (cover art + track info served by snapMULTI server)
     # Empty = mDNS autodiscovery (same as SNAPSERVER_HOST)
     ["METADATA_HOST"]="${snapserver_ip}"
-    ["METADATA_WS_PORT"]="8082"
     ["METADATA_HTTP_PORT"]="8083"
     # Resource limits (auto-detected)
     ["SNAPCLIENT_MEM_LIMIT"]="$SNAPCLIENT_MEM_LIMIT"
@@ -1019,90 +965,19 @@ echo "  - Snapserver: ${snapserver_ip:-autodiscovery}"
 echo "  - Client ID: $CLIENT_ID"
 echo "  - Soundcard: $SOUNDCARD_VALUE"
 echo "  - Resolution: ${DISPLAY_RESOLUTION:-auto}"
-echo "  - Display mode: $DISPLAY_MODE"
 echo "  - Band mode: $BAND_MODE"
 echo "  - Resource profile: $RESOURCE_PROFILE"
 echo ""
 
 # ============================================
-# Step 10: Configure Display Auto-start
+# Step 10: Configure Display
 # ============================================
-if [ "$DISPLAY_MODE" = "browser" ]; then
-    echo "Setting up X11 auto-start for cover display..."
+echo "Framebuffer mode: display rendering handled by fb-display Docker container"
 
-    # Configure Xwrapper to allow any user to start X server
-    echo "allowed_users=anybody" > /etc/X11/Xwrapper.config
-
-    # Detect the actual user (who invoked sudo)
-    REAL_USER="${SUDO_USER:-$USER}"
-    REAL_HOME=$(eval echo ~"$REAL_USER")
-
-    # Browser mode requires an explicit resolution for Chromium window size
-    if [[ -z "$DISPLAY_RESOLUTION" ]]; then
-        DISPLAY_RESOLUTION="1920x1080"
-        echo "Browser mode: defaulting to $DISPLAY_RESOLUTION"
-    fi
-    if [[ ! "$DISPLAY_RESOLUTION" =~ ^[0-9]+x[0-9]+$ ]]; then
-        echo "Error: Invalid DISPLAY_RESOLUTION format: $DISPLAY_RESOLUTION"
-        exit 1
-    fi
-    CHROMIUM_SIZE="${DISPLAY_RESOLUTION/x/,}"
-
-    # Create .xinitrc for automatic X11 startup with Chromium kiosk
-    cat > "$REAL_HOME/.xinitrc" << EOF
-#!/bin/bash
-xset s off
-xset -dpms
-xset s noblank
-
-# Start openbox in background
-openbox &
-
-# Wait for Docker containers to be ready
-sleep 10
-
-# Launch Chromium in kiosk mode
-chromium --kiosk --window-size=$CHROMIUM_SIZE --window-position=0,0 \\
-  --start-fullscreen --disable-infobars --disable-session-crashed-bubble \\
-  --disable-features=TranslateUI --noerrdialogs --disable-translate \\
-  --no-first-run --fast --fast-start --disable-popup-blocking \\
-  http://localhost:8080
-EOF
-
-    chmod +x "$REAL_HOME/.xinitrc"
-    chown "$REAL_USER:$REAL_USER" "$REAL_HOME/.xinitrc"
-
-    # Create systemd service for X11 autostart
-    cat > /etc/systemd/system/x11-autostart.service << EOF
-[Unit]
-Description=X11 Autostart for Cover Display
-After=network.target docker.service
-
-[Service]
-Type=simple
-User=$REAL_USER
-Environment=DISPLAY=:0
-ExecStart=/usr/bin/startx
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    systemctl daemon-reload
-    systemctl enable x11-autostart.service
-
-    echo "X11 auto-start configured"
-else
-    echo "Framebuffer mode: X11 not needed"
-    echo "  Display rendering is handled by fb-display Docker container"
-
-    # Disable X11 autostart if it was previously enabled
-    if systemctl is-enabled x11-autostart.service 2>/dev/null; then
-        systemctl disable x11-autostart.service
-        echo "  Disabled previous X11 autostart service"
-    fi
+# Disable X11 autostart if it was previously enabled (from older browser mode)
+if systemctl is-enabled x11-autostart.service 2>/dev/null; then
+    systemctl disable x11-autostart.service
+    echo "  Disabled previous X11 autostart service"
 fi
 echo ""
 
@@ -1276,7 +1151,6 @@ echo ""
 echo "Configuration Summary:"
 echo "  - Audio HAT: $HAT_NAME"
 echo "  - Resolution: ${DISPLAY_RESOLUTION:-auto}"
-echo "  - Display mode: $DISPLAY_MODE"
 echo "  - Band mode: $BAND_MODE"
 echo "  - Client ID: $CLIENT_ID"
 echo "  - Snapserver: ${snapserver_ip:-autodiscovery (mDNS)}"
@@ -1289,17 +1163,10 @@ echo "1. Review configuration in $INSTALL_DIR/.env"
 echo "2. Reboot the system: sudo reboot"
 echo "3. After reboot, check services:"
 echo "   - sudo systemctl status snapclient"
-if [ "$DISPLAY_MODE" = "browser" ]; then
-echo "   - sudo systemctl status x11-autostart"
-fi
 echo "   - sudo docker ps"
 echo ""
 echo "The snapclient will start automatically on boot"
-if [ "$DISPLAY_MODE" = "browser" ]; then
-echo "Cover display will show on the connected screen via Chromium"
-else
 echo "Cover display will render directly to framebuffer (/dev/fb0)"
-fi
 if [[ "${ENABLE_READONLY:-false}" == "true" ]]; then
 echo ""
 echo "Read-only mode is enabled. After reboot:"

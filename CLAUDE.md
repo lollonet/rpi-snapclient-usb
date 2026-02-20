@@ -6,7 +6,7 @@ Raspberry Pi Snapcast client with auto-detection, Docker services, and framebuff
 
 ```
 common/
-├── docker-compose.yml          # All services, profiles: framebuffer | browser
+├── docker-compose.yml          # All services, profile: framebuffer
 ├── .env.example                # Full config reference
 ├── docker/
 │   ├── snapclient/             # Core audio client (ALSA → Snapserver)
