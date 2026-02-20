@@ -913,6 +913,24 @@ else
     snapserver_ip=${snapserver_ip:-$current_snapserver}
 fi
 
+# Resolve metadata host for display connections.
+# Snapclient handles empty SNAPSERVER_HOST via built-in mDNS, but fb-display
+# connects directly via WebSocket and needs an explicit IP/hostname.
+metadata_host="$snapserver_ip"
+if [[ -z "$metadata_host" && "$DISPLAY_MODE" != "none" ]]; then
+    echo "Discovering snapserver via mDNS for display metadata..."
+    if command -v avahi-browse &>/dev/null; then
+        metadata_host=$(avahi-browse -rpt _snapcast._tcp 2>/dev/null \
+            | awk -F';' '/^=/ && $3=="IPv4" {print $8; exit}')
+    fi
+    if [[ -n "$metadata_host" ]]; then
+        echo "Discovered snapserver at: $metadata_host"
+    else
+        echo "WARNING: Could not discover snapserver via mDNS."
+        echo "  Display will show 'idle' until METADATA_HOST is set in .env"
+    fi
+fi
+
 # Always use "default" ALSA device — asound.conf routes it through multi_out
 # (DAC + loopback for spectrum analyzer). Direct hw: would bypass the loopback.
 SOUNDCARD_VALUE="default"
@@ -941,8 +959,8 @@ declare -A env_vars=(
     ["BAND_MODE"]="$BAND_MODE"
     ["COMPOSE_PROFILES"]="$DOCKER_COMPOSE_PROFILES"
     # Server metadata connection (cover art + track info served by snapMULTI server)
-    # Empty = mDNS autodiscovery (same as SNAPSERVER_HOST)
-    ["METADATA_HOST"]="${snapserver_ip}"
+    # Resolved via mDNS when no explicit IP and display is active
+    ["METADATA_HOST"]="${metadata_host}"
     ["METADATA_HTTP_PORT"]="8083"
     # Resource limits (auto-detected)
     ["SNAPCLIENT_MEM_LIMIT"]="$SNAPCLIENT_MEM_LIMIT"
