@@ -189,7 +189,7 @@ SOUNDCARD=default
 # Display resolution (leave empty to auto-detect from framebuffer, capped at 1920x1080)
 DISPLAY_RESOLUTION=
 
-# Display mode: browser (X11 + Chromium) or framebuffer (direct /dev/fb0)
+# Display mode: framebuffer (direct /dev/fb0, recommended)
 DISPLAY_MODE=framebuffer
 
 # Spectrum band resolution: third-octave (31 bands) or half-octave (21 bands)
@@ -211,8 +211,7 @@ Check that everything is running:
 ```bash
 # Check Docker containers (all should show "healthy")
 sudo docker ps
-# Should show: snapclient, metadata-service, cover-webserver, audio-visualizer
-# Plus fb-display if using framebuffer mode
+# Should show: snapclient, audio-visualizer, fb-display (all "healthy")
 
 # Check healthchecks
 sudo docker inspect --format='{{.State.Health.Status}}' snapclient
@@ -225,19 +224,15 @@ sudo docker logs -f snapclient
 
 # Check systemd services
 sudo systemctl status snapclient
-# Also x11-autostart if using browser display mode
 
 # Test audio device
 aplay -l
-
-# View cover metadata
-curl http://localhost:8080/metadata.json
 ```
 
 ## Docker Image
 
 This project uses pre-built Docker images:
-- **Images**: `lollonet/rpi-snapclient-usb-*:latest` (Docker Hub) (snapclient, metadata, visualizer, fb-display) + `nginx:alpine`
+- **Images**: `lollonet/rpi-snapclient-usb-*:latest` (Docker Hub) (snapclient, visualizer, fb-display)
 - **Platform**: ARM64 (Raspberry Pi 4)
 - **Requires**: Docker Compose v2+ (installed automatically by setup.sh via Docker CE)
 
@@ -295,6 +290,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - The setup script installs **Docker CE** (official Docker Community Edition) with Compose v2 plugin, not the Debian `docker.io` package
 - ALSA configuration is automatically generated based on the selected audio HAT
 - The script supports 11 different audio HATs with appropriate device tree overlays and card names
-- Metadata service polls Snapserver every 2 seconds and pushes updates to display via WebSocket
+- Metadata is served by the snapMULTI server; fb-display connects to it via WebSocket for track info and HTTP for artwork
 - All configuration is done via `.env` files - no hardcoded IP addresses in the code
 - USB audio devices are supported without requiring device tree overlays

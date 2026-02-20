@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Documentation Coherence** ([#45](https://github.com/lollonet/rpi-snapclient-usb/pull/45)) - Updated all docs to reflect removal of client-side metadata-service and nginx containers: corrected container lists in README/QUICKSTART, removed stale `curl` command, fixed Docker image list, updated GHCR→Docker Hub reference, fixed `docker compose restart`→`up -d`
+- **METADATA_HTTP_PORT Consistency** ([#45](https://github.com/lollonet/rpi-snapclient-usb/pull/45)) - Aligned all port defaults to 8083 (server's HTTP artwork port) across docker-compose.yml, fb_display.py, and setup.sh. Previous 8083→8080 fix was incorrect after nginx removal
+
 ## [0.1.7] - 2026-02-19
 
 ### Changed

@@ -77,7 +77,7 @@ The script will:
 7. Set up cover display with X11 at selected resolution
 8. Create systemd services for auto-start
 
-**Note**: The script takes 3-5 minutes. It uses pre-built Docker images from GHCR (no building required).
+**Note**: The script takes 3-5 minutes. It uses pre-built Docker images from Docker Hub (no building required).
 
 ## Step 5: Configure and Reboot
 
@@ -109,8 +109,7 @@ After reboot (~30 seconds), verify everything is running:
 ```bash
 # Check Docker containers
 sudo docker ps
-# Should show: snapclient, metadata-service, cover-webserver, audio-visualizer
-# Plus fb-display if using framebuffer mode
+# Should show: snapclient, audio-visualizer, fb-display (all "healthy")
 
 # Check services
 sudo systemctl status snapclient
@@ -135,9 +134,9 @@ To change settings:
 # Edit configuration
 sudo nano /opt/snapclient/.env
 
-# Restart services
+# Apply changes (restart does NOT pick up .env changes)
 cd /opt/snapclient
-sudo docker compose restart
+sudo docker compose up -d
 ```
 
 ## Next Steps

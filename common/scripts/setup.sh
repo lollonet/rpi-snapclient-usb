@@ -1066,7 +1066,7 @@ chromium --kiosk --window-size=$CHROMIUM_SIZE --window-position=0,0 \\
   --start-fullscreen --disable-infobars --disable-session-crashed-bubble \\
   --disable-features=TranslateUI --noerrdialogs --disable-translate \\
   --no-first-run --fast --fast-start --disable-popup-blocking \\
-  http://localhost:8080
+  http://${snapserver_ip:-localhost}:8083
 EOF
 
     chmod +x "$REAL_HOME/.xinitrc"
