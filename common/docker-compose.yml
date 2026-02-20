@@ -19,6 +19,9 @@ services:
     container_name: snapclient
     network_mode: host
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32M
     devices:
       - /dev/snd:/dev/snd
     volumes:
@@ -64,6 +67,9 @@ services:
     build: ./docker/audio-visualizer
     container_name: audio-visualizer
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32M
     <<: *default-security
     cap_add:
       - SYS_NICE  # Audio priority
@@ -102,6 +108,9 @@ services:
     build: ./docker/fb-display
     container_name: fb-display
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
     profiles:
       - framebuffer
     network_mode: host
