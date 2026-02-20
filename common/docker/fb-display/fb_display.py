@@ -1113,7 +1113,8 @@ async def _handle_spectrum_message(message: str) -> None:
 
 async def _handle_spectrum_error(error: Exception) -> None:
     """Handle spectrum WebSocket error."""
-    bands[:] = NOISE_FLOOR
+    with _band_lock:
+        bands[:] = NOISE_FLOOR
 
 
 async def spectrum_ws_reader() -> None:
@@ -1205,86 +1206,90 @@ async def render_loop() -> None:
     FPS_QUIET = 5
 
     while True:
-        start = time.monotonic()
+        try:
+            start = time.monotonic()
 
-        # Rebuild base frame if metadata changed
-        if base_frame_version != metadata_version:
-            base_frame = await asyncio.get_event_loop().run_in_executor(
-                None, render_base_frame
+            # Rebuild base frame if metadata changed
+            if base_frame_version != metadata_version:
+                base_frame = await asyncio.get_event_loop().run_in_executor(
+                    None, render_base_frame
+                )
+                extract_spectrum_bg()
+                base_frame_version = metadata_version
+                await asyncio.get_event_loop().run_in_executor(
+                    None, write_full_frame, base_frame
+                )
+                # Full frame overwrites clock/progress regions — force redraw
+                _clock_cache["dirty"] = True
+                _progress_cache["dirty"] = True
+                logger.info("Base frame updated (metadata changed)")
+
+            if spectrum_bg_np is None or spectrum_bg_fb is None:
+                await asyncio.sleep(0.1)
+                continue
+
+            # Determine adaptive FPS
+            is_playing = (
+                current_metadata
+                and current_metadata.get("playing")
             )
-            extract_spectrum_bg()
-            base_frame_version = metadata_version
-            await asyncio.get_event_loop().run_in_executor(
-                None, write_full_frame, base_frame
+            spectrum_active = is_spectrum_active()
+
+            if is_playing and spectrum_active:
+                fps = FPS_ACTIVE
+            elif is_playing:
+                fps = FPS_QUIET
+            else:
+                fps = FPS_QUIET  # Keep animating idle wave at reasonable FPS
+
+            # When idle, generate subtle wave animation instead of real spectrum
+            if not is_playing:
+                with _band_lock:
+                    bands[:] = generate_idle_wave()
+
+            # Render spectrum as numpy array and write directly to FB
+            spec_rgb = await asyncio.get_event_loop().run_in_executor(
+                None, render_spectrum
             )
-            # Full frame overwrites clock/progress regions — force redraw
-            _clock_cache["dirty"] = True
-            _progress_cache["dirty"] = True
-            logger.info("Base frame updated (metadata changed)")
-
-        if spectrum_bg_np is None or spectrum_bg_fb is None:
-            await asyncio.sleep(0.1)
-            continue
-
-        # Determine adaptive FPS
-        is_playing = (
-            current_metadata
-            and current_metadata.get("playing")
-        )
-        spectrum_active = is_spectrum_active()
-
-        if is_playing and spectrum_active:
-            fps = FPS_ACTIVE
-        elif is_playing:
-            fps = FPS_QUIET
-        else:
-            fps = FPS_QUIET  # Keep animating idle wave at reasonable FPS
-
-        # When idle, generate subtle wave animation instead of real spectrum
-        if not is_playing:
-            with _band_lock:
-                bands[:] = generate_idle_wave()
-
-        # Render spectrum as numpy array and write directly to FB
-        spec_rgb = await asyncio.get_event_loop().run_in_executor(
-            None, render_spectrum
-        )
-        await asyncio.get_event_loop().run_in_executor(
-            None, write_region_to_fb_fast,
-            spec_rgb, layout["right_x"], layout["spec_y"],
-        )
-
-        # Render clock (updates once per second via cache; skip FB write if unchanged)
-        clock_result = await asyncio.get_event_loop().run_in_executor(
-            None, render_clock
-        )
-        if clock_result and _clock_cache["dirty"]:
-            clock_fb, clock_w, clock_h = clock_result
-            clock_x = (WIDTH - clock_w) // 2
-            clock_y = layout["clock_y"]
             await asyncio.get_event_loop().run_in_executor(
                 None, write_region_to_fb_fast,
-                clock_fb, clock_x, clock_y,
+                spec_rgb, layout["right_x"], layout["spec_y"],
             )
-            _clock_cache["dirty"] = False
 
-        # Render progress bar overlay (updates every second, only for file playback)
-        if is_playing:
-            progress_result = await asyncio.get_event_loop().run_in_executor(
-                None, render_progress_overlay
+            # Render clock (updates once per second via cache; skip FB write if unchanged)
+            clock_result = await asyncio.get_event_loop().run_in_executor(
+                None, render_clock
             )
-            if progress_result and _progress_cache["dirty"]:
-                prog_fb, prog_w, prog_h, prog_x, prog_y = progress_result
+            if clock_result and _clock_cache["dirty"]:
+                clock_fb, clock_w, clock_h = clock_result
+                clock_x = (WIDTH - clock_w) // 2
+                clock_y = layout["clock_y"]
                 await asyncio.get_event_loop().run_in_executor(
                     None, write_region_to_fb_fast,
-                    prog_fb, prog_x, prog_y,
+                    clock_fb, clock_x, clock_y,
                 )
-                _progress_cache["dirty"] = False
+                _clock_cache["dirty"] = False
 
-        elapsed = time.monotonic() - start
-        sleep_time = (1.0 / fps) - elapsed
-        if sleep_time > 0:
-            await asyncio.sleep(sleep_time)
+            # Render progress bar overlay (updates every second, only for file playback)
+            if is_playing:
+                progress_result = await asyncio.get_event_loop().run_in_executor(
+                    None, render_progress_overlay
+                )
+                if progress_result and _progress_cache["dirty"]:
+                    prog_fb, prog_w, prog_h, prog_x, prog_y = progress_result
+                    await asyncio.get_event_loop().run_in_executor(
+                        None, write_region_to_fb_fast,
+                        prog_fb, prog_x, prog_y,
+                    )
+                    _progress_cache["dirty"] = False
+
+            elapsed = time.monotonic() - start
+            sleep_time = (1.0 / fps) - elapsed
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
+        except Exception as e:
+            logger.error(f"Render loop error: {e}")
+            await asyncio.sleep(1)
 
 
 async def main() -> None:

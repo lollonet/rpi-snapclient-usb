@@ -1297,12 +1297,12 @@ async def broadcast_metadata(metadata: dict) -> None:
     output = {k: v for k, v in metadata.items() if k not in ("file", "station_name")}
     message = json.dumps(output)
 
-    # Send to all clients concurrently
-    tasks = [client.send(message) for client in ws_clients.copy()]
+    # Send to all clients concurrently (single copy to avoid mismatch)
+    clients_snapshot = list(ws_clients)
+    tasks = [client.send(message) for client in clients_snapshot]
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        # Remove failed clients
-        for client, result in zip(ws_clients.copy(), results):
+        for client, result in zip(clients_snapshot, results):
             if isinstance(result, Exception):
                 ws_clients.discard(client)
 
