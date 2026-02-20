@@ -997,7 +997,7 @@ declare -A env_vars=(
     # Empty = mDNS autodiscovery (same as SNAPSERVER_HOST)
     ["METADATA_HOST"]="${snapserver_ip}"
     ["METADATA_WS_PORT"]="8082"
-    ["METADATA_HTTP_PORT"]="8083"
+    ["METADATA_HTTP_PORT"]="8080"
     # Resource limits (auto-detected)
     ["SNAPCLIENT_MEM_LIMIT"]="$SNAPCLIENT_MEM_LIMIT"
     ["SNAPCLIENT_MEM_RESERVE"]="$SNAPCLIENT_MEM_RESERVE"
