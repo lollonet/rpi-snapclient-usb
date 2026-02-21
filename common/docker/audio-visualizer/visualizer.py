@@ -2,14 +2,10 @@
 """Real-time octave-band spectrum analyzer.
 
 Reads raw PCM from ALSA loopback capture device, computes FFT, groups into
-octave bands, outputs normalized dB values via WebSocket.
-
-Volume-independent: normalizes total band power to 0 dB, so output shows
-relative spectral shape regardless of playback volume. Quiet and loud music
-produce similar bar heights — only the frequency distribution matters.
+octave bands, outputs dBFS values via WebSocket.
 
 Output format: "dB_1;dB_2;...;dB_N" per frame.
-Values are relative dB (mostly negative, e.g. -6;-12;-20;...).
+Values are absolute dBFS (volume-dependent, e.g. -12;-24;-36;...).
 Silence = NOISE_FLOOR.
 """
 
@@ -83,8 +79,6 @@ DECAY_COEFF = 0.9   # higher = slower decay
 clients: set = set()
 prev_db: np.ndarray = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
 audio_ring: np.ndarray = np.zeros(FFT_SIZE, dtype=np.float32)
-smooth_total_power: float = 0.0  # EMA of total band power for stable normalization
-POWER_SMOOTH = 0.92  # EMA coefficient: higher = more stable (slower to react to dips)
 
 
 def compute_band_bins() -> list[tuple[int, int]]:
@@ -160,8 +154,8 @@ def analyze_pcm(new_samples: np.ndarray) -> str | None:
     # Apply window power correction
     spectrum *= WINDOW_POWER_CORR
 
-    # Scale by FFT size (absolute scale irrelevant due to total_power normalization below)
-    spectrum /= FFT_SIZE
+    # Scale to dBFS: divide by N² so a full-scale sine ≈ 0 dBFS
+    spectrum /= FFT_SIZE * FFT_SIZE
 
     # Band power summation using cumulative sum for O(1) per-band lookup
     spec_len = len(spectrum)
@@ -171,24 +165,11 @@ def analyze_pcm(new_samples: np.ndarray) -> str | None:
     cumsum = np.concatenate(([0.0], np.cumsum(spectrum)))
     band_power = np.maximum(cumsum[hi] - cumsum[edges], 0.0)
 
-    # Volume-independent normalization: divide by smoothed total power
-    # EMA prevents brief power dips (radio gaps, speech pauses) from spiking all bars
-    global smooth_total_power
-    total_power = float(np.sum(band_power))
-    if smooth_total_power < 1e-20:
-        smooth_total_power = total_power  # initialize on first frame
-    else:
-        smooth_total_power = smooth_total_power * POWER_SMOOTH + total_power * (1.0 - POWER_SMOOTH)
-    ref_power = max(smooth_total_power, 1e-20)
-    band_power_norm = band_power / ref_power
-
-    # Convert to dB: 10*log10(normalized_power), clamp to noise floor
-    # With normalization, values are relative (sum of linear = 1.0)
-    # So max possible for single band = 0 dB, typical spread = -6 to -20 dB
+    # Convert to dBFS (no normalization — bars reflect actual volume)
     with np.errstate(divide="ignore"):
         band_db = np.where(
-            band_power_norm > 0,
-            np.maximum(10.0 * np.log10(band_power_norm), NOISE_FLOOR),
+            band_power > 0,
+            np.maximum(10.0 * np.log10(band_power), NOISE_FLOOR),
             NOISE_FLOOR,
         )
 
