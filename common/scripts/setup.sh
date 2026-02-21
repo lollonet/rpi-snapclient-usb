@@ -75,6 +75,11 @@ echo ""
 # ============================================
 # Progress display (auto mode only)
 # ============================================
+# When PROGRESS_MANAGED=1 (set by firstboot.sh), the parent script owns the
+# /dev/tty1 display. We only write log messages to the parent's PROGRESS_LOG
+# and skip all tty1 rendering to avoid display "bouncing."
+PROGRESS_MANAGED="${PROGRESS_MANAGED:-}"
+
 # Use monotonic counter instead of SECONDS (clock may be wrong on first boot)
 PROGRESS_START_MONO=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
 PROGRESS_ANIM_PID=""
@@ -87,12 +92,19 @@ STEP_NAMES=("System dependencies" "Docker CE" "Audio HAT config"
 # Weights reflect actual duration (Pull=40%, Docker=33%, Deps=12%, RO=5%, rest=10%)
 STEP_WEIGHTS=(12 33 2 2 2 2 2 3 37 5)
 
-# Log file for capturing output to display
-PROGRESS_LOG="/tmp/snapclient-progress.log"
-: > "$PROGRESS_LOG"  # Clear/create log file
+# Log file: use parent's if PROGRESS_MANAGED, otherwise our own
+if [[ -n "$PROGRESS_MANAGED" ]]; then
+    PROGRESS_LOG="${PROGRESS_LOG:-/tmp/snapmulti-progress.log}"
+else
+    PROGRESS_LOG="/tmp/snapclient-progress.log"
+    : > "$PROGRESS_LOG"  # Clear/create log file
+fi
 
-# Render progress display to tty1 (top: progress, bottom: log output)
+# Render progress display to tty1 (ASCII-safe for Linux framebuffer PSF fonts)
 render_progress() {
+    # Parent owns the display — skip rendering entirely
+    [[ -n "$PROGRESS_MANAGED" ]] && return
+
     local step=$1 pct=$2 elapsed=$3 spinner=${4:-}
     local total=${#STEP_NAMES[@]}
 
@@ -102,13 +114,13 @@ render_progress() {
     (( pct < 0 )) && pct=0
     (( pct > 100 )) && pct=100
 
-    # Build progress bar (50 chars wide)
+    # Build progress bar (50 chars wide, ASCII-safe)
     local bar_width=50
     local filled=$(( pct * bar_width / 100 ))
     local empty=$(( bar_width - filled ))
     local bar=""
-    for ((i=0; i<filled; i++)); do bar+="█"; done
-    for ((i=0; i<empty; i++)); do bar+="░"; done
+    for ((i=0; i<filled; i++)); do bar+="#"; done
+    for ((i=0; i<empty; i++)); do bar+="-"; done
 
     # Get last 10 lines of log for output area (wider: 64 chars)
     local log_lines=""
@@ -119,43 +131,34 @@ render_progress() {
     {
         printf '\033[2J\033[H'
         printf '\n'
-        printf '  ┌──────────────────────────────────────────────────────────────────┐\n'
-        printf '  │                     \033[1mSnapclient Auto-Install\033[0m                      │\n'
-        printf '  └──────────────────────────────────────────────────────────────────┘\n'
+        printf '  +------------------------------------------------------------------+\n'
+        printf '  |                     \033[1mSnapclient Auto-Install\033[0m                      |\n'
+        printf '  +------------------------------------------------------------------+\n'
         printf '\n'
-        printf '  \033[36m⏱  Elapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
-        printf '  \033[33m%s\033[0m %3d%% %s\n\n' "$bar" "$pct" "$spinner"
+        printf '  \033[36mElapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
+        printf '  \033[33m[%s]\033[0m %3d%% %s\n\n' "$bar" "$pct" "$spinner"
         for i in $(seq 1 "$total"); do
             local name="${STEP_NAMES[$((i-1))]}"
-            if (( i < step )); then   printf '  \033[32m✓\033[0m %s\n' "$name"
-            elif (( i == step )); then printf '  \033[33m▶\033[0m %s\n' "$name"
-            else                       printf '  ○ %s\n' "$name"
+            if (( i < step )); then   printf '  \033[32m[x]\033[0m %s\n' "$name"
+            elif (( i == step )); then printf '  \033[33m[>]\033[0m %s\n' "$name"
+            else                       printf '  [ ] %s\n' "$name"
             fi
         done
         printf '\n'
-        printf '  ┌───────────────────────────── Output ─────────────────────────────┐\n'
+        printf '  +----------------------------- Output -----------------------------+\n'
         # Print log lines (pad to 64 chars with 1-char margins)
         if [[ -n "$log_lines" ]]; then
             while IFS= read -r line; do
-                printf '  │ \033[90m%-64s\033[0m │\n' "$line"
+                printf '  | \033[90m%-64s\033[0m |\n' "$line"
             done <<< "$log_lines"
         fi
         # Fill remaining lines to make consistent height (10 lines)
         local line_count
         line_count=$(printf '%s' "$log_lines" | grep -c '^') || line_count=0
         for ((i=line_count; i<10; i++)); do
-            printf '  │ %-64s │\n' ""
+            printf '  | %-64s |\n' ""
         done
-        printf '  └──────────────────────────────────────────────────────────────────┘\n'
-        printf '\n'
-        # Nerdy digital clock at bottom
-        local clock_time
-        clock_time=$(date '+%H:%M:%S')
-        printf '  \033[90m┌──────────────────────────────────────────────────────────────────┐\033[0m\n'
-        printf '  \033[90m│\033[0m  \033[36m░█▀▀░█░░░█▀█░█▀▀░█░█\033[0m   \033[1;37m⏰ %s\033[0m   \033[36m█░█░█▀▀░█▀█░█░░░█▀▀░\033[0m  \033[90m│\033[0m\n' "$clock_time"
-        printf '  \033[90m│\033[0m  \033[36m░█░░░█░░░█░█░█░░░█▀▄\033[0m                 \033[36m█▀▄░█▀▀░█▀█░█░░░▀▀█░\033[0m  \033[90m│\033[0m\n'
-        printf '  \033[90m│\033[0m  \033[36m░▀▀▀░▀▀▀░▀▀▀░▀▀▀░▀░▀\033[0m                 \033[36m▀░▀░▀▀▀░▀░▀░▀▀▀░▀▀▀░\033[0m  \033[90m│\033[0m\n'
-        printf '  \033[90m└──────────────────────────────────────────────────────────────────┘\033[0m\n'
+        printf '  +------------------------------------------------------------------+\n'
     } > /dev/tty1
 }
 
@@ -167,6 +170,7 @@ log_progress() {
 # Start background animation for long-running steps
 start_progress_animation() {
     [[ "$AUTO_MODE" != true ]] && return
+    [[ -n "$PROGRESS_MANAGED" ]] && return
     local step=$1 base_pct=$2 step_weight=$3
 
     # Kill any existing animation
@@ -174,7 +178,7 @@ start_progress_animation() {
 
     # Start background process that updates display every second
     (
-        local spinners=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+        local spinners=('|' '/' '-' '\')
         local spin_idx=0
         local step_start
         step_start=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
@@ -195,7 +199,7 @@ start_progress_animation() {
             current_pct=$(( base_pct + pct_in_step ))
 
             render_progress "$step" "$current_pct" "$elapsed" "${spinners[$spin_idx]}"
-            spin_idx=$(( (spin_idx + 1) % 10 ))
+            spin_idx=$(( (spin_idx + 1) % 4 ))
             sleep 1
         done
     ) &
@@ -238,12 +242,13 @@ progress() {
     # One-line summary to stdout (goes to log via firstboot redirect)
     echo "=== Step $step/$total: $msg ($((elapsed/60))m$((elapsed%60))s) ==="
 
-    # Render to tty1
+    # Render to tty1 (skipped when parent manages display)
     render_progress "$step" "$pct" "$elapsed"
 }
 
 progress_complete() {
     [[ "$AUTO_MODE" != true ]] && return
+    [[ -n "$PROGRESS_MANAGED" ]] && return
 
     # Stop any running animation
     stop_progress_animation
@@ -256,44 +261,30 @@ progress_complete() {
     [[ -c /dev/tty1 ]] || return
 
     local bar=""
-    for ((i=0; i<50; i++)); do bar+="█"; done
+    for ((i=0; i<50; i++)); do bar+="#"; done
 
     {
         printf '\033[2J\033[H'
         printf '\n'
-        printf '  ┌──────────────────────────────────────────────────────────────────┐\n'
-        printf '  │                     \033[1mSnapclient Auto-Install\033[0m                      │\n'
-        printf '  └──────────────────────────────────────────────────────────────────┘\n'
+        printf '  +------------------------------------------------------------------+\n'
+        printf '  |                     \033[1mSnapclient Auto-Install\033[0m                      |\n'
+        printf '  +------------------------------------------------------------------+\n'
         printf '\n'
-        printf '  \033[36m⏱  Elapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
-        printf '  \033[32m%s\033[0m 100%%\n\n' "$bar"
+        printf '  \033[36mElapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
+        printf '  \033[32m[%s]\033[0m 100%%\n\n' "$bar"
         for i in $(seq 1 "$total"); do
-            printf '  \033[32m✓\033[0m %s\n' "${STEP_NAMES[$((i-1))]}"
+            printf '  \033[32m[x]\033[0m %s\n' "${STEP_NAMES[$((i-1))]}"
         done
         printf '\n'
-        printf '  \033[32m✓ Installation complete!\033[0m\n'
+        printf '  \033[32m>>> Installation complete! <<<\033[0m\n'
         printf '\n'
-        printf '  ┌───────────────────────────── Output ─────────────────────────────┐\n'
-        printf '  │ \033[32m%-64s\033[0m │\n' "All steps completed successfully"
-        printf '  │ \033[32m%-64s\033[0m │\n' "System will reboot shortly..."
-        printf '  │ %-64s │\n' ""
-        printf '  │ %-64s │\n' ""
-        printf '  │ %-64s │\n' ""
-        printf '  │ %-64s │\n' ""
-        printf '  │ %-64s │\n' ""
-        printf '  │ %-64s │\n' ""
-        printf '  │ %-64s │\n' ""
-        printf '  │ %-64s │\n' ""
-        printf '  └──────────────────────────────────────────────────────────────────┘\n'
-        printf '\n'
-        # Nerdy completion clock
-        local clock_time
-        clock_time=$(date '+%H:%M:%S')
-        printf '  \033[90m┌─────────────────────────────────────────────────────────────────────┐\033[0m\n'
-        printf '  \033[90m│\033[0m  \033[32m░█▀▄░█▀█░█▀█░█▀▀░█\033[0m   \033[1;32m✓ %s\033[0m   \033[32m█░█▀▀░█░░░█░░░█░█░█▀█░\033[0m  \033[90m│\033[0m\n' "$clock_time"
-        printf '  \033[90m│\033[0m  \033[32m░█░█░█░█░█░█░█▀▀░▀\033[0m               \033[32m░░█▀▀░█░░░█░░░█▀█░█▀▀░\033[0m  \033[90m│\033[0m\n'
-        printf '  \033[90m│\033[0m  \033[32m░▀▀░░▀▀▀░▀░▀░▀▀▀░▀\033[0m               \033[32m░░▀░░░▀▀▀░▀▀▀░▀░▀░▀░░░\033[0m  \033[90m│\033[0m\n'
-        printf '  \033[90m└─────────────────────────────────────────────────────────────────────┘\033[0m\n'
+        printf '  +----------------------------- Output -----------------------------+\n'
+        printf '  | \033[32m%-64s\033[0m |\n' "All steps completed successfully"
+        printf '  | \033[32m%-64s\033[0m |\n' "System will reboot shortly..."
+        for ((i=0; i<8; i++)); do
+            printf '  | %-64s |\n' ""
+        done
+        printf '  +------------------------------------------------------------------+\n'
     } > /dev/tty1
 }
 

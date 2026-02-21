@@ -19,6 +19,12 @@ services:
     container_name: snapclient
     network_mode: host
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32M
+    user: "${PUID:-1000}:${PGID:-1000}"
+    group_add:
+      - "29"           # audio — access /dev/snd/*
     devices:
       - /dev/snd:/dev/snd
     volumes:
@@ -36,6 +42,8 @@ services:
     # Audio requires specific capabilities instead of full privileged mode
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     cap_add:
       - SYS_NICE       # Real-time audio scheduling
       - IPC_LOCK       # Lock memory for low-latency audio
@@ -64,6 +72,12 @@ services:
     build: ./docker/audio-visualizer
     container_name: audio-visualizer
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32M
+    user: "${PUID:-1000}:${PGID:-1000}"
+    group_add:
+      - "29"           # audio — access /dev/snd/*
     <<: *default-security
     cap_add:
       - SYS_NICE  # Audio priority
@@ -102,6 +116,12 @@ services:
     build: ./docker/fb-display
     container_name: fb-display
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    user: "${PUID:-1000}:${PGID:-1000}"
+    group_add:
+      - "44"           # video — access /dev/fb0
     profiles:
       - framebuffer
     network_mode: host
