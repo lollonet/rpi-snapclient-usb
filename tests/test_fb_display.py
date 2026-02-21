@@ -344,14 +344,15 @@ class TestResizeBands:
 
     def test_resize_changes_num_bands(self):
         old = fb_display.NUM_BANDS
-        fb_display.resize_bands(31)
-        assert fb_display.NUM_BANDS == 31
-        assert len(fb_display.bands) == 31
-        assert len(fb_display.display_bands) == 31
-        assert len(fb_display.peak_bands) == 31
-        assert len(fb_display.peak_time) == 31
-        # Restore
-        fb_display.resize_bands(old)
+        try:
+            fb_display.resize_bands(31)
+            assert fb_display.NUM_BANDS == 31
+            assert len(fb_display.bands) == 31
+            assert len(fb_display.display_bands) == 31
+            assert len(fb_display.peak_bands) == 31
+            assert len(fb_display.peak_time) == 31
+        finally:
+            fb_display.resize_bands(old)
 
     def test_noop_same_count(self):
         old_bands = fb_display.bands
