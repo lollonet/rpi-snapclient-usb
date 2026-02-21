@@ -93,8 +93,8 @@ PEAK_HOLD_S = 1.5   # seconds before peak marker vanishes
 # Visualizer already normalizes total power to 1.0, so output is relative dB:
 #   0 dB = all energy in one band, -15 dB = even spread across 31 bands
 # 60 dB window preserves low-energy bands (bass) while keeping proportional scaling.
-DISPLAY_FLOOR = -60.0  # dB below which bars show nothing
-DISPLAY_RANGE = 60.0   # maps DISPLAY_FLOOR..0 dB to 0..1
+DISPLAY_FLOOR = -72.0  # dB below which bars show nothing (16-bit noise floor)
+DISPLAY_RANGE = 72.0   # maps DISPLAY_FLOOR..0 dB to 0..1
 
 # Idle animation state
 idle_animation_phase: float = 0.0
