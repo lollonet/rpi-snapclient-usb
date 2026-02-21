@@ -189,9 +189,6 @@ SOUNDCARD=default
 # Display resolution (leave empty to auto-detect from framebuffer, capped at 1920x1080)
 DISPLAY_RESOLUTION=
 
-# Display mode: framebuffer (direct /dev/fb0, recommended)
-DISPLAY_MODE=framebuffer
-
 # Spectrum band resolution: third-octave (31 bands) or half-octave (21 bands)
 BAND_MODE=third-octave
 ```

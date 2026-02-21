@@ -89,12 +89,10 @@ ATTACK_COEFF = 0.7  # fast attack (higher = faster)
 DECAY_COEFF = 0.15  # decay speed (higher = faster)
 PEAK_HOLD_S = 1.5   # seconds before peak marker vanishes
 
-# Fixed display range for volume-independent spectrum
-# Visualizer already normalizes total power to 1.0, so output is relative dB:
-#   0 dB = all energy in one band, -15 dB = even spread across 31 bands
-# 60 dB window preserves low-energy bands (bass) while keeping proportional scaling.
-DISPLAY_FLOOR = -72.0  # dB below which bars show nothing (16-bit noise floor)
-DISPLAY_RANGE = 72.0   # maps DISPLAY_FLOOR..0 dB to 0..1
+# Display range for spectrum bars (absolute dBFS from visualizer)
+# Bars reflect actual volume: louder audio = taller bars.
+DISPLAY_FLOOR = -72.0  # dBFS below which bars show nothing (16-bit noise floor)
+DISPLAY_RANGE = 72.0   # maps DISPLAY_FLOOR..0 dBFS to 0..1
 
 # Idle animation state
 idle_animation_phase: float = 0.0
@@ -1012,7 +1010,7 @@ def _render_spectrum_locked() -> np.ndarray:
     display_bands += (bands - display_bands) * alpha
 
     # Map relative dB to 0..1 using fixed display range
-    # Visualizer output is already volume-independent (normalized to total power)
+    # Map absolute dBFS values to 0..1 fraction using fixed display range
     db_vals = np.maximum(display_bands, DISPLAY_FLOOR)
     fractions = np.clip((db_vals - DISPLAY_FLOOR) / DISPLAY_RANGE, 0.0, 1.0)
 

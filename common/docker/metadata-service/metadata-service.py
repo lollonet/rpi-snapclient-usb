@@ -1055,103 +1055,6 @@ class SnapcastMetadataService:
         except Exception as e:
             logger.error(f"Failed to write metadata: {e}")
 
-    def run(self) -> None:
-        """Main service loop"""
-        logger.info(f"Starting Snapcast Metadata Service")
-        logger.info(f"  Snapserver: {self.snapserver_host}:{self.snapserver_port}")
-        logger.info(f"  MPD fallback: {self.mpd_host}:{self.mpd_port}")
-        logger.info(f"  Client ID: {self.client_id}")
-
-        while True:
-            try:
-                # Get metadata from Snapserver JSON-RPC
-                metadata = self.get_metadata_from_snapserver()
-
-                # If stream is MPD, always query MPD for richer metadata
-                if metadata.get('source') == 'MPD':
-                    mpd_meta = self.get_mpd_metadata()
-                    if mpd_meta.get('playing'):
-                        # Preserve volume from Snapserver
-                        mpd_meta["volume"] = metadata.get("volume", 100)
-                        mpd_meta["muted"] = metadata.get("muted", False)
-                        # For radio without song title, use station name
-                        if not mpd_meta.get("title") and mpd_meta.get("station_name"):
-                            mpd_meta["title"] = mpd_meta["station_name"]
-                        metadata = mpd_meta
-                        logger.debug("Using MPD metadata")
-
-                # Fetch and download artwork if playing
-                if metadata.get('playing'):
-                    artwork_url = metadata.get('artwork', '')
-                    is_radio = metadata.get('codec') == 'RADIO'
-
-                    # For MPD files, try embedded cover art first (fastest, most accurate)
-                    if not artwork_url and metadata.get('source') == 'MPD' and not is_radio:
-                        mpd_art = self.fetch_mpd_artwork(metadata.get('file', ''))
-                        if mpd_art:
-                            metadata['artwork'] = mpd_art
-                            artwork_url = None  # skip further lookups
-
-                    if not artwork_url and not metadata.get('artwork'):
-                        if is_radio and metadata.get('station_name'):
-                            # Radio: fetch station logo
-                            artwork_url = self.fetch_radio_logo(
-                                metadata['station_name'],
-                                metadata.get('file', ''),
-                            )
-                        elif metadata.get('artist') and metadata.get('album'):
-                            # File/stream: fetch album artwork
-                            artwork_url = self.fetch_album_artwork(
-                                metadata['artist'], metadata['album']
-                            )
-
-                    # Download artwork locally for reliable serving
-                    if artwork_url:
-                        metadata['artwork'] = self.download_artwork(artwork_url)
-
-                    # Fallback: if stream-provided artwork failed, try Radio-Browser API
-                    if not metadata.get('artwork') and is_radio and metadata.get('station_name'):
-                        logo_url = self.fetch_radio_logo(
-                            metadata['station_name'],
-                            metadata.get('file', ''),
-                        )
-                        if logo_url:
-                            metadata['artwork'] = self.download_artwork(logo_url)
-
-                    # Final fallback for radio: use default radio icon
-                    if not metadata.get('artwork') and is_radio:
-                        metadata['artwork'] = '/default-radio.png'
-
-                    # Fetch artist image for fallback (not for radio)
-                    if not is_radio and metadata.get('artist'):
-                        artist_image = self.fetch_artist_image(metadata['artist'])
-                        metadata['artist_image'] = artist_image
-
-                if self._metadata_changed(metadata, self.current_metadata):
-                    # Clear failed download cache only on genuine new track
-                    new_title = metadata.get("title", "")
-                    new_artist = metadata.get("artist", "")
-                    old_title = self.current_metadata.get("title", "")
-                    old_artist = self.current_metadata.get("artist", "")
-                    if (new_title or new_artist) and (new_title, new_artist) != (old_title, old_artist):
-                        self._failed_downloads.clear()
-                    self.current_metadata = metadata
-                    self.write_metadata(metadata)
-                else:
-                    # Check if any volatile field changed — update file silently
-                    volatile_changed = any(
-                        metadata.get(f) != self.current_metadata.get(f)
-                        for f in self._VOLATILE_FIELDS
-                    )
-                    if volatile_changed:
-                        self.current_metadata = metadata
-                        self._write_metadata_quiet(metadata)
-
-            except Exception as e:
-                logger.error(f"Error in main loop: {e}")
-
-            time.sleep(2)
-
     async def run_async(self) -> None:
         """Async main loop with WebSocket broadcast."""
         global _service_instance
@@ -1293,8 +1196,9 @@ async def broadcast_metadata(metadata: dict) -> None:
     if not ws_clients:
         return
 
-    # Strip internal fields
-    output = {k: v for k, v in metadata.items() if k not in ("file", "station_name")}
+    # Strip internal fields (reuse class constant)
+    output = {k: v for k, v in metadata.items()
+              if k not in SnapcastMetadataService._INTERNAL_FIELDS}
     message = json.dumps(output)
 
     # Send to all clients concurrently (single copy to avoid mismatch)
