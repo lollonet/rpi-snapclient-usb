@@ -908,7 +908,7 @@ fi
 # Snapclient handles empty SNAPSERVER_HOST via built-in mDNS, but fb-display
 # connects directly via WebSocket and needs an explicit IP/hostname.
 metadata_host="$snapserver_ip"
-if [[ -z "$metadata_host" && "$DISPLAY_MODE" != "none" ]]; then
+if [[ -z "$metadata_host" ]]; then
     echo "Discovering snapserver via mDNS for display metadata..."
     if command -v avahi-browse &>/dev/null; then
         metadata_host=$(avahi-browse -rpt _snapcast._tcp 2>/dev/null \

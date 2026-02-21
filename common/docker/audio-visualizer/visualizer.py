@@ -32,7 +32,6 @@ FRAME_SIZE = CHANNELS * SAMPLE_WIDTH
 # FFT parameters
 FFT_SIZE = 8192  # ~186ms window at 44.1kHz — better frequency resolution for low bands (5.4Hz/bin)
 HOP_SIZE = 1600  # ~36ms hop = 28 FPS update rate
-BYTES_PER_READ = HOP_SIZE * FRAME_SIZE
 TARGET_FPS = 30
 
 # Band mode: "half-octave" (21 bands) or "third-octave" (31 bands)
