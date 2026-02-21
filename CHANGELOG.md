@@ -9,8 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Remove Browser Display Mode** - Removed X11/Chromium browser mode from setup.sh (was broken after nginx removal). Framebuffer is now the only display mode. Cleaned up all browser references from docs and configs
+- **Read-Only Containers** ([#49](https://github.com/lollonet/rpi-snapclient-usb/pull/49)) - All 3 client containers now run with `read_only: true` + tmpfs for writable paths
+- **Non-Root Containers** ([#49](https://github.com/lollonet/rpi-snapclient-usb/pull/49)) - All 3 containers run as uid 1000 with `group_add` for device access (audio, video), `cap_drop: ALL`
 
 ### Fixed
+- **Progress Display Bouncing** ([#49](https://github.com/lollonet/rpi-snapclient-usb/pull/49)) - When `firstboot.sh` calls `setup.sh`, both had competing progress displays. Now `setup.sh` defers to parent's display via `PROGRESS_MANAGED=1`. Replaced Unicode chars with ASCII-safe equivalents for PSF fonts
+- **Spectrum Double Normalization** ([#47](https://github.com/lollonet/rpi-snapclient-usb/pull/47)) - Removed redundant auto-gain from fb_display (visualizer already normalizes total power). Replaced with fixed 60 dB display range. Added EMA smoothing on visualizer's total power reference to prevent bar spikes during radio gaps
 - **Documentation Coherence** - Updated all docs to reflect removal of client-side metadata-service and nginx containers: corrected container lists in README/QUICKSTART, removed stale `curl` command, fixed Docker image list, updated GHCR→Docker Hub reference, fixed `docker compose restart`→`up -d`
 - **METADATA_HTTP_PORT Consistency** ([#45](https://github.com/lollonet/rpi-snapclient-usb/pull/45)) - Aligned all port defaults to 8083 (server's HTTP artwork port) across docker-compose.yml, fb_display.py, and setup.sh
 - **CI Workflow Context** - Updated claude-code-review.yml: Python 3.11→3.13, removed stale metadata-service reference
