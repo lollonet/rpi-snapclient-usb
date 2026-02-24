@@ -7,6 +7,7 @@ HOST_ID="${HOST_ID:-snapclient}"
 SOUNDCARD="${SOUNDCARD:-default}"
 ALSA_BUFFER_TIME="${ALSA_BUFFER_TIME:-150}"
 ALSA_FRAGMENTS="${ALSA_FRAGMENTS:-4}"
+MIXER="${MIXER:-software}"
 
 # Validate string values - reject shell metacharacters
 validate_string() {
@@ -42,6 +43,14 @@ case "${SNAPSERVER_PORT}" in
     ''|*[!0-9]*) echo "Invalid SNAPSERVER_PORT, using default 1704"; SNAPSERVER_PORT=1704 ;;
 esac
 
+# Validate mixer mode (prefix before optional ':' params)
+MIXER_MODE="${MIXER%%:*}"
+case "${MIXER_MODE}" in
+    software|hardware|none) ;;
+    *) echo "Invalid MIXER mode '${MIXER_MODE}', using software"; MIXER=software ;;
+esac
+validate_string "${MIXER}" "MIXER"
+
 echo "Starting snapclient..."
 if [ -n "${SNAPSERVER_HOST}" ]; then
     echo "  Server: ${SNAPSERVER_HOST}:${SNAPSERVER_PORT}"
@@ -50,6 +59,7 @@ else
 fi
 echo "  Host ID: ${HOST_ID}"
 echo "  Soundcard: ${SOUNDCARD}"
+echo "  Mixer: ${MIXER}"
 echo "  ALSA buffer: ${ALSA_BUFFER_TIME}ms, ${ALSA_FRAGMENTS} fragments"
 
 # Start snapclient with explicit arguments (no variable expansion in exec)
@@ -57,6 +67,7 @@ if [ -n "${SNAPSERVER_HOST}" ]; then
     exec /usr/bin/snapclient \
         --hostID "${HOST_ID}" \
         --soundcard "${SOUNDCARD}" \
+        --mixer "${MIXER}" \
         --player "alsa:buffer_time=${ALSA_BUFFER_TIME}:fragments=${ALSA_FRAGMENTS}" \
         --host "${SNAPSERVER_HOST}" \
         --port "${SNAPSERVER_PORT}" \
@@ -65,6 +76,7 @@ else
     exec /usr/bin/snapclient \
         --hostID "${HOST_ID}" \
         --soundcard "${SOUNDCARD}" \
+        --mixer "${MIXER}" \
         --player "alsa:buffer_time=${ALSA_BUFFER_TIME}:fragments=${ALSA_FRAGMENTS}" \
         "$@"
 fi

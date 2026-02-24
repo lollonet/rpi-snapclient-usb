@@ -28,7 +28,7 @@ jobs:
 
       - name: Shellcheck
         run: |
-          find common/scripts tests scripts -name '*.sh' -type f 2>/dev/null \
+          find common/scripts common/docker tests scripts -name '*.sh' -type f 2>/dev/null \
             | xargs -r shellcheck --severity=warning
 
       - name: Install hadolint
@@ -71,6 +71,9 @@ jobs:
 
       - name: Test HAT configurations
         run: bash tests/test-hat-configs.sh
+
+      - name: Test entrypoint validation
+        run: bash tests/test-entrypoint.sh
 
       - name: Validate HAT config count
         run: |
