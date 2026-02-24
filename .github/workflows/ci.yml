@@ -72,6 +72,9 @@ jobs:
       - name: Test HAT configurations
         run: bash tests/test-hat-configs.sh
 
+      - name: Test entrypoint validation
+        run: bash tests/test-entrypoint.sh
+
       - name: Validate HAT config count
         run: |
           count=$(ls -1 common/audio-hats/*.conf | wc -l)

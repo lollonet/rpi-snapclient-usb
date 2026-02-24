@@ -46,7 +46,7 @@ esac
 # Validate mixer mode (prefix before optional ':' params)
 MIXER_MODE="${MIXER%%:*}"
 case "${MIXER_MODE}" in
-    software|hardware|script|none) ;;
+    software|hardware|none) ;;
     *) echo "Invalid MIXER mode '${MIXER_MODE}', using software"; MIXER=software ;;
 esac
 validate_string "${MIXER}" "MIXER"
