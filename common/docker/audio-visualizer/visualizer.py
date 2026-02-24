@@ -5,7 +5,7 @@ Reads raw PCM from ALSA loopback capture device, computes FFT, groups into
 octave bands, outputs dBFS values via WebSocket.
 
 Output format: "dB_1;dB_2;...;dB_N" per frame.
-Values are absolute dBFS (volume-dependent, e.g. -12;-24;-36;...).
+Values are absolute dBFS (volume-independent with hardware mixer, volume-dependent with software mixer).
 Silence = NOISE_FLOOR.
 """
 
