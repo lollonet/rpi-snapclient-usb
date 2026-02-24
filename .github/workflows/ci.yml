@@ -28,7 +28,7 @@ jobs:
 
       - name: Shellcheck
         run: |
-          find common/scripts tests scripts -name '*.sh' -type f 2>/dev/null \
+          find common/scripts common/docker tests scripts -name '*.sh' -type f 2>/dev/null \
             | xargs -r shellcheck --severity=warning
 
       - name: Install hadolint
