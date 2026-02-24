@@ -39,7 +39,7 @@ services:
       - SOUNDCARD=${SOUNDCARD:-default}
       - ALSA_BUFFER_TIME=${ALSA_BUFFER_TIME:-150}
       - ALSA_FRAGMENTS=${ALSA_FRAGMENTS:-4}
-      - MIXER=${MIXER:-hardware}
+      - MIXER=${MIXER:-software}
     # Audio requires specific capabilities instead of full privileged mode
     security_opt:
       - no-new-privileges:true

@@ -7,7 +7,7 @@ HOST_ID="${HOST_ID:-snapclient}"
 SOUNDCARD="${SOUNDCARD:-default}"
 ALSA_BUFFER_TIME="${ALSA_BUFFER_TIME:-150}"
 ALSA_FRAGMENTS="${ALSA_FRAGMENTS:-4}"
-MIXER="${MIXER:-hardware}"
+MIXER="${MIXER:-software}"
 
 # Validate string values - reject shell metacharacters
 validate_string() {
@@ -43,10 +43,13 @@ case "${SNAPSERVER_PORT}" in
     ''|*[!0-9]*) echo "Invalid SNAPSERVER_PORT, using default 1704"; SNAPSERVER_PORT=1704 ;;
 esac
 
-case "${MIXER}" in
-    software|hardware|none) ;;
-    *) echo "Invalid MIXER value '${MIXER}', using hardware"; MIXER=hardware ;;
+# Validate mixer mode (prefix before optional ':' params)
+MIXER_MODE="${MIXER%%:*}"
+case "${MIXER_MODE}" in
+    software|hardware|script|none) ;;
+    *) echo "Invalid MIXER mode '${MIXER_MODE}', using software"; MIXER=software ;;
 esac
+validate_string "${MIXER}" "MIXER"
 
 echo "Starting snapclient..."
 if [ -n "${SNAPSERVER_HOST}" ]; then
