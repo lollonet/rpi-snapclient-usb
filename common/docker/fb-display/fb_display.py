@@ -670,7 +670,7 @@ def render_base_frame() -> Image.Image:
         text_y = L["info_y"] + (L["info_h"] - total_h) // 2
 
         if source_name:
-            ft_source = _get_font(source_size)
+            ft_source = fit_font(source_name, max_text_w, source_size)
             bbox = draw.textbbox((0, 0), source_name, font=ft_source)
             tw = bbox[2] - bbox[0]
             draw.text((text_right - tw, text_y), source_name,
@@ -921,7 +921,7 @@ def render_progress_overlay() -> tuple[np.ndarray, int, int, int, int] | None:
     # Layout calculations (fill the full info panel width)
     max_width = L["right_w"]
     bar_margin = 16
-    total_bar_width = max_width
+    total_bar_width = max_width - 8
     bar_width = total_bar_width - elapsed_w - duration_w - (bar_margin * 2)
 
     if bar_width < 40:

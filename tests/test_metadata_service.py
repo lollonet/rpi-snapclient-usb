@@ -117,3 +117,8 @@ class TestParseAudioFormat:
         rate, bits = SnapcastMetadataService._parse_audio_format("192000:24:2")
         assert rate == 192000
         assert bits == 24
+
+    def test_malformed_single_component(self):
+        rate, bits = SnapcastMetadataService._parse_audio_format("44100")
+        assert rate == 0
+        assert bits == 0
