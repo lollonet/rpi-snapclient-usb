@@ -15,7 +15,7 @@ Get your Raspberry Pi Snapcast client running in 5 minutes.
 
 ## Supported Audio HATs
 
-The setup supports: HiFiBerry (DAC+, Digi+, DAC2 HD), IQaudio (DAC+, DigiAMP+, Codec Zero), Allo (Boss, DigiOne), JustBoom (DAC, Digi), and USB Audio.
+See the [Supported Audio HATs](README.md#supported-audio-hats) table in the README for the full list (11 HATs + USB audio).
 
 ## Step 1: Flash USB Drive
 
@@ -87,15 +87,7 @@ Edit configuration if needed:
 sudo nano /opt/snapclient/.env
 ```
 
-Example `.env` (automatically configured by setup script):
-```bash
-SNAPSERVER_HOST=                     # Empty = mDNS autodiscovery
-SNAPSERVER_PORT=1704
-SNAPSERVER_RPC_PORT=1705
-CLIENT_ID=snapclient-raspberrypi    # Auto-generated from hostname
-SOUNDCARD=default                   # Routes through DAC + loopback for spectrum
-DISPLAY_RESOLUTION=1920x1080        # Auto-set based on selection
-```
+The setup script auto-generates `.env` from your selections. See [`common/.env.example`](common/.env.example) for all available settings.
 
 Reboot:
 ```bash

@@ -10,6 +10,7 @@ common/
 ├── .env.example                # Full config reference
 ├── docker/
 │   ├── snapclient/             # Core audio client (ALSA → Snapserver)
+│   ├── metadata-service/       # Metadata service (deployed on server)
 │   ├── audio-visualizer/       # FFT spectrum via WebSocket (port 8081)
 │   └── fb-display/             # Framebuffer renderer (/dev/fb0)
 ├── scripts/setup.sh            # Main installer (--auto supported)
@@ -40,6 +41,7 @@ Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = st
 - Resolution scaling: renders at internal res, scales to actual FB on output
 - Bottom bar: logo (left), date+time (center), volume knob (right)
 - **Song Progress Bar**: elapsed/duration for file playback, uses local clock for smooth updates
+- **Info panel**: source name, title, artist, album, format badge (codec/sample-rate/bit-depth)
 - Timezone: mount `/etc/localtime` and `/etc/timezone` into container
 - Install progress screen: `video=HDMI-A-1:800x600@60` in cmdline.txt (KMS ignores hdmi_group/hdmi_mode); remove after install
 

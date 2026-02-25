@@ -172,34 +172,15 @@ rpi-snapclient-usb/
 
 ## Configuration
 
-After installation, configure your settings in `/opt/snapclient/.env` (or `common/.env` if running from the repo):
+The setup script auto-generates `/opt/snapclient/.env` from your selections. See [`common/.env.example`](common/.env.example) for all available settings (server, audio, display, spectrum, resource limits, read-only filesystem).
+
+To change settings after installation:
 
 ```bash
-# Snapserver connection (leave empty for mDNS autodiscovery)
-SNAPSERVER_HOST=
-SNAPSERVER_PORT=1704
-SNAPSERVER_RPC_PORT=1705
-
-# Client identification (auto-generated from hostname)
-CLIENT_ID=snapclient-raspberrypi
-
-# Audio device — must be "default" to route through DAC + loopback for spectrum
-SOUNDCARD=default
-
-# Display resolution (leave empty to auto-detect from framebuffer, capped at 1920x1080)
-DISPLAY_RESOLUTION=
-
-# Spectrum band resolution: third-octave (31 bands) or half-octave (21 bands)
-BAND_MODE=third-octave
-```
-
-Then recreate containers to apply changes:
-```bash
+sudo nano /opt/snapclient/.env
 cd /opt/snapclient
-sudo docker compose up -d
+sudo docker compose up -d   # NOT restart — restart doesn't pick up .env changes
 ```
-
-> **Note**: Use `docker compose up -d` (not `restart`) to pick up `.env` changes. Restart only restarts containers without re-reading environment variables.
 
 ## Verification
 

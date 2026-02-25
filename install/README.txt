@@ -27,7 +27,7 @@ After install, play music on your Snapserver and enjoy!
 
 MANUAL INSTALL (alternative):
   SSH into the Pi after boot and run:
-  sudo bash /boot/firmware/snapclient/scripts/setup.sh
+  sudo bash /opt/snapclient/scripts/setup.sh
 
 
 TROUBLESHOOTING:
