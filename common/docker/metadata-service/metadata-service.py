@@ -124,6 +124,8 @@ class SnapcastMetadataService:
         response = b""
         while True:
             chunk = sock.recv(1024)
+            if not chunk:
+                break  # connection closed
             response += chunk
             if b"OK\n" in chunk or b"ACK" in chunk:
                 break

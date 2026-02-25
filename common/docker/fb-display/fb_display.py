@@ -646,12 +646,18 @@ def render_base_frame() -> Image.Image:
         ft_artist = fit_font(artist, max_text_w, base_detail_size) if artist else None
         ft_album = fit_font(album, max_text_w, base_detail_size) if album else None
 
+        # Source label (e.g. "Tidal", "MPD", "Spotify")
+        source_name = meta.get("source", "")
+        source_size = max(14, HEIGHT // 27)
+
         # Audio format badge
         fmt_text = _format_audio_badge(meta) if meta else ""
         badge_size = max(10, HEIGHT // 36)
 
         line_gap = 4
         total_h = 0
+        if source_name:
+            total_h += source_size + line_gap
         if ft_title:
             total_h += ft_title.size
         if ft_artist:
@@ -662,6 +668,14 @@ def render_base_frame() -> Image.Image:
             total_h += badge_size + line_gap
 
         text_y = L["info_y"] + (L["info_h"] - total_h) // 2
+
+        if source_name:
+            ft_source = fit_font(source_name, max_text_w, source_size)
+            bbox = draw.textbbox((0, 0), source_name, font=ft_source)
+            tw = bbox[2] - bbox[0]
+            draw.text((text_right - tw, text_y), source_name,
+                      fill=DIM_COLOR, font=ft_source)
+            text_y += source_size + line_gap
 
         if ft_title:
             bbox = draw.textbbox((0, 0), title, font=ft_title)
@@ -904,10 +918,10 @@ def render_progress_overlay() -> tuple[np.ndarray, int, int, int, int] | None:
     duration_w = get_text_width(duration_text)
     text_h = time_font.getbbox(elapsed_text)[3] - time_font.getbbox(elapsed_text)[1]
 
-    # Layout calculations (use more of the available width)
+    # Layout calculations (fill the full info panel width)
     max_width = L["right_w"]
     bar_margin = 16
-    total_bar_width = min(int(max_width * 0.85), 600)
+    total_bar_width = max_width - 8
     bar_width = total_bar_width - elapsed_w - duration_w - (bar_margin * 2)
 
     if bar_width < 40:
