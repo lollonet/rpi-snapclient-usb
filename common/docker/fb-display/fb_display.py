@@ -70,9 +70,9 @@ _band_lock = threading.Lock()
 def resize_bands(n: int) -> None:
     """Resize all band arrays and recompute layout when NUM_BANDS changes."""
     global NUM_BANDS, bands, display_bands, peak_bands, peak_time, layout
-    if n == NUM_BANDS:
-        return
     with _band_lock:
+        if n == NUM_BANDS:
+            return
         NUM_BANDS = n
         bands = np.full(n, NOISE_FLOOR, dtype=np.float64)
         display_bands = np.full(n, NOISE_FLOOR, dtype=np.float64)
@@ -156,6 +156,7 @@ _brand_img: Image.Image | None = None
 
 # Cached fonts (loaded once)
 _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
+_FONT_CACHE_MAX = 200
 
 # Layout geometry (computed once in compute_layout)
 layout: dict = {}
@@ -213,7 +214,11 @@ def open_framebuffer() -> None:
 
     fd = os.open(FB_DEVICE, os.O_RDWR)
     size = fb_stride * fb_h
-    fb_mmap = mmap.mmap(fd, size, mmap.MAP_SHARED, mmap.PROT_WRITE | mmap.PROT_READ)
+    try:
+        fb_mmap = mmap.mmap(fd, size, mmap.MAP_SHARED, mmap.PROT_WRITE | mmap.PROT_READ)
+    except Exception:
+        os.close(fd)
+        raise
     fb_fd = fd
 
 
@@ -294,6 +299,9 @@ def _get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     key = ("bold" if bold else "regular", size)
     if key in _font_cache:
         return _font_cache[key]
+
+    if len(_font_cache) >= _FONT_CACHE_MAX:
+        _font_cache.pop(next(iter(_font_cache)))
 
     if bold:
         paths = [
@@ -1203,12 +1211,16 @@ def is_spectrum_active() -> bool:
     return bool(np.any(bands > threshold))
 
 
+_RENDER_MAX_ERRORS = 50
+
+
 async def render_loop() -> None:
     """Main render loop with adaptive FPS."""
     global base_frame, base_frame_version, spectrum_bg_np
 
     FPS_ACTIVE = 20
     FPS_QUIET = 5
+    consecutive_errors = 0
 
     while True:
         try:
@@ -1292,8 +1304,17 @@ async def render_loop() -> None:
             sleep_time = (1.0 / fps) - elapsed
             if sleep_time > 0:
                 await asyncio.sleep(sleep_time)
+            consecutive_errors = 0
         except Exception as e:
-            logger.error(f"Render loop error: {e}")
+            consecutive_errors += 1
+            if consecutive_errors >= _RENDER_MAX_ERRORS:
+                logger.critical(
+                    f"Render loop: {consecutive_errors} consecutive errors, exiting"
+                )
+                sys.exit(1)
+            logger.error(
+                f"Render loop error ({consecutive_errors}/{_RENDER_MAX_ERRORS}): {e}"
+            )
             await asyncio.sleep(1)
 
 
