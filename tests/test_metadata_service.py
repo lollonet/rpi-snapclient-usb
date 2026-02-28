@@ -259,8 +259,8 @@ class TestCircuitBreaker:
     def test_main_loop_max_errors_defined(self):
         assert metadata_service._MAIN_LOOP_MAX_ERRORS == 30
 
-    def test_circuit_breaker_raises_system_exit(self):
-        """SystemExit should be raised after max consecutive errors."""
-        # We can't easily test the full async loop, but we can verify
-        # the constant is used correctly by checking it exists and is reasonable
+    def test_render_max_errors_in_bounds(self):
+        """Render loop circuit breaker threshold must be reasonable."""
+        # fb_display is not importable in test env (numpy/PIL), so just
+        # verify the metadata-service constant is in a sensible range.
         assert 10 <= metadata_service._MAIN_LOOP_MAX_ERRORS <= 100
