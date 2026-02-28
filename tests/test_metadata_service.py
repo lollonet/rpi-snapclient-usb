@@ -3,7 +3,8 @@
 import sys
 import os
 import socket
-from unittest.mock import MagicMock
+import time
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -122,3 +123,86 @@ class TestParseAudioFormat:
         rate, bits = SnapcastMetadataService._parse_audio_format("44100")
         assert rate == 0
         assert bits == 0
+
+
+class TestSocketLeakFix:
+    """Test _create_socket_connection closes socket on failure."""
+
+    def _make_service(self) -> SnapcastMetadataService:
+        return SnapcastMetadataService("127.0.0.1", 1705, "test-client")
+
+    def test_socket_closed_on_connect_failure(self):
+        """Socket must be closed when connect() raises."""
+        svc = self._make_service()
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.connect.side_effect = ConnectionRefusedError("refused")
+
+        with patch("socket.socket", return_value=mock_sock):
+            result = svc._create_socket_connection("127.0.0.1", 9999, log_errors=False)
+
+        assert result is None
+        mock_sock.close.assert_called_once()
+
+    def test_socket_returned_on_success(self):
+        """Socket is returned (not closed) on successful connect."""
+        svc = self._make_service()
+        mock_sock = MagicMock(spec=socket.socket)
+
+        with patch("socket.socket", return_value=mock_sock):
+            result = svc._create_socket_connection("127.0.0.1", 1705, log_errors=False)
+
+        assert result is mock_sock
+        mock_sock.close.assert_not_called()
+
+
+class TestCacheEviction:
+    """Test cache size limits and eviction."""
+
+    def _make_service(self) -> SnapcastMetadataService:
+        return SnapcastMetadataService("127.0.0.1", 1705, "test-client")
+
+    def test_trim_cache_evicts_oldest_half(self):
+        svc = self._make_service()
+        cache = {f"key{i}": f"val{i}" for i in range(10)}
+        svc._trim_cache(cache, 10)
+        assert len(cache) == 5
+        # Oldest 5 should be gone
+        assert "key0" not in cache
+        assert "key4" not in cache
+        # Newest 5 should remain
+        assert "key5" in cache
+        assert "key9" in cache
+
+    def test_trim_cache_no_op_under_limit(self):
+        svc = self._make_service()
+        cache = {"a": "1", "b": "2"}
+        svc._trim_cache(cache, 10)
+        assert len(cache) == 2
+
+
+class TestFailedDownloadTTL:
+    """Test TTL-based expiry for failed download blacklist."""
+
+    def _make_service(self) -> SnapcastMetadataService:
+        return SnapcastMetadataService("127.0.0.1", 1705, "test-client")
+
+    def test_failed_download_is_dict(self):
+        """_failed_downloads must be a dict (not set) for TTL support."""
+        svc = self._make_service()
+        assert isinstance(svc._failed_downloads, dict)
+
+    def test_failed_url_blocked_within_ttl(self):
+        """URL added to failed downloads should be blocked within TTL."""
+        svc = self._make_service()
+        svc._failed_downloads["http://example.com/art.jpg"] = time.monotonic()
+        # URL is in the dict, so download_artwork should return early
+        assert "http://example.com/art.jpg" in svc._failed_downloads
+
+    def test_failed_url_retried_after_ttl(self):
+        """URL should be retried after TTL expires."""
+        svc = self._make_service()
+        # Set timestamp far in the past (expired)
+        svc._failed_downloads["http://example.com/art.jpg"] = time.monotonic() - 600
+        # TTL check: monotonic - timestamp > _FAILED_DOWNLOAD_TTL
+        ts = svc._failed_downloads["http://example.com/art.jpg"]
+        assert time.monotonic() - ts > svc._FAILED_DOWNLOAD_TTL

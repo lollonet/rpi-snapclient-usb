@@ -27,6 +27,7 @@ from zeroconf import ServiceBrowser, ServiceStateChange, Zeroconf
 
 # WebSocket server state
 WS_PORT = int(os.environ.get("METADATA_WS_PORT", "8082"))
+_MAIN_LOOP_MAX_ERRORS = 30
 ws_clients: set = set()
 _service_instance: "SnapcastMetadataService | None" = None
 
@@ -76,15 +77,29 @@ class SnapcastMetadataService:
         self.artist_image_cache: dict[str, str] = {}
         self.user_agent = os.environ.get("USER_AGENT", "SnapcastMetadataService/1.0")
         self._mpd_was_connected = False
-        self._failed_downloads: set[str] = set()
+        self._failed_downloads: dict[str, float] = {}
         self._snap_sock: socket.socket | None = None
         self._snap_buffer: bytes = b""
         self._snap_lock = threading.Lock()  # Protect socket from concurrent access
         self._last_snap_response: float = 0.0
         self._snap_stale_threshold: float = 30.0  # Force reconnect if no response in 30s
 
+    # Cache eviction limits
+    _CACHE_MAX_ARTWORK = 500
+    _CACHE_MAX_ARTIST = 200
+    _CACHE_MAX_FAILED = 200
+    _FAILED_DOWNLOAD_TTL = 300.0  # 5 min before retrying failed downloads
+
+    def _trim_cache(self, cache: dict, max_size: int) -> None:
+        """Evict oldest half of cache when it exceeds max_size."""
+        if len(cache) >= max_size:
+            keys = list(cache.keys())
+            for k in keys[:len(keys) // 2]:
+                del cache[k]
+
     def _create_socket_connection(self, host: str, port: int, timeout: int = 5, log_errors: bool = True) -> socket.socket | None:
-        """Create a socket connection with standard settings"""
+        """Create a socket connection with standard settings."""
+        sock = None
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
@@ -93,6 +108,11 @@ class SnapcastMetadataService:
         except Exception as e:
             if log_errors:
                 logger.error(f"Failed to connect to {host}:{port}: {e}")
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
             return None
 
     def _get_snap_socket(self) -> socket.socket | None:
@@ -720,6 +740,7 @@ class SnapcastMetadataService:
         """
         if not station_name or len(station_name) > 200:
             return ""
+        self._trim_cache(self.artwork_cache, self._CACHE_MAX_ARTWORK)
 
         cache_key = f"radio|{station_name}"
         if cache_key in self.artwork_cache:
@@ -810,6 +831,7 @@ class SnapcastMetadataService:
 
     def fetch_artist_image(self, artist: str) -> str:
         """Fetch artist image from MusicBrainz -> Wikidata -> Wikimedia Commons"""
+        self._trim_cache(self.artist_image_cache, self._CACHE_MAX_ARTIST)
         if not artist or artist in self.artist_image_cache:
             return self.artist_image_cache.get(artist, "")
 
@@ -866,6 +888,7 @@ class SnapcastMetadataService:
         """Fetch album artwork URL from external APIs"""
         if not artist or not album:
             return ""
+        self._trim_cache(self.artwork_cache, self._CACHE_MAX_ARTWORK)
 
         cache_key = f"{artist}|{album}"
         if cache_key in self.artwork_cache:
@@ -923,18 +946,29 @@ class SnapcastMetadataService:
         if not url:
             return ""
 
+        # TTL-based retry: transient errors don't permanently blacklist URLs
         if url in self._failed_downloads:
-            return ""
+            if time.monotonic() - self._failed_downloads[url] < self._FAILED_DOWNLOAD_TTL:
+                return ""
+            del self._failed_downloads[url]
+        if len(self._failed_downloads) > self._CACHE_MAX_FAILED:
+            now = time.monotonic()
+            self._failed_downloads = {
+                k: v for k, v in self._failed_downloads.items()
+                if now - v < self._FAILED_DOWNLOAD_TTL
+            }
 
         # Validate URL scheme to prevent SSRF (file://, ftp://, etc.)
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
             logger.warning(f"Rejected artwork URL with scheme: {parsed.scheme}")
-            self._failed_downloads.add(url)
+            self._failed_downloads[url] = time.monotonic()
             return ""
 
-        # Block private/loopback IPs to prevent SSRF to internal services
-        # Exception: allow Snapserver host (trusted internal service for artwork)
+        # Block private/loopback IPs to prevent SSRF to internal services.
+        # Exception: allow Snapserver host (trusted internal service for artwork).
+        # Note: TOCTOU gap exists between DNS check and urlopen; all external
+        # artwork URLs use HTTPS where TLS cert validation prevents rebinding.
         try:
             is_snapserver = parsed.hostname == self.snapserver_host
             blocked_addr = None
@@ -954,11 +988,11 @@ class SnapcastMetadataService:
 
             if blocked_addr:
                 logger.warning(f"Blocked artwork download to restricted IP: {blocked_addr}")
-                self._failed_downloads.add(url)
+                self._failed_downloads[url] = time.monotonic()
                 return ""
         except (socket.gaierror, ValueError, OSError) as e:
             logger.warning(f"Cannot resolve artwork host {parsed.hostname}: {e}")
-            self._failed_downloads.add(url)
+            self._failed_downloads[url] = time.monotonic()
             return ""
 
         try:
@@ -978,7 +1012,7 @@ class SnapcastMetadataService:
                 while len(data) < self._MAX_ARTWORK_BYTES:
                     if time.monotonic() - dl_start > 15:
                         logger.warning("Artwork download total timeout (15s)")
-                        self._failed_downloads.add(url)
+                        self._failed_downloads[url] = time.monotonic()
                         return ""
                     chunk = response.read(8192)
                     if not chunk:
@@ -987,7 +1021,7 @@ class SnapcastMetadataService:
 
                 if len(data) >= self._MAX_ARTWORK_BYTES:
                     logger.warning(f"Artwork exceeded size limit ({self._MAX_ARTWORK_BYTES} bytes)")
-                    self._failed_downloads.add(url)
+                    self._failed_downloads[url] = time.monotonic()
                     return ""
 
                 if len(data) > 0:
@@ -997,12 +1031,12 @@ class SnapcastMetadataService:
                     return f"/artwork_{url_hash}.jpg"
                 else:
                     logger.warning("Downloaded empty artwork")
-                    self._failed_downloads.add(url)
+                    self._failed_downloads[url] = time.monotonic()
                     return ""
 
         except Exception as e:
             logger.error(f"Failed to download artwork: {e}")
-            self._failed_downloads.add(url)
+            self._failed_downloads[url] = time.monotonic()
             # Remove incomplete file
             try:
                 local_path.unlink(missing_ok=True)
@@ -1074,6 +1108,7 @@ class SnapcastMetadataService:
 
         # Run metadata polling in executor (blocking I/O)
         loop = asyncio.get_event_loop()
+        consecutive_errors = 0
 
         while True:
             try:
@@ -1169,8 +1204,17 @@ class SnapcastMetadataService:
                         # Broadcast volatile updates too (volume changes)
                         await broadcast_metadata(metadata)
 
+                consecutive_errors = 0
             except Exception as e:
-                logger.error(f"Error in async main loop: {e}")
+                consecutive_errors += 1
+                if consecutive_errors >= _MAIN_LOOP_MAX_ERRORS:
+                    logger.critical(
+                        f"Main loop: {consecutive_errors} consecutive errors, exiting"
+                    )
+                    raise SystemExit(1)
+                logger.error(
+                    f"Main loop error ({consecutive_errors}/{_MAIN_LOOP_MAX_ERRORS}): {e}"
+                )
 
             await asyncio.sleep(2)
 
