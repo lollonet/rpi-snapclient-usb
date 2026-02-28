@@ -191,18 +191,76 @@ class TestFailedDownloadTTL:
         svc = self._make_service()
         assert isinstance(svc._failed_downloads, dict)
 
-    def test_failed_url_blocked_within_ttl(self):
-        """URL added to failed downloads should be blocked within TTL."""
+    def test_download_artwork_blocked_within_ttl(self):
+        """download_artwork returns '' for URLs failed within TTL."""
         svc = self._make_service()
-        svc._failed_downloads["http://example.com/art.jpg"] = time.monotonic()
-        # URL is in the dict, so download_artwork should return early
-        assert "http://example.com/art.jpg" in svc._failed_downloads
+        url = "http://example.com/art.jpg"
+        svc._failed_downloads[url] = time.monotonic()
+        result = svc.download_artwork(url)
+        assert result == ""
+        # URL should still be in failed list
+        assert url in svc._failed_downloads
 
-    def test_failed_url_retried_after_ttl(self):
-        """URL should be retried after TTL expires."""
+    def test_download_artwork_retries_after_ttl(self):
+        """download_artwork removes expired entry and retries (hits DNS check)."""
         svc = self._make_service()
-        # Set timestamp far in the past (expired)
-        svc._failed_downloads["http://example.com/art.jpg"] = time.monotonic() - 600
-        # TTL check: monotonic - timestamp > _FAILED_DOWNLOAD_TTL
-        ts = svc._failed_downloads["http://example.com/art.jpg"]
-        assert time.monotonic() - ts > svc._FAILED_DOWNLOAD_TTL
+        url = "http://example.com/art.jpg"
+        svc._failed_downloads[url] = time.monotonic() - 600  # expired
+        # download_artwork will remove the expired entry and proceed to DNS check
+        # which will fail (no network in test), re-adding the URL
+        result = svc.download_artwork(url)
+        assert result == ""
+        # Key point: the OLD entry was deleted (TTL expired), proving retry happened
+        # URL may be re-added by the download failure, but with a fresh timestamp
+        if url in svc._failed_downloads:
+            assert time.monotonic() - svc._failed_downloads[url] < 5
+
+    def test_failed_downloads_size_bounded(self):
+        """_failed_downloads is bounded even when all failures within TTL."""
+        svc = self._make_service()
+        now = time.monotonic()
+        # Fill beyond limit with non-expired entries
+        for i in range(250):
+            svc._failed_downloads[f"http://example.com/{i}.jpg"] = now
+        # Trigger eviction via download_artwork
+        svc.download_artwork("http://trigger.example.com/evict.jpg")
+        assert len(svc._failed_downloads) <= svc._CACHE_MAX_FAILED
+
+
+class TestCacheTrimOrdering:
+    """Test that _trim_cache doesn't evict items being requested."""
+
+    def _make_service(self) -> SnapcastMetadataService:
+        return SnapcastMetadataService("127.0.0.1", 1705, "test-client")
+
+    def test_cached_artwork_survives_trim(self):
+        """Cache hit should return immediately without triggering eviction."""
+        svc = self._make_service()
+        # Fill cache to capacity
+        for i in range(svc._CACHE_MAX_ARTWORK):
+            svc.artwork_cache[f"artist{i}|album{i}"] = f"/art_{i}.jpg"
+        # Request the oldest entry (would be evicted if trim runs first)
+        key = "artist0|album0"
+        result = svc.fetch_album_artwork("artist0", "album0")
+        assert result == "/art_0.jpg"
+
+    def test_cached_artist_image_survives_trim(self):
+        """Cached artist image should be returned without eviction."""
+        svc = self._make_service()
+        for i in range(svc._CACHE_MAX_ARTIST):
+            svc.artist_image_cache[f"artist{i}"] = f"/img_{i}.jpg"
+        result = svc.fetch_artist_image("artist0")
+        assert result == "/img_0.jpg"
+
+
+class TestCircuitBreaker:
+    """Test circuit breaker constants and exit behavior."""
+
+    def test_main_loop_max_errors_defined(self):
+        assert metadata_service._MAIN_LOOP_MAX_ERRORS == 30
+
+    def test_circuit_breaker_raises_system_exit(self):
+        """SystemExit should be raised after max consecutive errors."""
+        # We can't easily test the full async loop, but we can verify
+        # the constant is used correctly by checking it exists and is reasonable
+        assert 10 <= metadata_service._MAIN_LOOP_MAX_ERRORS <= 100

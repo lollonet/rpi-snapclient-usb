@@ -740,11 +740,11 @@ class SnapcastMetadataService:
         """
         if not station_name or len(station_name) > 200:
             return ""
-        self._trim_cache(self.artwork_cache, self._CACHE_MAX_ARTWORK)
 
         cache_key = f"radio|{station_name}"
         if cache_key in self.artwork_cache:
             return self.artwork_cache[cache_key]
+        self._trim_cache(self.artwork_cache, self._CACHE_MAX_ARTWORK)
 
         # Clean station name: strip bitrate/codec suffixes like "(320k aac)"
         clean_name = station_name
@@ -831,9 +831,9 @@ class SnapcastMetadataService:
 
     def fetch_artist_image(self, artist: str) -> str:
         """Fetch artist image from MusicBrainz -> Wikidata -> Wikimedia Commons"""
-        self._trim_cache(self.artist_image_cache, self._CACHE_MAX_ARTIST)
         if not artist or artist in self.artist_image_cache:
             return self.artist_image_cache.get(artist, "")
+        self._trim_cache(self.artist_image_cache, self._CACHE_MAX_ARTIST)
 
         # Step 1: Get artist MBID from MusicBrainz
         query = urllib.parse.quote(f'artist:"{artist}"')
@@ -888,11 +888,11 @@ class SnapcastMetadataService:
         """Fetch album artwork URL from external APIs"""
         if not artist or not album:
             return ""
-        self._trim_cache(self.artwork_cache, self._CACHE_MAX_ARTWORK)
 
         cache_key = f"{artist}|{album}"
         if cache_key in self.artwork_cache:
             return self.artwork_cache[cache_key]
+        self._trim_cache(self.artwork_cache, self._CACHE_MAX_ARTWORK)
 
         # Try iTunes Search API first
         artwork_url = self._fetch_itunes_artwork(artist, album)
@@ -951,12 +951,17 @@ class SnapcastMetadataService:
             if time.monotonic() - self._failed_downloads[url] < self._FAILED_DOWNLOAD_TTL:
                 return ""
             del self._failed_downloads[url]
-        if len(self._failed_downloads) > self._CACHE_MAX_FAILED:
+        if len(self._failed_downloads) >= self._CACHE_MAX_FAILED:
             now = time.monotonic()
             self._failed_downloads = {
                 k: v for k, v in self._failed_downloads.items()
                 if now - v < self._FAILED_DOWNLOAD_TTL
             }
+            # Still over limit after purging expired: evict oldest entries
+            if len(self._failed_downloads) >= self._CACHE_MAX_FAILED:
+                sorted_keys = sorted(self._failed_downloads, key=self._failed_downloads.get)
+                for k in sorted_keys[:len(sorted_keys) // 2]:
+                    del self._failed_downloads[k]
 
         # Validate URL scheme to prevent SSRF (file://, ftp://, etc.)
         parsed = urllib.parse.urlparse(url)
