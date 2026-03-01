@@ -7,16 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-03-01
+
+### Added
+- **Source Label** ([#53](https://github.com/lollonet/rpi-snapclient-usb/pull/53)) - Info panel shows source name (MPD, Spotify, AirPlay, etc.), title, artist, album, and format badge
+- **Hardware Mixer Volume** ([#52](https://github.com/lollonet/rpi-snapclient-usb/pull/52)) - Spectrum analyzer uses hardware mixer level for volume-independent display instead of software gain
+- **Unit Test Suite** ([#51](https://github.com/lollonet/rpi-snapclient-usb/pull/51)) - 29 pytest tests covering visualizer, fb-display, and metadata-service logic (socket handling, caching, codec detection, audio format parsing, circuit breakers)
+- **SSOT Documentation** - Single source of truth for config (`.env.example`), HAT list (`README.md`), architecture (`CLAUDE.md`). Other files link instead of duplicating
+
 ### Changed
 - **Remove Browser Display Mode** - Removed X11/Chromium browser mode from setup.sh (was broken after nginx removal). Framebuffer is now the only display mode. Cleaned up all browser references from docs and configs
 - **Read-Only Containers** ([#49](https://github.com/lollonet/rpi-snapclient-usb/pull/49)) - All 3 client containers now run with `read_only: true` + tmpfs for writable paths
 - **Non-Root Containers** ([#49](https://github.com/lollonet/rpi-snapclient-usb/pull/49)) - All 3 containers run as uid 1000 with `group_add` for device access (audio, video), `cap_drop: ALL`
 
 ### Fixed
-- **Progress Display Bouncing** ([#49](https://github.com/lollonet/rpi-snapclient-usb/pull/49)) - When `firstboot.sh` calls `setup.sh`, both had competing progress displays. Now `setup.sh` defers to parent's display via `PROGRESS_MANAGED=1`. Replaced Unicode chars with ASCII-safe equivalents for PSF fonts
-- **Spectrum Raw dBFS** ([#47](https://github.com/lollonet/rpi-snapclient-usb/pull/47)) - Removed total-power normalization and auto-gain from spectrum analyzer. Bars now show raw dBFS (volume-dependent) with fixed 60 dB display range. Simpler signal chain, no more bar pumping artifacts
-- **Documentation Coherence** - Updated all docs to reflect removal of client-side metadata-service and nginx containers: corrected container lists in README/QUICKSTART, removed stale `curl` command, fixed Docker image list, updated GHCR→Docker Hub reference, fixed `docker compose restart`→`up -d`
-- **METADATA_HTTP_PORT Consistency** ([#45](https://github.com/lollonet/rpi-snapclient-usb/pull/45)) - Aligned all port defaults to 8083 (server's HTTP artwork port) across docker-compose.yml, fb_display.py, and setup.sh
+- **Socket Leak** ([#54](https://github.com/lollonet/rpi-snapclient-usb/pull/54)) - `_create_socket_connection` now closes socket on connect failure instead of leaking file descriptors
+- **FD Leak** ([#54](https://github.com/lollonet/rpi-snapclient-usb/pull/54)) - `open_framebuffer` closes fd if mmap fails instead of leaking
+- **Cache Unbounded Growth** ([#54](https://github.com/lollonet/rpi-snapclient-usb/pull/54)) - Artwork, artist image, and failed download caches now bounded (500/200/200) with oldest-half eviction. Failed downloads use TTL (5 min) for automatic retry
+- **Circuit Breakers** ([#54](https://github.com/lollonet/rpi-snapclient-usb/pull/54)) - Main loop (30 errors) and render loop (50 errors) exit instead of spinning forever on persistent failures
+- **Thread Safety** ([#54](https://github.com/lollonet/rpi-snapclient-usb/pull/54)) - `resize_bands` race condition fixed by moving guard inside lock
+- **Font Cache Bounded** ([#54](https://github.com/lollonet/rpi-snapclient-usb/pull/54)) - Font cache limited to 200 entries with FIFO eviction
+- **MPD Response Loop** ([#53](https://github.com/lollonet/rpi-snapclient-usb/pull/53)) - `_read_mpd_response` breaks on empty recv instead of looping forever on closed connection
+- **Spectrum Raw dBFS** ([#47](https://github.com/lollonet/rpi-snapclient-usb/pull/47), [#50](https://github.com/lollonet/rpi-snapclient-usb/pull/50)) - Removed total-power normalization and auto-gain from spectrum analyzer. Bars now show raw dBFS with fixed 60 dB display range
+- **Progress Display Bouncing** ([#49](https://github.com/lollonet/rpi-snapclient-usb/pull/49)) - `setup.sh` defers to parent's progress display via `PROGRESS_MANAGED=1`. Replaced Unicode chars with ASCII-safe equivalents for PSF fonts
+- **Documentation Coherence** - Updated all docs to reflect removal of client-side metadata-service and nginx containers
+- **METADATA_HTTP_PORT Consistency** ([#45](https://github.com/lollonet/rpi-snapclient-usb/pull/45)) - Aligned all port defaults to 8083 across docker-compose.yml, fb_display.py, and setup.sh
 - **CI Workflow Context** - Updated claude-code-review.yml: Python 3.11→3.13, removed stale metadata-service reference
 
 ## [0.1.7] - 2026-02-19
