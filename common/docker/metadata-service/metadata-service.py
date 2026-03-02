@@ -478,6 +478,9 @@ class SnapcastMetadataService:
                 if not chunk:
                     return None  # Connection closed
                 self._snap_buffer += chunk
+                if len(self._snap_buffer) > 1_000_000:  # 1 MB guard
+                    logger.error("Snapserver buffer exceeded 1 MB — dropping connection")
+                    return None
             except socket.timeout:
                 logger.warning("Snapserver socket timeout - connection stale")
                 return None

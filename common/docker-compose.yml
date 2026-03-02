@@ -87,7 +87,7 @@ services:
     volumes:
       - ./docker/audio-visualizer/visualizer.py:/app/visualizer.py:ro
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     environment:
       - VISUALIZER_WS_PORT=8081
       - LOOPBACK_DEVICE=hw:Loopback,1,0

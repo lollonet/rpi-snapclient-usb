@@ -56,7 +56,10 @@ fi
 # Run setup in auto mode (all output goes to log only; progress() writes to tty1 directly)
 log_and_tty "Running setup.sh --auto ..."
 cd "$INSTALL_DIR"
-bash scripts/setup.sh --auto "$CONFIG" >> "$LOG" 2>&1
+if ! bash scripts/setup.sh --auto "$CONFIG" >> "$LOG" 2>&1; then
+    log_and_tty "ERROR: setup.sh failed! Check $LOG for details."
+    exit 1
+fi
 
 # Mark as installed
 touch "$MARKER"
