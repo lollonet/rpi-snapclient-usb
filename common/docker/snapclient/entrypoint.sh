@@ -2,6 +2,7 @@
 set -euo pipefail
 
 # Default values (SNAPSERVER_HOST empty = mDNS autodiscovery)
+SNAPSERVER_HOST="${SNAPSERVER_HOST:-}"
 SNAPSERVER_PORT="${SNAPSERVER_PORT:-1704}"
 HOST_ID="${HOST_ID:-snapclient}"
 SOUNDCARD="${SOUNDCARD:-default}"

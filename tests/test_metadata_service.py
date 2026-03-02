@@ -4,6 +4,7 @@ import sys
 import os
 import socket
 import time
+import urllib.error
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -300,16 +301,11 @@ class TestSSRFProtection:
         svc = self._make_service()
         with patch("socket.getaddrinfo", return_value=[
             (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.1", 0)),
-        ]):
-            # Should pass SSRF check (snapserver_host == parsed.hostname)
-            # but fail on actual download (no network)
+        ]), patch("urllib.request.urlopen", side_effect=urllib.error.URLError("mock")) as mock_urlopen:
             result = svc.download_artwork("http://10.0.0.1/art.jpg")
-        # URL should NOT be in failed_downloads due to SSRF block
-        # (it may fail for other reasons like network, but not SSRF)
-        ssrf_blocked = svc._failed_downloads.get("http://10.0.0.1/art.jpg")
-        # If it was SSRF-blocked, the timestamp would be set before any download attempt
-        # The key test: getaddrinfo was called and the private IP was allowed
-        assert result == "" or result.startswith("/artwork_")
+        # The key assertion: urlopen was called, proving SSRF check passed
+        mock_urlopen.assert_called_once()
+        assert result == ""
 
     def test_blocks_link_local(self):
         """Link-local IPs (169.254.x.x) must be blocked."""
