@@ -745,6 +745,7 @@ if [ -n "$BOOT_CONFIG" ]; then
         if grep -q "video=HDMI-A-1:" "$CMDLINE"; then
             echo "WARNING: Could not fully remove video= from cmdline.txt"
             echo "  Manually edit: $CMDLINE"
+            NEEDS_REBOOT=false
         fi
     fi
 
