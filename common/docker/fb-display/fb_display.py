@@ -212,7 +212,11 @@ def open_framebuffer() -> None:
             f"Render resolution: {WIDTH}x{HEIGHT} (scaled to FB on output)"
         )
 
-    fd = os.open(FB_DEVICE, os.O_RDWR)
+    try:
+        fd = os.open(FB_DEVICE, os.O_RDWR)
+    except OSError as e:
+        logger.critical(f"Cannot open framebuffer {FB_DEVICE}: {e}")
+        raise SystemExit(1) from e
     size = fb_stride * fb_h
     try:
         fb_mmap = mmap.mmap(fd, size, mmap.MAP_SHARED, mmap.PROT_WRITE | mmap.PROT_READ)

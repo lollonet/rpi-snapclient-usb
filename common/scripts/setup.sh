@@ -990,7 +990,6 @@ echo ""
 # ============================================
 echo "Framebuffer mode: display rendering handled by fb-display Docker container"
 
-# Disable X11 autostart if it was previously enabled (from older browser mode)
 if systemctl is-enabled x11-autostart.service 2>/dev/null; then
     systemctl disable x11-autostart.service
     echo "  Disabled previous X11 autostart service"
