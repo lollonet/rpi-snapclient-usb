@@ -911,21 +911,22 @@ else
     snapserver_ip=${snapserver_ip:-$current_snapserver}
 fi
 
-# Resolve metadata host for display connections.
+# Resolve snapserver IP via mDNS when display is active and no explicit IP set.
 # Snapclient handles empty SNAPSERVER_HOST via built-in mDNS, but fb-display
 # connects directly via WebSocket and needs an explicit IP/hostname.
-metadata_host="$snapserver_ip"
-if [[ -z "$metadata_host" ]]; then
+# docker-compose.yml maps METADATA_HOST from SNAPSERVER_HOST.
+if [[ -z "$snapserver_ip" ]]; then
     echo "Discovering snapserver via mDNS for display metadata..."
     if command -v avahi-browse &>/dev/null; then
-        metadata_host=$(avahi-browse -rpt _snapcast._tcp 2>/dev/null \
+        snapserver_ip=$(avahi-browse -rpt _snapcast._tcp 2>/dev/null \
             | awk -F';' '/^=/ && $3=="IPv4" {print $8; exit}')
     fi
-    if [[ -n "$metadata_host" ]]; then
-        echo "Discovered snapserver at: $metadata_host"
+    if [[ -n "$snapserver_ip" ]]; then
+        echo "Discovered snapserver at: $snapserver_ip"
     else
         echo "WARNING: Could not discover snapserver via mDNS."
-        echo "  Display will show 'idle' until METADATA_HOST is set in .env"
+        echo "  Display metadata will fall back to localhost."
+        echo "  Set SNAPSERVER_HOST in .env if server is on another host."
     fi
 fi
 
@@ -956,10 +957,6 @@ declare -A env_vars=(
     ["DISPLAY_RESOLUTION"]="$DISPLAY_RESOLUTION"
     ["BAND_MODE"]="$BAND_MODE"
     ["COMPOSE_PROFILES"]="$DOCKER_COMPOSE_PROFILES"
-    # Server metadata connection (cover art + track info served by snapMULTI server)
-    # Resolved via mDNS when no explicit IP and display is active
-    ["METADATA_HOST"]="${metadata_host}"
-    ["METADATA_HTTP_PORT"]="8083"
     # Resource limits (auto-detected)
     ["SNAPCLIENT_MEM_LIMIT"]="$SNAPCLIENT_MEM_LIMIT"
     ["SNAPCLIENT_MEM_RESERVE"]="$SNAPCLIENT_MEM_RESERVE"
@@ -974,6 +971,14 @@ declare -A env_vars=(
 
 for key in "${!env_vars[@]}"; do
     update_env_var "$key" "${env_vars[$key]}"
+done
+
+# Remove deprecated env vars from previous installs
+for deprecated_key in METADATA_HOST METADATA_HTTP_PORT; do
+    if grep -q "^${deprecated_key}=" "$INSTALL_DIR/.env" 2>/dev/null; then
+        sed -i "/^${deprecated_key}=/d" "$INSTALL_DIR/.env"
+        echo "Removed deprecated ${deprecated_key} from .env"
+    fi
 done
 
 echo "Docker configuration ready"

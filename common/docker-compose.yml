@@ -65,8 +65,7 @@ services:
           memory: ${SNAPCLIENT_MEM_RESERVE:-64M}
 
   # Metadata is served by the snapMULTI server (ports 8082 WS, 8083 HTTP).
-  # Set METADATA_HOST in .env to the server's IP (or leave as localhost for
-  # server+player on the same Pi).
+  # fb-display derives METADATA_HOST from SNAPSERVER_HOST (same server).
 
   audio-visualizer:
     image: lollonet/rpi-snapclient-usb-visualizer:latest
@@ -140,8 +139,8 @@ services:
       - DISPLAY_RESOLUTION=${DISPLAY_RESOLUTION:-}
       - VISUALIZER_WS_PORT=8081
       - METADATA_WS_PORT=8082
-      - METADATA_HOST=${METADATA_HOST:-localhost}
-      - METADATA_HTTP_PORT=${METADATA_HTTP_PORT:-8083}
+      - METADATA_HOST=${SNAPSERVER_HOST:-localhost}
+      - METADATA_HTTP_PORT=8083
       - CLIENT_ID=${CLIENT_ID:?CLIENT_ID not set in .env}
     logging: *default-logging
     healthcheck:

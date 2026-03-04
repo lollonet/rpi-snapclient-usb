@@ -48,7 +48,7 @@ Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = st
 - Metadata is served by the snapMULTI server (`metadata-service` container, ports 8082 WS + 8083 HTTP)
 - Clients no longer run their own metadata-service or nginx containers
 - fb-display connects to `METADATA_HOST:8082` (WS) and `METADATA_HOST:8083` (HTTP) for track info and artwork
-- Set `METADATA_HOST` in `.env` to the server's IP/hostname; defaults to `localhost` (for server+player on same Pi)
+- `METADATA_HOST` is derived from `SNAPSERVER_HOST` in docker-compose.yml (same server); defaults to `localhost`
 - fb-display uses local clock between updates for smooth progress bar animation
 
 ### Spectrum Analyzer

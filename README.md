@@ -290,7 +290,7 @@ Expected: `Read-only mode: enabled` with overlay active. Use `ro-mode disable &&
 | Problem | Cause | Fix |
 |---------|-------|-----|
 | Snapserver not found | mDNS blocked | Set `SNAPSERVER=<ip>` in `.env`, or check firewall allows port 1704 |
-| Metadata disconnects | Server restart | fb-display auto-reconnects; check `METADATA_HOST` in `.env` points to server |
+| Metadata disconnects | Server restart | fb-display auto-reconnects; check `SNAPSERVER_HOST` in `.env` points to server |
 
 ### Docker
 
