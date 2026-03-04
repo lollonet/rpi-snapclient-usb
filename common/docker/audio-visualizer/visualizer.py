@@ -212,6 +212,7 @@ async def broadcast(data: str) -> None:
     """Send data to all connected WebSocket clients."""
     global _last_broadcast
     if not clients:
+        _last_broadcast = ""
         return
     if data == _last_broadcast:
         return

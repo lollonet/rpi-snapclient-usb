@@ -67,7 +67,7 @@ class TestAnalyzePcm:
 
     def setup_method(self):
         """Reset global state before each test."""
-        visualizer.prev_db = np.full(visualizer.NUM_BANDS, visualizer.NOISE_FLOOR, dtype=np.float64)
+        visualizer.prev_db = np.full(visualizer.NUM_BANDS, visualizer.NOISE_FLOOR, dtype=np.float32)
         visualizer.audio_ring = np.zeros(visualizer.FFT_SIZE, dtype=np.float32)
 
     def test_silence_returns_noise_floor(self):
