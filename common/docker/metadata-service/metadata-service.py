@@ -111,8 +111,8 @@ class SnapcastMetadataService:
             if sock is not None:
                 try:
                     sock.close()
-                except Exception:
-                    pass
+                except OSError as close_err:
+                    logger.debug(f"Socket close error: {close_err}")
             return None
 
     def _get_snap_socket(self) -> socket.socket | None:
@@ -574,7 +574,7 @@ class SnapcastMetadataService:
 
                 return {"playing": False}
 
-            except Exception as e:
+            except (OSError, socket.error, ValueError, KeyError) as e:
                 logger.error(f"Error getting Snapserver metadata: {e}")
                 self._close_snap_socket()
                 return {"playing": False}
@@ -1213,7 +1213,7 @@ class SnapcastMetadataService:
                         await broadcast_metadata(metadata)
 
                 consecutive_errors = 0
-            except Exception as e:
+            except (OSError, socket.error, ValueError, KeyError, RuntimeError) as e:
                 consecutive_errors += 1
                 if consecutive_errors >= _MAIN_LOOP_MAX_ERRORS:
                     logger.critical(

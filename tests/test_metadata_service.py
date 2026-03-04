@@ -325,6 +325,127 @@ class TestSSRFProtection:
         assert "http://nonexistent.example.com/art.jpg" in svc._failed_downloads
 
 
+class TestSSRFEndToEnd:
+    """End-to-end SSRF protection tests: verify the full chain."""
+
+    def _make_service(self) -> SnapcastMetadataService:
+        return SnapcastMetadataService("10.0.0.1", 1705, "test-client")
+
+    def test_full_chain_blocks_private_ip(self):
+        """scheme validation -> DNS resolution -> IP check -> blocked."""
+        svc = self._make_service()
+        # URL has valid scheme (http) but resolves to private IP
+        with patch("socket.getaddrinfo", return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("192.168.1.1", 0)),
+        ]) as mock_dns, patch("urllib.request.urlopen") as mock_urlopen:
+            result = svc.download_artwork("http://evil.com/art.jpg")
+        # DNS was consulted
+        mock_dns.assert_called_once()
+        # urlopen was NOT called — blocked before download
+        mock_urlopen.assert_not_called()
+        assert result == ""
+        assert "http://evil.com/art.jpg" in svc._failed_downloads
+
+    def test_full_chain_allows_public_ip(self):
+        """scheme validation -> DNS resolution -> IP check -> allowed -> download."""
+        svc = self._make_service()
+        with patch("socket.getaddrinfo", return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0)),
+        ]), patch("urllib.request.urlopen", side_effect=urllib.error.URLError("mock")) as mock_urlopen:
+            result = svc.download_artwork("http://example.com/art.jpg")
+        # urlopen WAS called — public IP allowed through
+        mock_urlopen.assert_called_once()
+        assert result == ""  # fails due to mock, but the point is it got past SSRF
+
+    def test_full_chain_blocks_bad_scheme_before_dns(self):
+        """Bad scheme should be blocked before DNS resolution."""
+        svc = self._make_service()
+        with patch("socket.getaddrinfo") as mock_dns:
+            result = svc.download_artwork("ftp://evil.com/art.jpg")
+        # DNS should NOT have been consulted — blocked at scheme check
+        mock_dns.assert_not_called()
+        assert result == ""
+
+    def test_full_chain_blocks_loopback_despite_valid_scheme(self):
+        """127.0.0.1 blocked even with valid http:// scheme."""
+        svc = self._make_service()
+        with patch("socket.getaddrinfo", return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 0)),
+        ]), patch("urllib.request.urlopen") as mock_urlopen:
+            result = svc.download_artwork("http://localhost/admin")
+        mock_urlopen.assert_not_called()
+        assert result == ""
+
+    def test_full_chain_multiaddr_blocks_if_any_private(self):
+        """If DNS returns multiple addresses, block if any is private."""
+        svc = self._make_service()
+        with patch("socket.getaddrinfo", return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.50", 0)),
+        ]), patch("urllib.request.urlopen") as mock_urlopen:
+            result = svc.download_artwork("http://dual-homed.example.com/art.jpg")
+        # Second address is private (10.x) and not snapserver -> blocked
+        mock_urlopen.assert_not_called()
+        assert result == ""
+
+
+class TestMPDCommandInjection:
+    """Test MPD command injection prevention in fetch_mpd_artwork."""
+
+    def _make_service(self) -> SnapcastMetadataService:
+        svc = SnapcastMetadataService("127.0.0.1", 1705, "test-client")
+        svc.mpd_host = "127.0.0.1"
+        svc.mpd_port = 6600
+        return svc
+
+    def test_rejects_newline_in_path(self):
+        """Newlines in file paths could inject MPD commands."""
+        svc = self._make_service()
+        result = svc.fetch_mpd_artwork('song.flac\ncurrentsong')
+        assert result == ""
+
+    def test_rejects_carriage_return(self):
+        """Carriage returns could inject commands on some MPD versions."""
+        svc = self._make_service()
+        result = svc.fetch_mpd_artwork('song.flac\rcurrentsong')
+        assert result == ""
+
+    def test_rejects_null_byte(self):
+        """Null bytes could truncate paths or confuse parsing."""
+        svc = self._make_service()
+        result = svc.fetch_mpd_artwork('song.flac\x00evil')
+        assert result == ""
+
+    def test_rejects_tab(self):
+        """Tabs are control characters and rejected."""
+        svc = self._make_service()
+        result = svc.fetch_mpd_artwork('song\t.flac')
+        assert result == ""
+
+    def test_quotes_escaped_in_path(self):
+        """Double quotes in paths must be escaped for MPD protocol."""
+        svc = self._make_service()
+        mock_sock = MagicMock(spec=socket.socket)
+        # Simulate connection then no artwork available
+        mock_sock.recv.side_effect = [b"OK MPD 0.23.5\n", b"OK\n"]
+        with patch.object(svc, "_create_socket_connection", return_value=mock_sock):
+            svc.fetch_mpd_artwork('album "deluxe"/song.flac')
+        # Check the command sent to MPD has escaped quotes
+        sent_data = mock_sock.sendall.call_args[0][0]
+        assert b'\\"' in sent_data
+        assert b'"deluxe"' not in sent_data  # raw quotes must not appear
+
+    def test_backslash_escaped_in_path(self):
+        """Backslashes must be escaped for MPD protocol."""
+        svc = self._make_service()
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.side_effect = [b"OK MPD 0.23.5\n", b"OK\n"]
+        with patch.object(svc, "_create_socket_connection", return_value=mock_sock):
+            svc.fetch_mpd_artwork('C:\\Music\\song.flac')
+        sent_data = mock_sock.sendall.call_args[0][0]
+        assert b'\\\\' in sent_data
+
+
 class TestCircuitBreaker:
     """Test circuit breaker constants and exit behavior."""
 

@@ -174,6 +174,7 @@ def get_fb_info() -> tuple[int, int, int, int]:
             stride = int(f.read().strip())
         return int(vw), int(vh), bpp, stride
     except FileNotFoundError:
+        logger.warning("Framebuffer sysfs not found, using defaults %dx%d", WIDTH, HEIGHT)
         return WIDTH, HEIGHT, 32, WIDTH * 4
 
 
@@ -645,7 +646,7 @@ def render_base_frame() -> Image.Image:
                 )
                 bg.paste(resized, (L["art_x"], L["art_y"]))
             except Exception as e:
-                logger.debug(f"Failed to load standby image: {e}")
+                logger.info(f"Failed to load standby image: {e}")
 
     # Right top: track info (right-aligned, font shrinks to fit)
     text_right = L["right_x"] + L["right_w"]
@@ -1309,7 +1310,7 @@ async def render_loop() -> None:
             if sleep_time > 0:
                 await asyncio.sleep(sleep_time)
             consecutive_errors = 0
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             consecutive_errors += 1
             if consecutive_errors >= _RENDER_MAX_ERRORS:
                 logger.critical(

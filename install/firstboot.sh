@@ -41,9 +41,9 @@ log_and_tty "========================================="
 log_and_tty "Copying files to $INSTALL_DIR ..."
 mkdir -p "$INSTALL_DIR"
 # Copy all files including dotfiles (.env.example)
-cp -r "$SNAP_BOOT/"* "$INSTALL_DIR/" 2>/dev/null || true
+cp -r "$SNAP_BOOT/"* "$INSTALL_DIR/"
 # .??* matches dotfiles without matching . and ..
-cp -r "$SNAP_BOOT/".??* "$INSTALL_DIR/" 2>/dev/null || true
+cp -r "$SNAP_BOOT/".??* "$INSTALL_DIR/" 2>/dev/null || true  # dotfiles may not exist
 
 # Find config file (boot partition or install dir)
 CONFIG=""
