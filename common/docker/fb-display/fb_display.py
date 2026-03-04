@@ -107,14 +107,10 @@ def generate_idle_wave() -> np.ndarray:
     if idle_animation_phase > 2 * np.pi:
         idle_animation_phase -= 2 * np.pi
 
-    # Create a gentle wave that travels across the bars
-    idle_vals = np.zeros(NUM_BANDS, dtype=np.float64)
-    for i in range(NUM_BANDS):
-        # Slow wave with phase offset per bar
-        wave = np.sin(idle_animation_phase + i * 0.3) * 0.5 + 0.5
-        # Scale to low levels (just above display floor for subtle breathing)
-        idle_vals[i] = DISPLAY_FLOOR + 4 + wave * 6
-    return idle_vals
+    # Vectorized wave: phase offset per bar, scaled to low levels
+    offsets = idle_animation_phase + np.arange(NUM_BANDS) * 0.3
+    wave = np.sin(offsets) * 0.5 + 0.5
+    return DISPLAY_FLOOR + 4 + wave * 6
 
 
 # Metadata state
@@ -143,6 +139,7 @@ base_frame: Image.Image | None = None
 base_frame_version: int = -1
 spectrum_bg_np: np.ndarray | None = None  # numpy RGB array for alpha blending
 spectrum_bg_fb: np.ndarray | None = None  # native FB format (RGB565 or BGRA32)
+_spectrum_work_buf: np.ndarray | None = None  # pre-allocated render buffer (avoids copy per frame)
 
 # Cached clock overlay (re-rendered every second)
 _clock_cache: dict = {"time_str": None, "fb": None, "width": 0, "height": 0, "dirty": True}
@@ -459,10 +456,13 @@ def _rgb_to_fb_native(rgb_array: np.ndarray) -> np.ndarray:
     Returns uint16 (h,w) for 16bpp or uint8 (h,w,4) for 32bpp.
     """
     if fb_bpp == 16:
-        r5 = (rgb_array[:, :, 0] >> 3).astype(np.uint16)
-        g6 = (rgb_array[:, :, 1] >> 2).astype(np.uint16)
-        b5 = (rgb_array[:, :, 2] >> 3).astype(np.uint16)
-        return (r5 << 11) | (g6 << 5) | b5
+        # Single-expression conversion: cast to uint16 once, then shift+or
+        # Avoids 3 separate intermediate uint16 arrays
+        return (
+            (rgb_array[:, :, 0].astype(np.uint16) & 0xF8) << 8
+            | (rgb_array[:, :, 1].astype(np.uint16) & 0xFC) << 3
+            | rgb_array[:, :, 2].astype(np.uint16) >> 3
+        )
     else:
         h, w = rgb_array.shape[:2]
         bgra = np.empty((h, w, 4), dtype=np.uint8)
@@ -473,11 +473,15 @@ def _rgb_to_fb_native(rgb_array: np.ndarray) -> np.ndarray:
         return bgra
 
 
+_scale_idx_cache: dict[tuple, tuple] = {}
+
+
 def _scale_to_fb(pixels: np.ndarray) -> np.ndarray:
     """Scale native-format pixel array from render to FB resolution.
 
     Uses nearest-neighbor interpolation via numpy fancy indexing.
     Works for both 2D (uint16, 16bpp) and 3D (uint8 h×w×4, 32bpp) arrays.
+    Caches index arrays for repeated same-size calls.
     """
     if WIDTH == FB_WIDTH and HEIGHT == FB_HEIGHT:
         return pixels
@@ -486,8 +490,12 @@ def _scale_to_fb(pixels: np.ndarray) -> np.ndarray:
     new_h = round(h * FB_HEIGHT / HEIGHT)
     if new_w == w and new_h == h:
         return pixels
-    row_idx = (np.arange(new_h) * h / new_h).astype(int)
-    col_idx = (np.arange(new_w) * w / new_w).astype(int)
+    key = (h, w, new_h, new_w)
+    if key not in _scale_idx_cache:
+        row_idx = (np.arange(new_h) * h / new_h).astype(int)
+        col_idx = (np.arange(new_w) * w / new_w).astype(int)
+        _scale_idx_cache[key] = (row_idx, col_idx)
+    row_idx, col_idx = _scale_idx_cache[key]
     return pixels[row_idx[:, None], col_idx[None, :]]
 
 
@@ -1008,7 +1016,7 @@ def render_spectrum() -> np.ndarray:
     """Render spectrum bars in native FB format (RGB565 or BGRA32).
 
     Works directly in framebuffer pixel format to avoid per-frame RGB→RGB565
-    conversion (~10ms saved on Pi 4).
+    conversion overhead.
     """
     global display_bands, peak_bands, peak_time
 
@@ -1018,13 +1026,17 @@ def render_spectrum() -> np.ndarray:
 
 def _render_spectrum_locked() -> np.ndarray:
     """Inner render, called with _band_lock held."""
-    global display_bands, peak_bands, peak_time
+    global display_bands, peak_bands, peak_time, _spectrum_work_buf
 
     L = layout
     now = time.monotonic()
 
-    # Start from clean spectrum background in native FB format
-    buf = spectrum_bg_fb.copy()
+    # Restore spectrum background into pre-allocated buffer (avoids .copy() allocation)
+    if _spectrum_work_buf is None or _spectrum_work_buf.shape != spectrum_bg_fb.shape:
+        _spectrum_work_buf = spectrum_bg_fb.copy()
+    else:
+        _spectrum_work_buf[:] = spectrum_bg_fb
+    buf = _spectrum_work_buf
 
     pad = L["pad"]
     bar_area_h = L["bar_area_h"]
@@ -1219,6 +1231,33 @@ def is_spectrum_active() -> bool:
 _RENDER_MAX_ERRORS = 50
 
 
+def _render_and_write_frame(is_playing: bool) -> None:
+    """Render spectrum + clock + progress and write all to FB in one call.
+
+    Batches all rendering into a single executor call to avoid
+    multiple thread switches per frame.
+    """
+    # Spectrum — always rendered
+    spec_fb = render_spectrum()
+    write_region_to_fb_fast(spec_fb, layout["right_x"], layout["spec_y"])
+
+    # Clock — rendered every call but only written when dirty (once/second)
+    clock_result = render_clock()
+    if clock_result and _clock_cache["dirty"]:
+        clock_fb, clock_w, clock_h = clock_result
+        clock_x = (WIDTH - clock_w) // 2
+        write_region_to_fb_fast(clock_fb, clock_x, layout["clock_y"])
+        _clock_cache["dirty"] = False
+
+    # Progress bar — only for file playback, written when dirty
+    if is_playing:
+        progress_result = render_progress_overlay()
+        if progress_result and _progress_cache["dirty"]:
+            prog_fb, prog_w, prog_h, prog_x, prog_y = progress_result
+            write_region_to_fb_fast(prog_fb, prog_x, prog_y)
+            _progress_cache["dirty"] = False
+
+
 async def render_loop() -> None:
     """Main render loop with adaptive FPS."""
     global base_frame, base_frame_version, spectrum_bg_np
@@ -1269,41 +1308,11 @@ async def render_loop() -> None:
                 with _band_lock:
                     bands[:] = generate_idle_wave()
 
-            # Render spectrum as numpy array and write directly to FB
-            spec_rgb = await asyncio.get_event_loop().run_in_executor(
-                None, render_spectrum
-            )
+            # Batch all rendering + FB writes into a single executor call
+            # to avoid 5+ thread switches per frame
             await asyncio.get_event_loop().run_in_executor(
-                None, write_region_to_fb_fast,
-                spec_rgb, layout["right_x"], layout["spec_y"],
+                None, _render_and_write_frame, is_playing,
             )
-
-            # Render clock (updates once per second via cache; skip FB write if unchanged)
-            clock_result = await asyncio.get_event_loop().run_in_executor(
-                None, render_clock
-            )
-            if clock_result and _clock_cache["dirty"]:
-                clock_fb, clock_w, clock_h = clock_result
-                clock_x = (WIDTH - clock_w) // 2
-                clock_y = layout["clock_y"]
-                await asyncio.get_event_loop().run_in_executor(
-                    None, write_region_to_fb_fast,
-                    clock_fb, clock_x, clock_y,
-                )
-                _clock_cache["dirty"] = False
-
-            # Render progress bar overlay (updates every second, only for file playback)
-            if is_playing:
-                progress_result = await asyncio.get_event_loop().run_in_executor(
-                    None, render_progress_overlay
-                )
-                if progress_result and _progress_cache["dirty"]:
-                    prog_fb, prog_w, prog_h, prog_x, prog_y = progress_result
-                    await asyncio.get_event_loop().run_in_executor(
-                        None, write_region_to_fb_fast,
-                        prog_fb, prog_x, prog_y,
-                    )
-                    _progress_cache["dirty"] = False
 
             elapsed = time.monotonic() - start
             sleep_time = (1.0 / fps) - elapsed
