@@ -130,6 +130,7 @@ fb_fd = None
 fb_mmap = None
 fb_stride = 0
 fb_bpp = 32
+fb_big_endian = (sys.byteorder == "big")
 
 # Actual framebuffer dimensions (may differ from render WIDTH/HEIGHT)
 FB_WIDTH, FB_HEIGHT = WIDTH, HEIGHT
@@ -435,6 +436,7 @@ def compute_layout() -> dict:
     clock_y = bottom_y + bottom_pad
 
     return {
+        "start_x": start_x, "container_w": container_w,
         "art_x": art_x, "art_y": art_y, "art_size": art_size,
         "right_x": right_x, "right_w": right_w,
         "right_y": right_y, "right_h": right_h,
@@ -463,12 +465,20 @@ def _rgb_to_fb_native(rgb_array: np.ndarray) -> np.ndarray:
         )
     else:
         h, w = rgb_array.shape[:2]
-        bgra = np.empty((h, w, 4), dtype=np.uint8)
-        bgra[:, :, 0] = rgb_array[:, :, 2]
-        bgra[:, :, 1] = rgb_array[:, :, 1]
-        bgra[:, :, 2] = rgb_array[:, :, 0]
-        bgra[:, :, 3] = 255
-        return bgra
+        out = np.empty((h, w, 4), dtype=np.uint8)
+        if fb_big_endian:
+            # Big-endian: bytes in memory [X][R][G][B] (XRGB)
+            out[:, :, 0] = 255
+            out[:, :, 1] = rgb_array[:, :, 0]
+            out[:, :, 2] = rgb_array[:, :, 1]
+            out[:, :, 3] = rgb_array[:, :, 2]
+        else:
+            # Little-endian: bytes in memory [B][G][R][X] (BGRA)
+            out[:, :, 0] = rgb_array[:, :, 2]
+            out[:, :, 1] = rgb_array[:, :, 1]
+            out[:, :, 2] = rgb_array[:, :, 0]
+            out[:, :, 3] = 255
+        return out
 
 
 _scale_idx_cache: dict[tuple, tuple] = {}
@@ -501,7 +511,7 @@ def _rgb_tuple_to_fb(r: int, g: int, b: int) -> int | tuple:
     """Convert a single RGB tuple to native FB pixel value."""
     if fb_bpp == 16:
         return int(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3))
-    return (b, g, r, 255)
+    return (255, r, g, b) if fb_big_endian else (b, g, r, 255)
 
 
 # Pre-computed bar/peak colors in native FB format (populated after FB init)
@@ -937,8 +947,8 @@ def render_progress_overlay() -> tuple[np.ndarray, int, int, int, int] | None:
     duration_w = get_text_width(duration_text)
     text_h = time_font.getbbox(elapsed_text)[3] - time_font.getbbox(elapsed_text)[1]
 
-    # Layout calculations (fill the full info panel width)
-    max_width = L["right_w"]
+    # Layout calculations (span full container width at bottom)
+    max_width = L["container_w"]
     bar_margin = 16
     total_bar_width = max_width - 8
     bar_width = total_bar_width - elapsed_w - duration_w - (bar_margin * 2)
@@ -951,7 +961,7 @@ def render_progress_overlay() -> tuple[np.ndarray, int, int, int, int] | None:
     img_h = text_h + 12
 
     # Create image
-    img = Image.new("RGB", (img_w, img_h), (10, 10, 15))  # Match spectrum bg
+    img = Image.new("RGB", (img_w, img_h), BG_BOTTOM)  # Match bottom bar bg
     draw = ImageDraw.Draw(img)
 
     # Positions relative to image
@@ -989,11 +999,9 @@ def render_progress_overlay() -> tuple[np.ndarray, int, int, int, int] | None:
     rgb = np.array(img)
     fb_pixels = _rgb_to_fb_native(rgb)
 
-    # Calculate position: right-aligned, below info area (above spectrum)
-    text_right = L["right_x"] + L["right_w"]
-    overlay_x = text_right - img_w
-    # Position just above spectrum area
-    overlay_y = L["spec_y"] - img_h - 4
+    # Calculate position: centered, just above bottom bar (above clock)
+    overlay_x = L["start_x"] + (L["container_w"] - img_w) // 2
+    overlay_y = L["bottom_y"] - img_h - 20
 
     # Update cache
     _progress_cache.update({
