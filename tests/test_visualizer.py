@@ -200,48 +200,45 @@ class TestBroadcast:
         """First broadcast should send to client."""
         client = AsyncMock()
         visualizer.clients.add(client)
-        asyncio.get_event_loop().run_until_complete(visualizer.broadcast("data1"))
+        asyncio.run(visualizer.broadcast("data1"))
         client.send.assert_awaited_once_with("data1")
 
     def test_dedup_skips_same_data(self):
         """Duplicate data should not be sent again."""
         client = AsyncMock()
         visualizer.clients.add(client)
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(visualizer.broadcast("data1"))
-        loop.run_until_complete(visualizer.broadcast("data1"))
+        asyncio.run(visualizer.broadcast("data1"))
+        asyncio.run(visualizer.broadcast("data1"))
         client.send.assert_awaited_once_with("data1")
 
     def test_different_data_sends(self):
         """Different data should be sent."""
         client = AsyncMock()
         visualizer.clients.add(client)
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(visualizer.broadcast("data1"))
-        loop.run_until_complete(visualizer.broadcast("data2"))
+        asyncio.run(visualizer.broadcast("data1"))
+        asyncio.run(visualizer.broadcast("data2"))
         assert client.send.await_count == 2
 
     def test_no_clients_resets_cache(self):
         """Empty client set should reset _last_broadcast."""
         visualizer._last_broadcast = "stale"
-        asyncio.get_event_loop().run_until_complete(visualizer.broadcast("data1"))
+        asyncio.run(visualizer.broadcast("data1"))
         assert visualizer._last_broadcast == ""
 
     def test_reconnect_after_reset_receives_data(self):
         """Client connecting after cache reset should receive current frame."""
         client = AsyncMock()
         visualizer.clients.add(client)
-        loop = asyncio.get_event_loop()
         # Send data, then remove client (simulates disconnect)
-        loop.run_until_complete(visualizer.broadcast("data1"))
+        asyncio.run(visualizer.broadcast("data1"))
         visualizer.clients.clear()
         # Trigger reset
-        loop.run_until_complete(visualizer.broadcast("data1"))
+        asyncio.run(visualizer.broadcast("data1"))
         assert visualizer._last_broadcast == ""
         # Reconnect — same data should send
         client2 = AsyncMock()
         visualizer.clients.add(client2)
-        loop.run_until_complete(visualizer.broadcast("data1"))
+        asyncio.run(visualizer.broadcast("data1"))
         client2.send.assert_awaited_once_with("data1")
 
 

@@ -74,6 +74,8 @@ WS_PORT = int(os.environ.get("VISUALIZER_WS_PORT", "8081"))
 # Smoothing: fast attack, slow decay (in dB domain)
 ATTACK_COEFF = np.float32(0.3)  # lower = faster attack (0 = instant)
 DECAY_COEFF = np.float32(0.9)   # higher = slower decay
+_ATTACK_FACTOR = np.float32(1.0) - ATTACK_COEFF  # pre-computed to stay float32
+_DECAY_FACTOR = np.float32(1.0) - DECAY_COEFF
 
 clients: set = set()
 prev_db: np.ndarray = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float32)
@@ -194,7 +196,7 @@ def analyze_pcm(new_samples: np.ndarray) -> str | None:
 
     # In-place asymmetric smoothing — avoids intermediate array allocation
     diff = band_db - prev_db
-    prev_db += diff * np.where(diff > 0, 1.0 - ATTACK_COEFF, 1.0 - DECAY_COEFF)
+    prev_db += diff * np.where(diff > 0, _ATTACK_FACTOR, _DECAY_FACTOR)
 
     return _format_db(prev_db)
 
@@ -205,6 +207,8 @@ def _format_db(db_vals: np.ndarray) -> str:
     return ";".join(str(v) for v in rounded)
 
 
+# Dedup cache: skips sending identical consecutive frames (e.g. silence).
+# A late-joining client may miss one frame (~33ms) until data changes.
 _last_broadcast: str = ""
 
 
