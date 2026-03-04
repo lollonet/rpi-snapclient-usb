@@ -51,14 +51,22 @@ case "${1:-}" in
     enable)
         check_root "enable"
         echo "Enabling read-only mode..."
-        raspi-config nonint do_overlayfs 0
+        if ! raspi-config nonint do_overlayfs 0; then
+            echo "ERROR: Failed to enable read-only mode."
+            echo "Check that raspi-config is installed and has proper permissions."
+            exit 1
+        fi
         echo "Read-only mode enabled. Reboot to activate:"
         echo "  sudo reboot"
         ;;
     disable)
         check_root "disable"
         echo "Disabling read-only mode..."
-        raspi-config nonint do_overlayfs 1
+        if ! raspi-config nonint do_overlayfs 1; then
+            echo "ERROR: Failed to disable read-only mode."
+            echo "Check that raspi-config is installed and has proper permissions."
+            exit 1
+        fi
         echo "Read-only mode disabled. Reboot to activate:"
         echo "  sudo reboot"
         ;;

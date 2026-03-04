@@ -31,7 +31,7 @@ FRAME_SIZE = CHANNELS * SAMPLE_WIDTH
 
 # FFT parameters
 FFT_SIZE = 8192  # ~186ms window at 44.1kHz — better frequency resolution for low bands (5.4Hz/bin)
-HOP_SIZE = 1600  # ~36ms hop = 28 FPS update rate
+HOP_SIZE = 1600  # ~36ms hop ≈ 28 FPS (below 30 FPS target for processing headroom)
 TARGET_FPS = 30
 
 # Band mode: "half-octave" (21 bands) or "third-octave" (31 bands)
@@ -78,6 +78,12 @@ DECAY_COEFF = 0.9   # higher = slower decay
 clients: set = set()
 prev_db: np.ndarray = np.full(NUM_BANDS, NOISE_FLOOR, dtype=np.float64)
 audio_ring: np.ndarray = np.zeros(FFT_SIZE, dtype=np.float32)
+_ring_pos: int = 0  # circular write position — avoids np.roll copy
+
+# Pre-allocated buffers to avoid per-frame allocation
+_cumsum_buf: np.ndarray = np.zeros(FFT_SIZE // 2 + 2, dtype=np.float64)
+_ordered_buf: np.ndarray = np.zeros(FFT_SIZE, dtype=np.float32)
+_dc_estimate: float = 0.0  # rolling DC offset estimate
 
 
 def compute_band_bins() -> list[tuple[int, int]]:
@@ -115,34 +121,50 @@ _BAND_HI = np.array([hi for _, hi in BAND_BINS], dtype=np.intp)
 def analyze_pcm(new_samples: np.ndarray) -> str | None:
     """Compute octave-band levels in dBFS from PCM samples.
 
-    Uses overlap-add: new_samples are appended to a ring buffer,
+    Uses overlap-add: new_samples are appended to a circular ring buffer,
     and FFT is computed over the full FFT_SIZE window.
     """
-    global prev_db, audio_ring
+    global prev_db, audio_ring, _ring_pos, _dc_estimate
 
     # Check for silence on NEW samples (not ring buffer — which has old data)
-    # Threshold 1 LSB RMS ≈ -90 dBFS — only pure digital silence
+    # Threshold ~-70 dBFS — practical noise floor to skip FFT on near-silence
     rms_new = np.sqrt(np.mean(new_samples ** 2))
-    if rms_new < 1.0:
-        audio_ring[:] = 0.0  # clear ring buffer too
+    if rms_new < 30.0:
+        audio_ring[:] = 0.0
+        _ring_pos = 0
+        _dc_estimate = 0.0
         prev_db[:] = NOISE_FLOOR
-        return ";".join(str(round(v, 1)) for v in prev_db)
+        return _format_db(prev_db)
 
-    # Shift ring buffer and append new samples
+    # Circular ring buffer — write new samples without copying the whole array
     n = len(new_samples)
     if n >= FFT_SIZE:
         audio_ring[:] = new_samples[-FFT_SIZE:]
+        _ring_pos = 0
     else:
-        audio_ring = np.roll(audio_ring, -n)
-        audio_ring[-n:] = new_samples
+        end = _ring_pos + n
+        if end <= FFT_SIZE:
+            audio_ring[_ring_pos:end] = new_samples
+        else:
+            split = FFT_SIZE - _ring_pos
+            audio_ring[_ring_pos:] = new_samples[:split]
+            audio_ring[:n - split] = new_samples[split:]
+        _ring_pos = end % FFT_SIZE
+
+    # Get ordered view from circular buffer into pre-allocated buffer
+    if _ring_pos == 0:
+        ordered = audio_ring
+    else:
+        _ordered_buf[:FFT_SIZE - _ring_pos] = audio_ring[_ring_pos:]
+        _ordered_buf[FFT_SIZE - _ring_pos:] = audio_ring[:_ring_pos]
+        ordered = _ordered_buf
 
     # Normalize to [-1.0, 1.0] (0 dBFS = 32768)
-    normalized = audio_ring / 32768.0
+    normalized = ordered / 32768.0
 
-    # Remove DC offset — prevents energy leaking into lowest bands
-    # This is critical: microphone/ADC offsets and codec artifacts create
-    # DC components that would otherwise show as false 20 Hz activity
-    normalized = normalized - np.mean(normalized)
+    # Rolling DC offset — avoids full-array np.mean() every frame
+    _dc_estimate = _dc_estimate * 0.95 + np.mean(new_samples / 32768.0) * 0.05
+    normalized = normalized - _dc_estimate
 
     # Apply window
     windowed = normalized * WINDOW
@@ -150,19 +172,17 @@ def analyze_pcm(new_samples: np.ndarray) -> str | None:
     # FFT — power spectrum (V²)
     spectrum = np.abs(np.fft.rfft(windowed)) ** 2
 
-    # Apply window power correction
-    spectrum *= WINDOW_POWER_CORR
+    # Apply window power correction and dBFS scaling in one step
+    spectrum *= (WINDOW_POWER_CORR / (FFT_SIZE * FFT_SIZE))
 
-    # Scale to dBFS: divide by N² so a full-scale sine ≈ 0 dBFS
-    spectrum /= FFT_SIZE * FFT_SIZE
-
-    # Band power summation using cumulative sum for O(1) per-band lookup
+    # Band power summation using pre-allocated cumsum buffer
     spec_len = len(spectrum)
     edges = np.minimum(_BAND_EDGES, spec_len)
     hi = np.minimum(_BAND_HI, spec_len)
 
-    cumsum = np.concatenate(([0.0], np.cumsum(spectrum)))
-    band_power = np.maximum(cumsum[hi] - cumsum[edges], 0.0)
+    _cumsum_buf[0] = 0.0
+    np.cumsum(spectrum, out=_cumsum_buf[1:spec_len + 1])
+    band_power = np.maximum(_cumsum_buf[hi] - _cumsum_buf[edges], 0.0)
 
     # Convert to dBFS (no normalization — bars reflect actual volume)
     with np.errstate(divide="ignore"):
@@ -172,13 +192,16 @@ def analyze_pcm(new_samples: np.ndarray) -> str | None:
             NOISE_FLOOR,
         )
 
-    # Vectorized asymmetric smoothing
-    attack_mask = band_db > prev_db
-    alpha = np.where(attack_mask, 1.0 - ATTACK_COEFF, 1.0 - DECAY_COEFF)
-    prev_db += (band_db - prev_db) * alpha
+    # In-place asymmetric smoothing — avoids intermediate array allocation
+    diff = band_db - prev_db
+    prev_db += diff * np.where(diff > 0, 1.0 - ATTACK_COEFF, 1.0 - DECAY_COEFF)
 
-    # Format: dBFS values rounded to 1 decimal
-    rounded = np.round(prev_db, 1)
+    return _format_db(prev_db)
+
+
+def _format_db(db_vals: np.ndarray) -> str:
+    """Format dBFS values as semicolon-separated string."""
+    rounded = np.round(db_vals, 1)
     return ";".join(str(v) for v in rounded)
 
 
@@ -190,7 +213,8 @@ async def broadcast(data: str) -> None:
     for client in clients:
         try:
             await client.send(data)
-        except Exception:
+        except (OSError, RuntimeError, websockets.exceptions.ConnectionClosed) as e:
+            logger.debug(f"WebSocket send failed: {e}")
             dead.add(client)
     clients.difference_update(dead)
 
@@ -317,6 +341,7 @@ async def read_loopback_and_broadcast() -> None:
                     if not data:
                         logger.warning("ALSA read failed, reopening...")
                         prev_db[:] = NOISE_FLOOR
+                        _ring_pos = 0
                         zero_msg = ";".join(
                             str(NOISE_FLOOR) for _ in range(NUM_BANDS)
                         )

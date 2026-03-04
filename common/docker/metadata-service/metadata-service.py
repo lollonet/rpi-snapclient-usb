@@ -111,8 +111,8 @@ class SnapcastMetadataService:
             if sock is not None:
                 try:
                     sock.close()
-                except Exception:
-                    pass
+                except OSError as close_err:
+                    logger.debug(f"Socket close error: {close_err}")
             return None
 
     def _get_snap_socket(self) -> socket.socket | None:
@@ -175,7 +175,7 @@ class SnapcastMetadataService:
             if validate and not greeting.startswith(b"OK MPD"):
                 return False
             return True
-        except (socket.error, socket.timeout):
+        except OSError:
             return False
 
     @staticmethod
@@ -429,7 +429,7 @@ class SnapcastMetadataService:
 
             return ""
 
-        except (socket.error, socket.timeout, OSError) as e:
+        except OSError as e:
             logger.warning(f"MPD readpicture network/IO failed: {e}")
             return ""
         except Exception as e:
@@ -452,7 +452,7 @@ class SnapcastMetadataService:
         }
         try:
             sock.sendall((json.dumps(request) + "\r\n").encode())
-        except (OSError, socket.error) as e:
+        except OSError as e:
             logger.warning(f"Failed to send RPC request: {e}")
             return None
 
@@ -481,10 +481,10 @@ class SnapcastMetadataService:
                 if len(self._snap_buffer) > 1_000_000:  # 1 MB guard
                     logger.error("Snapserver buffer exceeded 1 MB — dropping connection")
                     return None
-            except socket.timeout:
+            except TimeoutError:
                 logger.warning("Snapserver socket timeout - connection stale")
                 return None
-            except (OSError, socket.error) as e:
+            except OSError as e:
                 logger.warning(f"Snapserver socket error: {e}")
                 return None
 
@@ -574,7 +574,7 @@ class SnapcastMetadataService:
 
                 return {"playing": False}
 
-            except Exception as e:
+            except (OSError, ValueError, KeyError) as e:
                 logger.error(f"Error getting Snapserver metadata: {e}")
                 self._close_snap_socket()
                 return {"playing": False}
@@ -720,7 +720,7 @@ class SnapcastMetadataService:
                 logger.debug(f"Unknown control command: {cmd_type}")
         except json.JSONDecodeError as e:
             logger.warning(f"Invalid control command JSON: {e}")
-        except (socket.error, OSError) as e:
+        except OSError as e:
             logger.warning(f"Control command network error: {e}")
         except Exception as e:
             logger.error(f"Unexpected control command error: {e}")
@@ -1213,7 +1213,7 @@ class SnapcastMetadataService:
                         await broadcast_metadata(metadata)
 
                 consecutive_errors = 0
-            except Exception as e:
+            except (OSError, ValueError, KeyError, RuntimeError) as e:
                 consecutive_errors += 1
                 if consecutive_errors >= _MAIN_LOOP_MAX_ERRORS:
                     logger.critical(
