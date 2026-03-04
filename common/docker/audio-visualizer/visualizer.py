@@ -217,7 +217,7 @@ async def broadcast(data: str) -> None:
     for client in clients:
         try:
             await client.send(data)
-        except (OSError, RuntimeError) as e:
+        except (OSError, RuntimeError, websockets.exceptions.ConnectionClosed) as e:
             logger.debug(f"WebSocket send failed: {e}")
             dead.add(client)
     clients.difference_update(dead)
