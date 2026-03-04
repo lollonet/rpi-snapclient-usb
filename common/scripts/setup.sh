@@ -1046,18 +1046,22 @@ echo ""
 progress 8 "Creating systemd service..."
 log_progress "Creating snapclient.service..."
 
+# Install mDNS discovery script (runs before Docker services start)
+install -m 755 "$COMMON_DIR/scripts/discover-server.sh" /usr/local/bin/snapclient-discover
+
 # Docker Compose profiles are handled via COMPOSE_PROFILES in .env
 cat > /etc/systemd/system/snapclient.service << EOF
 [Unit]
 Description=Snapclient Docker Compose Service
-Requires=docker.service
-After=docker.service network-online.target
+Requires=docker.service avahi-daemon.service
+After=docker.service avahi-daemon.service network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=${INSTALL_DIR}
+ExecStartPre=/usr/local/bin/snapclient-discover
 ExecStart=/usr/bin/docker compose up -d
 ExecStop=/usr/bin/docker compose down
 TimeoutStartSec=0
