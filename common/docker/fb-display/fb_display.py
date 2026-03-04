@@ -450,18 +450,22 @@ def compute_layout() -> dict:
     }
 
 
+# Pre-computed RGB565 lookup tables — integer indexing avoids per-pixel astype + bitwise
+_R_LUT = (np.arange(256, dtype=np.uint16) & 0xF8) << 8
+_G_LUT = (np.arange(256, dtype=np.uint16) & 0xFC) << 3
+_B_LUT = np.arange(256, dtype=np.uint16) >> 3
+
+
 def _rgb_to_fb_native(rgb_array: np.ndarray) -> np.ndarray:
     """Convert RGB numpy array to native FB pixel format array.
 
     Returns uint16 (h,w) for 16bpp or uint8 (h,w,4) for 32bpp.
     """
     if fb_bpp == 16:
-        # Single-expression conversion: cast to uint16 once, then shift+or
-        # Avoids 3 separate intermediate uint16 arrays
         return (
-            (rgb_array[:, :, 0].astype(np.uint16) & 0xF8) << 8
-            | (rgb_array[:, :, 1].astype(np.uint16) & 0xFC) << 3
-            | rgb_array[:, :, 2].astype(np.uint16) >> 3
+            _R_LUT[rgb_array[:, :, 0]]
+            | _G_LUT[rgb_array[:, :, 1]]
+            | _B_LUT[rgb_array[:, :, 2]]
         )
     else:
         h, w = rgb_array.shape[:2]
