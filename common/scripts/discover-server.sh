@@ -14,9 +14,9 @@ fi
 
 # Discover via mDNS
 if command -v avahi-browse &>/dev/null; then
-    host=$(avahi-browse -rpt _snapcast._tcp 2>/dev/null \
+    host=$(timeout 10 avahi-browse -rpt _snapcast._tcp 2>/dev/null \
         | awk -F';' '/^=/ && $3=="IPv4" {print $8; exit}')
-    if [[ -n "$host" ]]; then
+    if [[ -n "$host" ]] && [[ "$host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         sed -i "s|^SNAPSERVER_HOST=.*|SNAPSERVER_HOST=${host}|" "$ENV_FILE"
         echo "snapclient-discover: found snapserver at $host"
         exit 0
