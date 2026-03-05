@@ -240,8 +240,9 @@ class TestRgbToFbNative:
         assert result.dtype == np.uint8
 
     def test_32bpp_bgra_swap(self):
-        """Red pixel in RGB should become blue channel in BGRA."""
+        """Red pixel in RGB should become BGRA on little-endian."""
         fb_display.fb_bpp = 32
+        fb_display.fb_big_endian = False
         rgb = np.zeros((1, 1, 3), dtype=np.uint8)
         rgb[0, 0] = [255, 0, 0]  # Pure red
         result = fb_display._rgb_to_fb_native(rgb)
@@ -249,6 +250,18 @@ class TestRgbToFbNative:
         assert result[0, 0, 1] == 0    # G
         assert result[0, 0, 2] == 255  # R
         assert result[0, 0, 3] == 255  # A
+
+    def test_32bpp_xrgb_swap(self):
+        """Red pixel in RGB should become XRGB on big-endian."""
+        fb_display.fb_bpp = 32
+        fb_display.fb_big_endian = True
+        rgb = np.zeros((1, 1, 3), dtype=np.uint8)
+        rgb[0, 0] = [255, 0, 0]  # Pure red
+        result = fb_display._rgb_to_fb_native(rgb)
+        assert result[0, 0, 0] == 255  # X (pad)
+        assert result[0, 0, 1] == 255  # R
+        assert result[0, 0, 2] == 0    # G
+        assert result[0, 0, 3] == 0    # B
 
     def test_16bpp_rgb565_shape(self):
         fb_display.fb_bpp = 16
@@ -284,8 +297,15 @@ class TestRgbTupleToFb:
 
     def test_32bpp_returns_bgra_tuple(self):
         fb_display.fb_bpp = 32
+        fb_display.fb_big_endian = False
         result = fb_display._rgb_tuple_to_fb(255, 128, 64)
         assert result == (64, 128, 255, 255)
+
+    def test_32bpp_returns_xrgb_tuple(self):
+        fb_display.fb_bpp = 32
+        fb_display.fb_big_endian = True
+        result = fb_display._rgb_tuple_to_fb(255, 128, 64)
+        assert result == (255, 255, 128, 64)
 
     def test_16bpp_returns_int(self):
         fb_display.fb_bpp = 16
@@ -372,6 +392,7 @@ class TestComputeLayout:
             "art_x", "art_y", "art_size",
             "right_x", "right_w", "spec_y", "spec_h",
             "bar_w", "bar_gap", "pad",
+            "start_x", "container_w", "bottom_y",
         ]
         for key in required_keys:
             assert key in L, f"Missing layout key: {key}"

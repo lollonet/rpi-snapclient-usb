@@ -258,6 +258,7 @@ def open_alsa_capture():
     hw_p = ctypes.POINTER(snd_pcm_hw_params_t)
 
     SND_PCM_STREAM_CAPTURE = 1
+    # Always use S16_LE — matches loopback format regardless of platform endianness
     SND_PCM_FORMAT_S16_LE = 2
     SND_PCM_ACCESS_RW_INTERLEAVED = 3
 
@@ -361,7 +362,8 @@ async def read_loopback_and_broadcast() -> None:
                         break
 
                     # Parse 16-bit stereo PCM, mix to mono
-                    samples = np.frombuffer(data, dtype=np.int16).astype(
+                    # Explicit little-endian: loopback always uses S16_LE
+                    samples = np.frombuffer(data, dtype="<i2").astype(
                         np.float32
                     )
                     if CHANNELS == 2 and len(samples) >= 2:
