@@ -65,7 +65,7 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 - ⚡ **Zero-Touch Install**: Flash SD, power on, auto-detects HAT with visual progress display
 - 🐳 **Docker-based**: Pre-built images for easy deployment
 - 🔄 **Auto-start**: Systemd services for automatic startup
-- 🔒 **Security Hardened**: Input validation, SSRF protection, granular capabilities
+- 🔒 **Security Hardened**: Input validation, non-root containers, granular capabilities
 - 💾 **Read-Only Filesystem**: SD card protection with overlayfs, enabled by default (preserves SD card lifespan)
 - 📡 **WebSocket Metadata**: Real-time track info push to display (no polling from clients)
 - 📊 **Resource Limits**: Auto-detected CPU/memory limits based on Pi RAM
@@ -312,7 +312,7 @@ Expected: `Read-only mode: enabled` with overlay active. Use `ro-mode disable &&
 
 This project uses pre-built Docker images:
 - **Images**: `lollonet/rpi-snapclient-usb-*:latest` (Docker Hub) (snapclient, visualizer, fb-display)
-- **Platform**: ARM64 (Raspberry Pi 4)
+- **Platform**: ARM64 (Raspberry Pi 4). Python display code also runs natively on other Linux architectures (e.g. PowerPC)
 - **Requires**: Docker Compose v2+ (installed automatically by setup.sh via Docker CE)
 
 All containers run with:
