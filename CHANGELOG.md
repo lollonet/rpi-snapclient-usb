@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-05
+
+### Added
+- **Big-Endian Framebuffer Support** ([#66](https://github.com/lollonet/rpi-snapclient-usb/pull/66)) - XRGB pixel format for big-endian platforms (PowerPC); spectrum analyzer uses explicit little-endian dtype for cross-platform loopback compatibility
+- **mDNS Server Discovery on Boot** ([#65](https://github.com/lollonet/rpi-snapclient-usb/pull/65)) - `discover-server.sh` resolves snapserver IP via Avahi on every boot, replacing stale `.env` entries
+
+### Changed
+- **Unified SNAPSERVER_HOST** ([#64](https://github.com/lollonet/rpi-snapclient-usb/pull/64)) - `METADATA_HOST` is now derived from `SNAPSERVER_HOST` in docker-compose; removed as separate user-facing config
+
+### Fixed
+- **Progress Bar Position** ([#66](https://github.com/lollonet/rpi-snapclient-usb/pull/66)) - Moved progress bar above the bottom bar for better visual layout
+
 ## [0.2.0] - 2026-03-04
 
 ### Added
