@@ -312,7 +312,7 @@ Expected: `Read-only mode: enabled` with overlay active. Use `ro-mode disable &&
 
 This project uses pre-built Docker images:
 - **Images**: `lollonet/rpi-snapclient-usb-*:latest` (Docker Hub) (snapclient, visualizer, fb-display)
-- **Platform**: ARM64 (Raspberry Pi 4)
+- **Platform**: ARM64 (Raspberry Pi 4). Python display code also runs natively on other Linux architectures (e.g. PowerPC)
 - **Requires**: Docker Compose v2+ (installed automatically by setup.sh via Docker CE)
 
 All containers run with:
