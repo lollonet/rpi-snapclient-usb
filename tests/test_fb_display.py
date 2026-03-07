@@ -392,7 +392,7 @@ class TestComputeLayout:
             "art_x", "art_y", "art_size",
             "right_x", "right_w", "spec_y", "spec_h",
             "bar_w", "bar_gap", "pad",
-            "start_x", "container_w", "bottom_y",
+            "start_x", "container_w", "bottom_y", "status_y",
         ]
         for key in required_keys:
             assert key in L, f"Missing layout key: {key}"
@@ -427,6 +427,25 @@ class TestComputeLayout:
         L = fb_display.compute_layout()
         assert L["bar_w"] > 0
         assert L["art_size"] > 0
+
+
+class TestGetLanIp:
+    """Test LAN IP detection."""
+
+    def test_returns_ip_string(self):
+        ip = fb_display._get_lan_ip()
+        parts = ip.split(".")
+        assert len(parts) == 4
+        for part in parts:
+            assert part.isdigit()
+            assert 0 <= int(part) <= 255
+
+    def test_fallback_on_socket_error(self, monkeypatch):
+        import socket
+        def _raise(*a, **kw):
+            raise OSError("no network")
+        monkeypatch.setattr(socket, "socket", _raise)
+        assert fb_display._get_lan_ip() == "?.?.?.?"
 
 
 class TestIsSpectrumActive:
