@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Setup Fails on Missing discover-server.sh** ([#71](https://github.com/lollonet/rpi-snapclient-usb/pull/71)) - Guard file install with existence check; use systemd `ExecStartPre=-` prefix so containers start even without the discovery script
+- **Double Docker Image Pull** ([#72](https://github.com/lollonet/rpi-snapclient-usb/pull/72)) - Move read-only/fuse-overlayfs config before `docker compose pull` so images are only downloaded once
+- **SSH Host Keys Lost on Read-Only Reboot** ([#72](https://github.com/lollonet/rpi-snapclient-usb/pull/72)) - Persist SSH host keys before enabling overlayfs via systemd restore service; prevents "REMOTE HOST IDENTIFICATION HAS CHANGED" on every reboot
+- **avahi-browse Hangs During Setup** ([#72](https://github.com/lollonet/rpi-snapclient-usb/pull/72)) - Added 10s timeout to mDNS discovery to prevent setup from hanging if avahi-daemon is slow to start
+- **SNAPSERVER_HOST Cleared on Re-run** ([#72](https://github.com/lollonet/rpi-snapclient-usb/pull/72)) - Don't overwrite existing value with empty string when mDNS discovery fails during setup re-run
+- **Missing File Guards** ([#72](https://github.com/lollonet/rpi-snapclient-usb/pull/72)) - Guard `ro-mode.sh` and `daemon.json` installs with existence checks (same pattern as discover-server.sh)
+
+## [0.2.2] - 2026-03-07
+
+### Added
+- **LAN IP and Snapserver in Display** ([#68](https://github.com/lollonet/rpi-snapclient-usb/pull/68)) - Status line in bottom bar shows `192.168.63.5 → snapvideo.local` for easy identification of client and server
+- **mDNS Auto-Discovery for Server Failover** ([#70](https://github.com/lollonet/rpi-snapclient-usb/pull/70)) - fb-display discovers alternative snapservers via `_snapcast._tcp` mDNS after 3 failed reconnects; switches server and updates status line automatically
+
+### Fixed
+- **Missing avahi-utils** ([#69](https://github.com/lollonet/rpi-snapclient-usb/pull/69)) - Added `avahi-utils` to setup.sh `BASE_PACKAGES` so `avahi-browse` is available for mDNS discovery
+
 ## [0.2.1] - 2026-03-05
 
 ### Added

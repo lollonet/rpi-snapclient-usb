@@ -37,6 +37,13 @@ log_and_tty "========================================="
 log_and_tty "Snapclient Auto-Install"
 log_and_tty "========================================="
 
+# Find config file BEFORE copying (preserve boot partition config priority)
+CONFIG=""
+if [ -f "$SNAP_BOOT/snapclient.conf" ]; then
+    CONFIG="$SNAP_BOOT/snapclient.conf"
+    log_and_tty "Using custom config from boot partition"
+fi
+
 # Copy project files from boot partition
 log_and_tty "Copying files to $INSTALL_DIR ..."
 mkdir -p "$INSTALL_DIR"
@@ -45,12 +52,10 @@ cp -r "$SNAP_BOOT/"* "$INSTALL_DIR/"
 # .??* matches dotfiles without matching . and ..
 cp -r "$SNAP_BOOT/".??* "$INSTALL_DIR/" 2>/dev/null || true  # dotfiles may not exist
 
-# Find config file (boot partition or install dir)
-CONFIG=""
-if [ -f "$SNAP_BOOT/snapclient.conf" ]; then
-    CONFIG="$SNAP_BOOT/snapclient.conf"
-elif [ -f "$INSTALL_DIR/snapclient.conf" ]; then
+# Fallback to install dir config if none was found on boot partition
+if [ -z "$CONFIG" ] && [ -f "$INSTALL_DIR/snapclient.conf" ]; then
     CONFIG="$INSTALL_DIR/snapclient.conf"
+    log_and_tty "Using default config from install directory"
 fi
 
 # Run setup in auto mode (all output goes to log only; progress() writes to tty1 directly)
