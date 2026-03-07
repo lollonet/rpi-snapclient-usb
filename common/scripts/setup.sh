@@ -548,11 +548,11 @@ log_progress "apt-get update"
 start_progress_animation 1 0 12  # Animate during apt-get
 
 # Base packages (always needed)
-BASE_PACKAGES="ca-certificates curl gnupg alsa-utils avahi-daemon git"
+BASE_PACKAGES="ca-certificates curl gnupg alsa-utils avahi-daemon avahi-utils git"
 
 apt-get update
 log_progress "apt-get install: ca-certificates curl gnupg..."
-log_progress "apt-get install: alsa-utils avahi-daemon git..."
+log_progress "apt-get install: alsa-utils avahi-daemon avahi-utils git..."
 # shellcheck disable=SC2086
 apt-get install -y $BASE_PACKAGES
 log_progress "System packages installed"
