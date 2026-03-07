@@ -92,11 +92,11 @@ PROGRESS_ANIM_PID=""
 
 STEP_NAMES=("System dependencies" "Docker CE" "Audio HAT config"
             "ALSA loopback" "Boot settings" "Docker environment"
-            "Security hardening" "Systemd service" "Pulling images"
-            "Read-only filesystem")
+            "Security hardening" "Systemd service" "Read-only filesystem"
+            "Pulling images")
 
 # Weights reflect actual duration (Pull=40%, Docker=33%, Deps=12%, RO=5%, rest=10%)
-STEP_WEIGHTS=(12 33 2 2 2 2 2 3 37 5)
+STEP_WEIGHTS=(12 33 2 2 2 2 2 3 5 37)
 
 # Log file: use parent's if PROGRESS_MANAGED, otherwise our own
 if [[ -n "$PROGRESS_MANAGED" ]]; then
