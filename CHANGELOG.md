@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Network-Aware ALSA Tuning** - Auto-detect WiFi vs Ethernet and set appropriate ALSA buffer defaults (WiFi: 250ms/8 frags, Ethernet: 150ms/4 frags); overridable via `snapclient.conf`
+- **WiFi Power Save Disabled** - Automatically disable WiFi power management during setup to prevent audio dropouts; persistent via NetworkManager config
+- **CONNECTION_TYPE Config** - New `.env` variable for network type; auto-detected or manually overridable
+
+### Changed
+- **Snapclient URL Format** - Migrate entrypoint.sh from deprecated `--host`/`--port` flags to `tcp://host:port` URL format
+
 ### Fixed
 - **Setup Fails on Missing discover-server.sh** ([#71](https://github.com/lollonet/rpi-snapclient-usb/pull/71)) - Guard file install with existence check; use systemd `ExecStartPre=-` prefix so containers start even without the discovery script
 - **Double Docker Image Pull** ([#72](https://github.com/lollonet/rpi-snapclient-usb/pull/72)) - Move read-only/fuse-overlayfs config before `docker compose pull` so images are only downloaded once

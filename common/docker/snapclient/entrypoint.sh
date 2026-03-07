@@ -63,21 +63,17 @@ echo "  Soundcard: ${SOUNDCARD}"
 echo "  Mixer: ${MIXER}"
 echo "  ALSA buffer: ${ALSA_BUFFER_TIME}ms, ${ALSA_FRAGMENTS} fragments"
 
-# Start snapclient with explicit arguments (no variable expansion in exec)
+# Build snapclient command with URL format (--host/--port are deprecated)
+SNAP_ARGS=(
+    --hostID "${HOST_ID}"
+    --soundcard "${SOUNDCARD}"
+    --mixer "${MIXER}"
+    --player "alsa:buffer_time=${ALSA_BUFFER_TIME}:fragments=${ALSA_FRAGMENTS}"
+)
+
 if [ -n "${SNAPSERVER_HOST}" ]; then
-    exec /usr/bin/snapclient \
-        --hostID "${HOST_ID}" \
-        --soundcard "${SOUNDCARD}" \
-        --mixer "${MIXER}" \
-        --player "alsa:buffer_time=${ALSA_BUFFER_TIME}:fragments=${ALSA_FRAGMENTS}" \
-        --host "${SNAPSERVER_HOST}" \
-        --port "${SNAPSERVER_PORT}" \
-        "$@"
+    exec /usr/bin/snapclient "${SNAP_ARGS[@]}" \
+        "tcp://${SNAPSERVER_HOST}:${SNAPSERVER_PORT}" "$@"
 else
-    exec /usr/bin/snapclient \
-        --hostID "${HOST_ID}" \
-        --soundcard "${SOUNDCARD}" \
-        --mixer "${MIXER}" \
-        --player "alsa:buffer_time=${ALSA_BUFFER_TIME}:fragments=${ALSA_FRAGMENTS}" \
-        "$@"
+    exec /usr/bin/snapclient "${SNAP_ARGS[@]}" "$@"
 fi

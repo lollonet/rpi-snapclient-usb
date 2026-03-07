@@ -846,6 +846,28 @@ echo ""
 # ============================================
 progress 6 "Configuring Docker environment..."
 
+# Detect network connection type (ethernet vs wifi)
+detect_connection_type() {
+    # Check for active Ethernet first (more reliable for audio)
+    if ip link show eth0 2>/dev/null | grep -q 'state UP'; then
+        echo "ethernet"
+        return
+    fi
+    # Check for WiFi
+    if ip link show wlan0 2>/dev/null | grep -q 'state UP'; then
+        echo "wifi"
+        return
+    fi
+    # Fallback: check default route interface
+    local default_iface
+    default_iface=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1); exit}') || true
+    case "$default_iface" in
+        eth*|en*) echo "ethernet" ;;
+        wlan*|wl*) echo "wifi" ;;
+        *) echo "ethernet" ;;  # conservative default
+    esac
+}
+
 # Detect hardware and set appropriate resource limits
 detect_resource_profile() {
     # Get total RAM in MB
@@ -919,6 +941,23 @@ set_resource_limits() {
 RESOURCE_PROFILE=$(detect_resource_profile)
 set_resource_limits "$RESOURCE_PROFILE"
 echo "Hardware profile: $RESOURCE_PROFILE ($(awk '/MemTotal/ {printf "%.1fGB RAM", $2/1024/1024}' /proc/meminfo), $(nproc) cores)"
+
+# Detect network type and set ALSA buffer defaults
+CONNECTION_TYPE="${CONNECTION_TYPE:-$(detect_connection_type)}"
+echo "Network: $CONNECTION_TYPE"
+
+# WiFi needs larger buffers due to inherent jitter (10-100ms)
+# Ethernet is stable enough for tight sync
+case "$CONNECTION_TYPE" in
+    wifi)
+        ALSA_BUFFER_TIME="${ALSA_BUFFER_TIME:-250}"
+        ALSA_FRAGMENTS="${ALSA_FRAGMENTS:-8}"
+        ;;
+    *)
+        ALSA_BUFFER_TIME="${ALSA_BUFFER_TIME:-150}"
+        ALSA_FRAGMENTS="${ALSA_FRAGMENTS:-4}"
+        ;;
+esac
 
 cd "$INSTALL_DIR"
 
@@ -995,6 +1034,10 @@ declare -A env_vars=(
     ["FBDISPLAY_MEM_LIMIT"]="$FBDISPLAY_MEM_LIMIT"
     ["FBDISPLAY_MEM_RESERVE"]="$FBDISPLAY_MEM_RESERVE"
     ["FBDISPLAY_CPU_LIMIT"]="$FBDISPLAY_CPU_LIMIT"
+    # ALSA/network (auto-detected)
+    ["ALSA_BUFFER_TIME"]="$ALSA_BUFFER_TIME"
+    ["ALSA_FRAGMENTS"]="$ALSA_FRAGMENTS"
+    ["CONNECTION_TYPE"]="$CONNECTION_TYPE"
 )
 
 for key in "${!env_vars[@]}"; do
@@ -1015,6 +1058,7 @@ echo "  - Client ID: $CLIENT_ID"
 echo "  - Soundcard: $SOUNDCARD_VALUE"
 echo "  - Resolution: ${DISPLAY_RESOLUTION:-auto}"
 echo "  - Band mode: $BAND_MODE"
+echo "  - Network: $CONNECTION_TYPE (buffer: ${ALSA_BUFFER_TIME}ms/${ALSA_FRAGMENTS} frags)"
 echo "  - Resource profile: $RESOURCE_PROFILE"
 echo ""
 
@@ -1050,6 +1094,24 @@ if grep -q "no-new-privileges" "$INSTALL_DIR/docker-compose.yml" 2>/dev/null; th
     log_progress "Container security: configured"
 else
     echo "⚠ Container security options not found in docker-compose.yml"
+fi
+
+# ── Network optimization ──
+if [[ "$CONNECTION_TYPE" == "wifi" ]]; then
+    echo "WiFi detected — disabling power management for stable audio..."
+    iw dev wlan0 set power_save off 2>/dev/null || true
+    # Persistent across reboots via NetworkManager
+    if [[ -d /etc/NetworkManager/conf.d ]]; then
+        cat > /etc/NetworkManager/conf.d/wifi-powersave-off.conf << 'NMEOF'
+[connection]
+wifi.powersave = 2
+NMEOF
+        echo "  WiFi power save disabled (persistent)"
+    fi
+    log_progress "WiFi power management: disabled"
+else
+    echo "Ethernet detected — no WiFi optimization needed"
+    log_progress "Network: ethernet (no WiFi tuning)"
 fi
 
 # Verify read_only and tmpfs settings
