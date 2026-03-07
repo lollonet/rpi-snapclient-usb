@@ -429,6 +429,25 @@ class TestComputeLayout:
         assert L["art_size"] > 0
 
 
+class TestGetLanIp:
+    """Test LAN IP detection."""
+
+    def test_returns_ip_string(self):
+        ip = fb_display._get_lan_ip()
+        parts = ip.split(".")
+        assert len(parts) == 4
+        for part in parts:
+            assert part.isdigit()
+            assert 0 <= int(part) <= 255
+
+    def test_fallback_on_socket_error(self, monkeypatch):
+        import socket
+        def _raise(*a, **kw):
+            raise OSError("no network")
+        monkeypatch.setattr(socket, "socket", _raise)
+        assert fb_display._get_lan_ip() == "?.?.?.?"
+
+
 class TestIsSpectrumActive:
     """Test spectrum activity detection."""
 
