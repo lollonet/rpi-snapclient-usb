@@ -17,6 +17,7 @@ import logging
 import mmap
 import os
 import signal
+import socket
 import sys
 import threading
 import time
@@ -38,6 +39,22 @@ CLIENT_ID = os.environ.get("CLIENT_ID", "")
 SPECTRUM_WS_PORT = int(os.environ.get("VISUALIZER_WS_PORT", "8081"))
 FB_DEVICE = "/dev/fb0"
 TARGET_FPS = 20
+
+
+def _get_lan_ip() -> str:
+    """Get LAN IP via UDP socket (no traffic sent)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "?.?.?.?"
+
+
+LAN_IP = _get_lan_ip()
+SNAPSERVER = METADATA_HOST
 
 # Render resolution: from DISPLAY_RESOLUTION env var if set,
 # otherwise auto-detected from framebuffer (capped at 1920x1080).
@@ -435,6 +452,9 @@ def compute_layout() -> dict:
     clock_h = max(20, bottom_h - bottom_pad * 2)
     clock_y = bottom_y + bottom_pad
 
+    # Status line (LAN IP → server): below clock
+    status_y = clock_y + max(10, clock_h // 2) + 4
+
     return {
         "start_x": start_x, "container_w": container_w,
         "art_x": art_x, "art_y": art_y, "art_size": art_size,
@@ -445,7 +465,7 @@ def compute_layout() -> dict:
         "outer_gap": outer_gap,
         "pad": pad, "bar_area_w": bar_area_w, "bar_area_h": bar_area_h,
         "bar_gap": bar_gap, "bar_w": bar_w, "bar_base_y": bar_base_y,
-        "clock_y": clock_y, "clock_h": clock_h,
+        "clock_y": clock_y, "clock_h": clock_h, "status_y": status_y,
         "bottom_y": bottom_y, "bottom_h": bottom_h, "bottom_pad": bottom_pad,
         "logo_size": logo_size, "logo_x": logo_x, "logo_y": logo_y,
         "vol_radius": vol_radius, "vol_x": vol_x, "vol_y": vol_y,
@@ -793,6 +813,15 @@ def render_base_frame() -> Image.Image:
             brand_x = L["logo_x"] + L["logo_size"] + 8
             brand_y = L["logo_y"]
             bg.paste(brand_resized, (brand_x, brand_y), brand_resized)
+
+    # Bottom bar: status line (LAN IP → server) — static, centered below clock
+    status_text = f"{LAN_IP}  →  {SNAPSERVER}"
+    status_font_size = max(10, L["clock_h"] // 3)
+    status_font = _get_font(status_font_size)
+    bbox = draw.textbbox((0, 0), status_text, font=status_font)
+    status_w = bbox[2] - bbox[0]
+    status_x = (WIDTH - status_w) // 2
+    draw.text((status_x, L["status_y"]), status_text, fill=DIM_COLOR, font=status_font)
 
     # Bottom bar: volume knob (right) — reuses `meta` from above
     vol = meta.get("volume") if meta else None

@@ -392,7 +392,7 @@ class TestComputeLayout:
             "art_x", "art_y", "art_size",
             "right_x", "right_w", "spec_y", "spec_h",
             "bar_w", "bar_gap", "pad",
-            "start_x", "container_w", "bottom_y",
+            "start_x", "container_w", "bottom_y", "status_y",
         ]
         for key in required_keys:
             assert key in L, f"Missing layout key: {key}"
