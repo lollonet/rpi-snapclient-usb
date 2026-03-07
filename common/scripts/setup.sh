@@ -18,8 +18,13 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --auto)
             AUTO_MODE=true
-            AUTO_CONFIG="${2:-}"
-            shift 2 || shift
+            if [[ $# -gt 1 && "$2" != --* ]]; then
+                AUTO_CONFIG="$2"
+                shift 2
+            else
+                AUTO_CONFIG=""
+                shift
+            fi
             ;;
         --read-only)
             ENABLE_READONLY=true
@@ -432,7 +437,23 @@ fi
 
 # Load HAT configuration
 # shellcheck source=/dev/null
-source "$COMMON_DIR/audio-hats/$HAT_CONFIG.conf"
+HAT_CONFIG_FILE="$COMMON_DIR/audio-hats/$HAT_CONFIG.conf"
+if [[ ! -f "$HAT_CONFIG_FILE" ]]; then
+    echo "ERROR: HAT configuration file not found: $HAT_CONFIG_FILE"
+    echo "Available configurations:"
+    ls "$COMMON_DIR/audio-hats/"*.conf 2>/dev/null || echo "  No HAT configurations found"
+    exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$HAT_CONFIG_FILE"
+
+# Validate required HAT configuration variables
+if [[ -z "${HAT_NAME:-}" ]] || [[ -z "${HAT_CARD_NAME:-}" ]]; then
+    echo "ERROR: Invalid HAT configuration file: $HAT_CONFIG_FILE"
+    echo "Required variables: HAT_NAME, HAT_CARD_NAME"
+    exit 1
+fi
 
 echo "Selected HAT: $HAT_NAME"
 echo ""
@@ -615,6 +636,10 @@ mkdir -p "$INSTALL_DIR/public"
 
 # Copy project files (skip if source == destination, e.g. firstboot installs)
 if [[ "$(cd "$COMMON_DIR" 2>/dev/null && pwd)" != "$(cd "$INSTALL_DIR" 2>/dev/null && pwd)" ]]; then
+    if [[ ! -f "$COMMON_DIR/docker-compose.yml" ]]; then
+        echo "ERROR: Required file not found: $COMMON_DIR/docker-compose.yml"
+        exit 1
+    fi
     cp "$COMMON_DIR/docker-compose.yml" "$INSTALL_DIR/"
     cp -r "$COMMON_DIR/docker" "$INSTALL_DIR/"
     cp "$COMMON_DIR/public/index.html" "$INSTALL_DIR/public/"
@@ -622,6 +647,10 @@ fi
 
 # Copy .env only if it doesn't exist (preserve user settings)
 if [[ ! -f "$INSTALL_DIR/.env" ]]; then
+    if [[ ! -f "$COMMON_DIR/.env.example" ]]; then
+        echo "ERROR: Required template file not found: $COMMON_DIR/.env.example"
+        exit 1
+    fi
     echo "Creating new .env from template..."
     cp "$COMMON_DIR/.env.example" "$INSTALL_DIR/.env"
 else
@@ -711,6 +740,13 @@ elif [ -f /boot/config.txt ]; then
     BOOT_CONFIG="/boot/config.txt"
 fi
 
+CMDLINE=""
+if [ -f /boot/firmware/cmdline.txt ]; then
+    CMDLINE="/boot/firmware/cmdline.txt"
+elif [ -f /boot/cmdline.txt ]; then
+    CMDLINE="/boot/cmdline.txt"
+fi
+
 if [ -n "$BOOT_CONFIG" ]; then
     # Backup original config (only once per day)
     BACKUP_FILE="${BOOT_CONFIG}.backup.$(date +%Y%m%d)"
@@ -732,12 +768,6 @@ if [ -n "$BOOT_CONFIG" ]; then
     fi
 
     # Remove temporary video= parameter from cmdline.txt (KMS mode)
-    CMDLINE=""
-    if [ -f /boot/firmware/cmdline.txt ]; then
-        CMDLINE="/boot/firmware/cmdline.txt"
-    elif [ -f /boot/cmdline.txt ]; then
-        CMDLINE="/boot/cmdline.txt"
-    fi
     if [ -n "$CMDLINE" ] && grep -q "video=HDMI-A-1:800x600" "$CMDLINE"; then
         echo "Removing temporary 800x600 video parameter..."
         sed -i 's/ video=HDMI-A-1:[^ ]*//' "$CMDLINE"
@@ -792,12 +822,6 @@ if [ -n "$BOOT_CONFIG" ]; then
 
     # Disable fbcon on fb0 so the kernel console doesn't overwrite
     # the framebuffer display (maps console to nonexistent vt9)
-    CMDLINE=""
-    if [ -f /boot/firmware/cmdline.txt ]; then
-        CMDLINE="/boot/firmware/cmdline.txt"
-    elif [ -f /boot/cmdline.txt ]; then
-        CMDLINE="/boot/cmdline.txt"
-    fi
     if [ -n "$CMDLINE" ] && ! grep -q "fbcon=map:9" "$CMDLINE"; then
         sed -i 's/$/ fbcon=map:9/' "$CMDLINE"
         echo "Disabled fbcon on fb0 (cmdline.txt updated)"
@@ -918,8 +942,8 @@ fi
 if [[ -z "$snapserver_ip" ]]; then
     echo "Discovering snapserver via mDNS for display metadata..."
     if command -v avahi-browse &>/dev/null; then
-        snapserver_ip=$(avahi-browse -rpt _snapcast._tcp 2>/dev/null \
-            | awk -F';' '/^=/ && $3=="IPv4" {print $8; exit}')
+        snapserver_ip=$(timeout 10 avahi-browse -rpt _snapcast._tcp 2>/dev/null \
+            | awk -F';' '/^=/ && $3=="IPv4" {print $8; exit}') || true
     fi
     if [[ -n "$snapserver_ip" ]]; then
         echo "Discovered snapserver at: $snapserver_ip"
@@ -949,9 +973,13 @@ update_env_var() {
     fi
 }
 
+# Only update SNAPSERVER_HOST if we have a value (don't clear existing on failed discovery)
+if [[ -n "$snapserver_ip" ]]; then
+    update_env_var "SNAPSERVER_HOST" "$snapserver_ip"
+fi
+
 # Update all environment variables
 declare -A env_vars=(
-    ["SNAPSERVER_HOST"]="$snapserver_ip"
     ["CLIENT_ID"]="$CLIENT_ID"
     ["SOUNDCARD"]="$SOUNDCARD_VALUE"
     ["DISPLAY_RESOLUTION"]="$DISPLAY_RESOLUTION"
@@ -1002,20 +1030,12 @@ fi
 echo ""
 
 # ============================================
-# Step 10: Security Hardening
+# Step 10b: Security Hardening
 # ============================================
 progress 7 "Security hardening..."
 log_progress "Applying security settings..."
 
 # Verify cgroup memory controller is configured (set in boot settings)
-if [ -f "/boot/firmware/cmdline.txt" ]; then
-    CMDLINE="/boot/firmware/cmdline.txt"
-elif [ -f "/boot/cmdline.txt" ]; then
-    CMDLINE="/boot/cmdline.txt"
-else
-    CMDLINE=""
-fi
-
 if [ -n "$CMDLINE" ] && grep -q "cgroup_enable=memory" "$CMDLINE"; then
     echo "✓ cgroup memory controller enabled (resource limits)"
     log_progress "cgroup memory: enabled"
@@ -1090,6 +1110,15 @@ if [[ "${ENABLE_READONLY:-false}" == "true" ]]; then
     # Install fuse-overlayfs for Docker compatibility with overlayfs root
     apt-get install -y fuse-overlayfs
 
+    # Wait for Docker to be fully ready after any previous restarts
+    log_progress "Waiting for Docker service..."
+    for i in {1..30}; do
+        if docker info >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+    done
+
     # Check if Docker is already using fuse-overlayfs (idempotent)
     current_driver=$(docker info --format '{{.Driver}}' 2>/dev/null || echo "none")
     if [[ "$current_driver" != "fuse-overlayfs" ]]; then
@@ -1100,22 +1129,69 @@ if [[ "${ENABLE_READONLY:-false}" == "true" ]]; then
         # Configure Docker to use fuse-overlayfs storage driver
         # (required because overlay2 doesn't work on overlayfs root)
         mkdir -p /etc/docker
-        cp "$COMMON_DIR/docker/daemon.json" /etc/docker/daemon.json
+        if [[ -f "$COMMON_DIR/docker/daemon.json" ]]; then
+            cp "$COMMON_DIR/docker/daemon.json" /etc/docker/daemon.json
+        else
+            echo '{"storage-driver": "fuse-overlayfs"}' > /etc/docker/daemon.json
+        fi
 
         # Clear existing Docker data (incompatible with new storage driver)
         log_progress "Clearing Docker data (storage driver change)..."
         rm -rf /var/lib/docker/*
 
-        # Restart Docker
+        # Restart Docker and wait for it to be ready
         log_progress "Restarting Docker..."
         systemctl start docker
+
+        # Wait for Docker to be fully operational
+        for i in {1..60}; do
+            if docker info >/dev/null 2>&1; then
+                log_progress "Docker ready with fuse-overlayfs storage driver"
+                break
+            fi
+            sleep 1
+            if [[ $i -eq 60 ]]; then
+                log_progress "ERROR: Docker failed to start after storage driver change"
+                exit 1
+            fi
+        done
     else
         log_progress "Docker already using fuse-overlayfs, skipping reconfiguration..."
     fi
 
     # Install ro-mode helper script
     log_progress "Installing ro-mode helper..."
-    install -m 755 "$COMMON_DIR/scripts/ro-mode.sh" /usr/local/bin/ro-mode
+    if [[ -f "$COMMON_DIR/scripts/ro-mode.sh" ]]; then
+        install -m 755 "$COMMON_DIR/scripts/ro-mode.sh" /usr/local/bin/ro-mode
+    else
+        echo "Warning: ro-mode.sh not found, skipping helper install"
+    fi
+
+    # Persist SSH host keys so they survive read-only reboots.
+    # Without this, overlayfs generates new keys on every boot,
+    # causing SSH "REMOTE HOST IDENTIFICATION HAS CHANGED" errors.
+    log_progress "Persisting SSH host keys..."
+    if [[ -d /etc/ssh ]]; then
+        mkdir -p /etc/ssh/keys_permanent
+        cp -n /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub /etc/ssh/keys_permanent/ 2>/dev/null || true
+        # Create a service that restores keys from permanent storage on boot
+        cat > /etc/systemd/system/ssh-keys-restore.service << 'SSHEOF'
+[Unit]
+Description=Restore SSH host keys from permanent storage
+Before=ssh.service sshd.service
+ConditionPathExists=/etc/ssh/keys_permanent
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'cp /etc/ssh/keys_permanent/ssh_host_* /etc/ssh/ 2>/dev/null && chmod 600 /etc/ssh/ssh_host_*_key'
+
+[Install]
+WantedBy=multi-user.target
+SSHEOF
+        systemctl daemon-reload
+        systemctl enable ssh-keys-restore.service
+        echo "SSH host keys will persist across reboots"
+    fi
 
     # Enable overlayfs (takes effect after reboot)
     log_progress "Enabling overlayfs..."
@@ -1123,6 +1199,7 @@ if [[ "${ENABLE_READONLY:-false}" == "true" ]]; then
 
     echo "Read-only filesystem configured"
     echo "  - Docker storage driver: fuse-overlayfs"
+    echo "  - SSH host keys: persisted"
     echo "  - Helper script: /usr/local/bin/ro-mode"
     echo "  - Status: Will activate after reboot"
     echo ""
