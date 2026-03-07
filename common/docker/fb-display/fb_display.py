@@ -36,6 +36,7 @@ METADATA_HOST = os.environ.get("METADATA_HOST", "") or "localhost"
 METADATA_WS_PORT = int(os.environ.get("METADATA_WS_PORT", "8082"))
 METADATA_HTTP_PORT = int(os.environ.get("METADATA_HTTP_PORT", "8083"))
 CLIENT_ID = os.environ.get("CLIENT_ID", "")
+APP_VERSION = os.environ.get("APP_VERSION", "")
 SPECTRUM_WS_PORT = int(os.environ.get("VISUALIZER_WS_PORT", "8081"))
 FB_DEVICE = "/dev/fb0"
 TARGET_FPS = 20
@@ -852,7 +853,8 @@ def render_base_frame() -> Image.Image:
             bg.paste(brand_resized, (brand_x, brand_y), brand_resized)
 
     # Bottom bar: status line (LAN IP → server) — static, centered below clock
-    status_text = f"{LAN_IP}  →  {snapserver_display}"
+    version_suffix = f"  •  {APP_VERSION}" if APP_VERSION else ""
+    status_text = f"{LAN_IP}  →  {snapserver_display}{version_suffix}"
     status_font_size = max(10, L["clock_h"] // 3)
     status_font = _get_font(status_font_size)
     bbox = draw.textbbox((0, 0), status_text, font=status_font)

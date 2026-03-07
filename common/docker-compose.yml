@@ -142,6 +142,7 @@ services:
       - METADATA_HOST=${SNAPSERVER_HOST:-localhost}
       - METADATA_HTTP_PORT=8083
       - CLIENT_ID=${CLIENT_ID:?CLIENT_ID not set in .env}
+      - APP_VERSION=${APP_VERSION:-}
     logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "pidof python3 || exit 1"]
