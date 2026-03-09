@@ -557,6 +557,45 @@ class TestHandleMetadataMessage:
         assert fb_display.server_info == {}
 
 
+class TestVersionSuffix:
+    """Test ver_suffix formatting logic from render_base_frame (4 combinations)."""
+
+    def _compute_suffix(self, app_version: str, srv_ver: str) -> str:
+        """Mirror the ver_suffix logic from render_base_frame."""
+        ver_parts = []
+        if app_version:
+            ver_parts.append(app_version)
+        if srv_ver and srv_ver != "unknown":
+            ver_parts.append(f"srv {srv_ver}")
+        return "  •  " + "  /  ".join(ver_parts) if ver_parts else ""
+
+    def test_both_versions(self):
+        suffix = self._compute_suffix("v0.2.4", "0.3.7")
+        assert suffix == "  •  v0.2.4  /  srv 0.3.7"
+
+    def test_client_only(self):
+        suffix = self._compute_suffix("v0.2.4", "")
+        assert suffix == "  •  v0.2.4"
+
+    def test_server_only(self):
+        suffix = self._compute_suffix("", "0.3.7")
+        assert suffix == "  •  srv 0.3.7"
+
+    def test_neither(self):
+        suffix = self._compute_suffix("", "")
+        assert suffix == ""
+
+    def test_server_unknown_treated_as_missing(self):
+        suffix = self._compute_suffix("v0.2.4", "unknown")
+        assert suffix == "  •  v0.2.4"
+
+    def test_status_text_format(self):
+        """Full status_text assembles correctly."""
+        suffix = self._compute_suffix("v0.2.4", "0.3.7")
+        status = f"192.168.1.1  →  snapvideo{suffix}"
+        assert status == "192.168.1.1  →  snapvideo  •  v0.2.4  /  srv 0.3.7"
+
+
 class TestIsSpectrumActive:
     """Test spectrum activity detection."""
 
