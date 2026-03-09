@@ -853,10 +853,14 @@ def render_base_frame() -> Image.Image:
             brand_y = L["logo_y"]
             bg.paste(brand_resized, (brand_x, brand_y), brand_resized)
 
-    # Bottom bar: status line (LAN IP → server [version]) — static, centered below clock
-    # server_version from WS takes precedence; falls back to APP_VERSION env (client version)
-    ver = server_info.get("server_version", "")
-    ver_suffix = f"  v{ver}" if ver and ver != "unknown" else (f"  •  {APP_VERSION}" if APP_VERSION else "")
+    # Bottom bar: status line (LAN IP → server  client_ver  /  server_ver)
+    srv_ver = server_info.get("server_version", "")
+    ver_parts = []
+    if APP_VERSION:
+        ver_parts.append(APP_VERSION)
+    if srv_ver and srv_ver != "unknown":
+        ver_parts.append(f"srv {srv_ver}")
+    ver_suffix = "  •  " + "  /  ".join(ver_parts) if ver_parts else ""
     status_text = f"{LAN_IP}  →  {snapserver_display}{ver_suffix}"
     status_font_size = max(10, L["clock_h"] // 3)
     status_font = _get_font(status_font_size)
