@@ -53,6 +53,7 @@ def _get_lan_ip() -> str:
 
 
 LAN_IP = _get_lan_ip()
+server_info: dict = {}
 
 SNAPCAST_MDNS_TYPE = "_snapcast._tcp.local."
 DISCOVERY_TIMEOUT = 5.0
@@ -852,9 +853,11 @@ def render_base_frame() -> Image.Image:
             brand_y = L["logo_y"]
             bg.paste(brand_resized, (brand_x, brand_y), brand_resized)
 
-    # Bottom bar: status line (LAN IP → server) — static, centered below clock
-    version_suffix = f"  •  {APP_VERSION}" if APP_VERSION else ""
-    status_text = f"{LAN_IP}  →  {snapserver_display}{version_suffix}"
+    # Bottom bar: status line (LAN IP → server [version]) — static, centered below clock
+    # server_version from WS takes precedence; falls back to APP_VERSION env (client version)
+    ver = server_info.get("server_version", "")
+    ver_suffix = f"  v{ver}" if ver and ver != "unknown" else (f"  •  {APP_VERSION}" if APP_VERSION else "")
+    status_text = f"{LAN_IP}  →  {snapserver_display}{ver_suffix}"
     status_font_size = max(10, L["clock_h"] // 3)
     status_font = _get_font(status_font_size)
     bbox = draw.textbbox((0, 0), status_text, font=status_font)
@@ -1233,9 +1236,16 @@ async def _handle_metadata_message(message: str) -> None:
     """Process metadata WebSocket message."""
     global current_metadata, metadata_version
     global _playback_start, _playback_offset, _is_playing, _last_duration
+    global server_info
 
     try:
         data = json.loads(message)
+
+        # Server info broadcast — update global and trigger base frame redraw
+        if data.get("type") == "server_info":
+            server_info = data
+            metadata_version += 1
+            return
 
         # Sync playback clock for progress bar
         new_elapsed = data.get("elapsed", 0)

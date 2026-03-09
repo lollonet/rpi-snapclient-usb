@@ -514,6 +514,49 @@ class TestDiscoverSnapservers:
         assert servers == []
 
 
+class TestHandleMetadataMessage:
+    """Test _handle_metadata_message async handler."""
+
+    def setup_method(self):
+        """Reset globals before each test."""
+        fb_display.server_info = {}
+        fb_display.current_metadata = None
+        fb_display.metadata_version = 0
+
+    def test_server_info_updates_global(self):
+        """server_info message populates the server_info global."""
+        msg = '{"type": "server_info", "server_version": "0.3.6"}'
+        asyncio.run(fb_display._handle_metadata_message(msg))
+        assert fb_display.server_info.get("server_version") == "0.3.6"
+
+    def test_server_info_bumps_metadata_version(self):
+        """server_info message triggers a base frame redraw via metadata_version."""
+        before = fb_display.metadata_version
+        msg = '{"type": "server_info", "server_version": "0.3.6"}'
+        asyncio.run(fb_display._handle_metadata_message(msg))
+        assert fb_display.metadata_version == before + 1
+
+    def test_server_info_does_not_update_current_metadata(self):
+        """server_info message returns early — current_metadata must stay unchanged."""
+        fb_display.current_metadata = {"title": "Previous Track"}
+        msg = '{"type": "server_info", "server_version": "0.3.6"}'
+        asyncio.run(fb_display._handle_metadata_message(msg))
+        assert fb_display.current_metadata == {"title": "Previous Track"}
+
+    def test_normal_metadata_does_not_touch_server_info(self):
+        """A regular track metadata message must not alter server_info."""
+        fb_display.server_info = {"server_version": "0.3.6"}
+        msg = '{"title": "Song", "artist": "Band", "codec": "FLAC"}'
+        asyncio.run(fb_display._handle_metadata_message(msg))
+        assert fb_display.server_info == {"server_version": "0.3.6"}
+
+    def test_invalid_json_is_handled(self):
+        """Malformed JSON should not raise — just log and return."""
+        asyncio.run(fb_display._handle_metadata_message("not-json"))
+        # No exception = pass; globals unchanged
+        assert fb_display.server_info == {}
+
+
 class TestIsSpectrumActive:
     """Test spectrum activity detection."""
 
