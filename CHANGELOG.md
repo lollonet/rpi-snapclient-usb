@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-03-10
+
+### Added
+- **15 Audio HATs Supported** ([#78](https://github.com/lollonet/rpi-snapclient-usb/pull/78)) — Added HiFiBerry AMP2, HiFiBerry DAC+ ADC Pro, Innomaker DAC PRO (ES9038Q2M), and Waveshare WM8960 with full EEPROM and ALSA auto-detection. Interactive setup menu extended to all 15 boards. (Note: Innomaker HIFI DAC HAT PCM5122 was already supported via `allo-boss` config.)
+
+## [0.2.5] - 2026-03-10
+
+### Fixed
+- **Both Versions in Status Line** ([#77](https://github.com/lollonet/rpi-snapclient-usb/pull/77)) — Status bar now shows client *and* server versions simultaneously (e.g. `192.168.x.x → snapvideo • v0.2.5 / srv 0.3.7`). Previously only one was shown (fallback logic). Displays whichever subset is available.
+
+### Documentation
+- **Docs Suite Updated to v0.2.4** — Corrected field names (`elapsed`/`playing`/`artwork` replacing stale names), added `server_info` message type, fixed spectrum wire format (semicolon-delimited, not JSON), added new env vars, updated test counts (109 pytest + 22 shell), updated WBS with v0.2.2–v0.2.4 features.
+
 ## [0.2.4] - 2026-03-09
 
 ### Added
