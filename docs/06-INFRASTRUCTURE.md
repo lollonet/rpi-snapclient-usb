@@ -40,11 +40,11 @@ These files are mounted from the host into containers for live updates without i
 ### Build Pipeline
 
 ```
-Tag v0.2.1 pushed
+Tag v0.2.4 pushed
     │
-    ├── build-snapclient ──▶ Docker Hub: lollonet/rpi-snapclient-usb:0.2.1, :latest
-    ├── build-visualizer ──▶ Docker Hub: lollonet/rpi-snapclient-usb-visualizer:0.2.1, :latest
-    └── build-fb-display ──▶ Docker Hub: lollonet/rpi-snapclient-usb-fb-display:0.2.1, :latest
+    ├── build-snapclient ──▶ Docker Hub: lollonet/rpi-snapclient-usb:0.2.4, :latest
+    ├── build-visualizer ──▶ Docker Hub: lollonet/rpi-snapclient-usb-visualizer:0.2.4, :latest
+    └── build-fb-display ──▶ Docker Hub: lollonet/rpi-snapclient-usb-fb-display:0.2.4, :latest
 ```
 
 All 3 jobs run in parallel on self-hosted runners (`[self-hosted, linux, x64]`).

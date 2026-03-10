@@ -1,6 +1,6 @@
 # Work Breakdown Structure & Roadmap
 
-## Current State (v0.2.1)
+## Current State (v0.2.4)
 
 ### Completed Features
 
@@ -19,6 +19,10 @@
 | Big-endian support (PowerPC) | v0.2.1 | Stable |
 | mDNS discovery on boot | v0.2.1 | Stable |
 | Unified SNAPSERVER_HOST | v0.2.1 | Stable |
+| ALSA & network auto-tuning | v0.2.2 | Stable |
+| WiFi power-save disable | v0.2.2 | Stable |
+| App version in status line | v0.2.3 | Stable |
+| Server version in status line | v0.2.4 | Stable |
 
 ## Roadmap
 
@@ -49,7 +53,8 @@ Aspect-ratio-specific layout templates to optimize the display for different scr
 
 | Metric | Current | Target |
 |--------|---------|--------|
-| Unit tests | 94 (67 display + 27 visualizer) | 100+ |
+| Unit tests (pytest) | 109 (82 display + 27 visualizer) | 120+ |
+| Shell tests | 22 (11 MIXER + 11 ALSA) | 30+ |
 | HAT configs validated | 11/11 | 11/11 |
 | Shell scripts passing shellcheck | All | All |
 | CI pipeline | lint + test + review | Same |

@@ -12,7 +12,7 @@ uvx --with numpy --with pillow --with websockets --with requests pytest tests/ -
 
 | Test File | Tests | Covers |
 |-----------|-------|--------|
-| `test_fb_display.py` | 67 | Layout, pixel format conversion, scaling, color, badges, timing, spectrum |
+| `test_fb_display.py` | 82 | Layout, pixel format conversion, scaling, color, badges, timing, spectrum, metadata handling, version display, mDNS discovery |
 | `test_visualizer.py` | 27 | FFT, band computation, smoothing, WebSocket broadcast |
 
 ### Test Categories
@@ -26,14 +26,18 @@ uvx --with numpy --with pillow --with websockets --with requests pytest tests/ -
 | Spectrum | Idle wave shape, active detection threshold |
 | Scaling | Same-res no-op, 2x scale, dtype preservation |
 | Color | Lerp, rainbow gradient |
+| Metadata handling | server_info dispatch, normal track update, invalid JSON |
+| Version display | Both versions, client-only, server-only, neither, "unknown" filter |
+| mDNS discovery | Discover snapservers, failover, no-result handling |
 
 ### Shell Tests
 
-| Script | Run By | Checks |
-|--------|--------|--------|
-| `test-hat-configs.sh` | Pre-push hook, CI | HAT config file format, required fields, count (11) |
-| shellcheck | Pre-push hook, CI | All `.sh` files pass shellcheck |
-| bash syntax | Pre-push hook, CI | `bash -n` on all scripts |
+| Script | Run By | Tests | Checks |
+|--------|--------|-------|--------|
+| `test-hat-configs.sh` | Pre-push hook, CI | 11 | HAT config file format, required fields, count (11) |
+| `test-entrypoint.sh` | CI | 22 | MIXER validation (11), ALSA buffer validation (11) |
+| shellcheck | Pre-push hook, CI | — | All `.sh` files pass shellcheck |
+| bash syntax | Pre-push hook, CI | — | `bash -n` on all scripts |
 
 ## CI Pipeline
 

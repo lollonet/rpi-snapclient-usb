@@ -28,6 +28,7 @@ The framebuffer display uses a fixed layout with four main areas:
 │   │  ━━━━━━━━━━━━━━━━━━━━━━━━░░░░░░░  1:23 / 5:54      │   │
 │   └─────────────────────────────────────────────────────┘   │
 │                                                             │
+│       192.168.63.5  →  snapvideo  •  v0.2.4  /  srv 0.3.7  │
 │   ┌──────┐        Thu 05 Mar · 14:32:18        ┌────────┐  │
 │   │ LOGO │                                     │ VOL 🔊 │  │
 │   └──────┘                                     └────────┘  │
@@ -42,7 +43,8 @@ The framebuffer display uses a fixed layout with four main areas:
 | Info Panel | Top-right | Source, title, artist, album, format badge |
 | Spectrum | Center | Real-time frequency bars (rainbow gradient) |
 | Progress Bar | Above bottom bar | Elapsed/total time, filled progress indicator |
-| Bottom Bar | Bottom | Logo (left), date+time (center), volume knob (right) |
+| Status Line | Above bottom bar | LAN IP → server • client ver / server ver (dim text) |
+| Bottom Bar | Bottom | Logo+brand (left), date+time (center), volume knob (right) |
 
 ## Format Badge
 
@@ -55,6 +57,27 @@ Color-coded audio quality indicator:
 | Amber | Lossy codec | MP3 320kbps, AAC, OGG |
 
 Format string: `CODEC · SAMPLE_RATE · BIT_DEPTH` (e.g., `FLAC · 44.1kHz · 16b`)
+
+## Status Line
+
+Centered above the bottom bar, shows client identity and version in dim text:
+
+```
+192.168.63.104  →  snapvideo  •  v0.2.4  /  srv 0.3.7
+```
+
+| Part | Source | Fallback |
+|------|--------|----------|
+| LAN IP | UDP socket probe | `?.?.?.?` |
+| Server name | mDNS / `SNAPSERVER_HOST` | hostname |
+| Client version | `APP_VERSION` env var (from git tag) | omitted |
+| Server version | `server_info` WebSocket message | omitted |
+
+Version combinations:
+- Both: `v0.2.4  /  srv 0.3.7`
+- Client only: `v0.2.4`
+- Server only: `srv 0.3.7`
+- Neither: status line shows IP and server name only
 
 ## Spectrum Analyzer
 

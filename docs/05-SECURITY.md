@@ -54,6 +54,14 @@ No ports are exposed to the network. The visualizer WebSocket binds to localhost
 - Snapserver IP validated as hostname or IP format
 - Shell variables quoted to prevent injection
 
+### Snapclient Entrypoint
+
+- `ALSA_BUFFER_TIME`: numeric-only (case pattern `*[!0-9]*`), bounds-checked 50–2000, fallback to `150`
+- `ALSA_FRAGMENTS`: numeric-only, bounds-checked 2–16, fallback to `4`
+- `SNAPSERVER_PORT`: numeric-only, fallback to `1704`
+- `MIXER`: mode prefix validated against allowlist (`software|hardware|none`); element suffix rejected if it contains shell metacharacters via `validate_string`
+- `HOST_ID`, `SOUNDCARD`, `SNAPSERVER_HOST`: rejected if containing shell metacharacters (`` '"\$;& |><(){}[] ``)
+
 ### fb-display
 - Artwork URLs: relative paths (`/artwork/...`) are resolved against `METADATA_HOST`; full URLs from the server are trusted (low risk — server is under user control on trusted LAN)
 - WebSocket messages parsed with JSON decoder (no eval)

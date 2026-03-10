@@ -19,12 +19,14 @@ The metadata service pushes JSON messages to subscribed clients via WebSocket (p
   "artist": "Queen",
   "album": "A Night at the Opera",
   "duration": 354.0,
-  "position": 42.5,
-  "playback_state": "playing",
+  "elapsed": 42.5,
+  "playing": true,
   "codec": "flac",
   "sample_rate": 44100,
   "bit_depth": 16,
-  "artwork_url": "/artwork/queen_a_night_at_the_opera.jpg"
+  "artwork": "/artwork/queen_a_night_at_the_opera.jpg",
+  "volume": 80,
+  "muted": false
 }
 ```
 
@@ -37,16 +39,18 @@ The metadata service pushes JSON messages to subscribed clients via WebSocket (p
 | `artist` | string | Artist name | `"Queen"` |
 | `album` | string | Album name | `"A Night at the Opera"` |
 | `duration` | float | Track duration in seconds (0 for streams) | `354.0` |
-| `position` | float | Current playback position in seconds | `42.5` |
-| `playback_state` | string | Playback state | `"playing"`, `"paused"`, `"stopped"` |
+| `elapsed` | float | Current playback position in seconds | `42.5` |
+| `playing` | bool | Whether audio is currently playing | `true`, `false` |
 | `codec` | string | Audio codec | `"flac"`, `"mp3"`, `"aac"`, `"opus"` |
 | `sample_rate` | int | Sample rate in Hz | `44100`, `96000` |
 | `bit_depth` | int | Bit depth | `16`, `24` |
-| `artwork_url` | string | Relative URL for cover art | `"/artwork/abc123.jpg"` |
+| `artwork` | string | Relative URL for cover art | `"/artwork/abc123.jpg"` |
+| `volume` | int | Volume level (0-100) | `80` |
+| `muted` | bool | Whether output is muted | `false` |
 
 ### Cover Art (HTTP)
 
-Cover art is fetched from `http://<METADATA_HOST>:8083<artwork_url>`.
+Cover art is fetched from `http://<METADATA_HOST>:8083<artwork>`.
 
 Source priority (server-side):
 1. Embedded art (from local files via MPD)
@@ -54,23 +58,34 @@ Source priority (server-side):
 3. MusicBrainz Cover Art Archive (rate-limited 1 req/s)
 4. Radio-Browser API (for radio streams)
 
+### Server Info Message
+
+The metadata service also broadcasts server identity. fb-display uses this to show the server version in the status line.
+
+```json
+{"type": "server_info", "server_version": "0.3.7"}
+```
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `type` | string | Message discriminator (always `"server_info"`) | `"server_info"` |
+| `server_version` | string | snapMULTI server version | `"0.3.7"` |
+
+This message does not update track metadata — it triggers a status bar redraw only.
+
 ## Spectrum Data (WebSocket)
 
 The audio-visualizer broadcasts spectrum data via WebSocket (port 8081).
 
 ### Spectrum Frame
 
-```json
-{
-  "bands": [-45.2, -38.7, -32.1, -28.5, ...],
-  "rms": -22.3
-}
+The audio-visualizer broadcasts raw dBFS values as a semicolon-delimited string (not JSON):
+
+```
+-45.2;-38.7;-32.1;-28.5;-19.3;-15.1;...
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `bands` | float[] | dBFS values per frequency band (21 or 31 elements) |
-| `rms` | float | Overall RMS level in dBFS |
+Each value is a float dBFS level for one frequency band. The number of values determines the band count (21 or 31). fb-display auto-detects the band count from the first message received.
 
 ### Band Modes
 
@@ -123,6 +138,10 @@ HAT_RATE="48000"                   # DAC native max rate (informational)
 | `DISPLAY_RESOLUTION` | (empty = auto) | fb-display | Override render resolution |
 | `COMPOSE_PROFILES` | (empty) | docker-compose | Set to `framebuffer` for display |
 | `ENABLE_READONLY` | `true` | setup.sh | Read-only root filesystem |
+| `ALSA_BUFFER_TIME` | `150` (Ethernet), `250` (WiFi) | snapclient | ALSA buffer time in ms (50–2000) |
+| `ALSA_FRAGMENTS` | `4` (Ethernet), `8` (WiFi) | snapclient | ALSA buffer fragments (2–16) |
+| `CONNECTION_TYPE` | `auto` | setup.sh | Network type: `auto`, `ethernet`, `wifi` |
+| `APP_VERSION` | (empty → git tag) | fb-display | Client version shown in status line |
 
 ### Derived Variables (set by docker-compose.yml)
 

@@ -74,8 +74,10 @@ snapMULTI metadata-service
         │
         ├──WS:8082──▶ fb-display subscribes with CLIENT_ID
         │              receives: title, artist, album, duration,
-        │                        position, playback_state, codec,
-        │                        sample_rate, bit_depth, source
+        │                        elapsed, playing, codec,
+        │                        sample_rate, bit_depth, source,
+        │                        artwork, volume, muted
+        │              also receives: server_info (server_version)
         │
         └──HTTP:8083─▶ fb-display fetches cover art
                        endpoint: /artwork/<filename>
