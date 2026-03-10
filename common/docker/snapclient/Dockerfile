@@ -17,9 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone and build snapclient from official repo
+# Clone and build snapclient from santcasp fork (matches server)
+# SANTCASP_SHA busts the Docker cache when santcasp has new commits
+ARG SANTCASP_SHA=latest
 WORKDIR /build
-RUN git clone --depth 1 --branch v0.34.0 https://github.com/badaix/snapcast.git
+RUN git clone --depth 1 --branch develop https://github.com/lollonet/santcasp.git snapcast && \
+    sed -i 's/VERSION [0-9.]*-santcasp/VERSION 0.34.1/' snapcast/CMakeLists.txt
 
 WORKDIR /build/snapcast
 RUN cmake -S . -B build \
