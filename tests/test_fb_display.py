@@ -536,6 +536,14 @@ class TestHandleMetadataMessage:
         asyncio.run(fb_display._handle_metadata_message(msg))
         assert fb_display.metadata_version == before + 1
 
+    def test_server_info_no_redraw_on_repeat(self):
+        """Duplicate server_info message must not bump metadata_version."""
+        msg = '{"type": "server_info", "server_version": "0.3.6"}'
+        asyncio.run(fb_display._handle_metadata_message(msg))
+        version_after_first = fb_display.metadata_version
+        asyncio.run(fb_display._handle_metadata_message(msg))  # identical repeat
+        assert fb_display.metadata_version == version_after_first
+
     def test_server_info_does_not_update_current_metadata(self):
         """server_info message returns early — current_metadata must stay unchanged."""
         fb_display.current_metadata = {"title": "Previous Track"}
