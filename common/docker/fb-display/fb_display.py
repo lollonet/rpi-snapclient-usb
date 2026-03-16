@@ -1247,10 +1247,11 @@ async def _handle_metadata_message(message: str) -> None:
     try:
         data = json.loads(message)
 
-        # Server info broadcast — update global and trigger base frame redraw
+        # Server info broadcast — only redraw if content actually changed
         if data.get("type") == "server_info":
-            server_info = data
-            metadata_version += 1
+            if data != server_info:
+                server_info = data
+                metadata_version += 1
             return
 
         # Sync playback clock for progress bar
