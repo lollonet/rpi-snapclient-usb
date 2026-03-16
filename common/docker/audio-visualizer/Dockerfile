@@ -12,7 +12,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN uv pip install --system --no-cache numpy websockets
 
-COPY visualizer.py /app/
+COPY --chown=1000:1000 visualizer.py /app/
 RUN chmod +x /app/visualizer.py
+
+USER 1000
 
 CMD ["python3", "/app/visualizer.py"]

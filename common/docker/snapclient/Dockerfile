@@ -60,4 +60,6 @@ COPY --from=builder /build/snapcast/bin/snapclient /usr/bin/snapclient
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+USER 1000
+
 ENTRYPOINT ["/entrypoint.sh"]

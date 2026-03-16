@@ -14,10 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN uv pip install --system --no-cache Pillow websockets requests numpy zeroconf
 
 # Copy renderer and assets
-COPY fb_display.py /app/
-COPY logo.png /app/
-COPY snapforge-text.png /app/
-
+COPY --chown=1000:1000 fb_display.py logo.png snapforge-text.png /app/
 RUN chmod +x /app/fb_display.py
+
+USER 1000
 
 CMD ["python3", "/app/fb_display.py"]
