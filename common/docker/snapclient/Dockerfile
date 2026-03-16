@@ -56,10 +56,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy compiled snapclient binary
 COPY --from=builder /build/snapcast/bin/snapclient /usr/bin/snapclient
 
+RUN groupadd -r -g 1000 snapclient && useradd -r -u 1000 -g snapclient -d / -s /sbin/nologin snapclient
+
 # Entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-USER 1000
+USER snapclient
 
 ENTRYPOINT ["/entrypoint.sh"]

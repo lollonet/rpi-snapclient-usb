@@ -12,9 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN uv pip install --system --no-cache numpy websockets
 
+RUN groupadd -r -g 1000 app && useradd -r -u 1000 -g app -d /app -s /sbin/nologin app
+
 COPY --chown=1000:1000 visualizer.py /app/
 RUN chmod +x /app/visualizer.py
 
-USER 1000
+USER app
 
 CMD ["python3", "/app/visualizer.py"]
