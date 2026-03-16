@@ -48,7 +48,8 @@ def _get_lan_ip() -> str:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("8.8.8.8", 80))
             return s.getsockname()[0]
-    except Exception:
+    except OSError as e:
+        logger.warning("Could not determine LAN IP: %s", e)
         return "?.?.?.?"
 
 

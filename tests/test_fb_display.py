@@ -441,12 +441,15 @@ class TestGetLanIp:
             assert part.isdigit()
             assert 0 <= int(part) <= 255
 
-    def test_fallback_on_socket_error(self, monkeypatch):
+    def test_fallback_on_socket_error(self, monkeypatch, caplog):
+        import logging
         import socket
         def _raise(*a, **kw):
             raise OSError("no network")
         monkeypatch.setattr(socket, "socket", _raise)
-        assert fb_display._get_lan_ip() == "?.?.?.?"
+        with caplog.at_level(logging.WARNING):
+            assert fb_display._get_lan_ip() == "?.?.?.?"
+        assert "Could not determine LAN IP" in caplog.text
 
 
 class TestDiscoverSnapservers:
