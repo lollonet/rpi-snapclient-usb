@@ -1,0 +1,135 @@
+name: Deploy to Device
+
+on:
+  workflow_call:
+    secrets:
+      HOST:
+        required: true
+      USER:
+        required: true
+      SSH_KEY:
+        required: true
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy files to device
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          HOST: ${{ secrets.HOST }}
+          DEPLOY_USER: ${{ secrets.USER }}
+        run: |
+          KEY_FILE=$(mktemp)
+          echo "$SSH_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SCP="scp -i $KEY_FILE -o StrictHostKeyChecking=no"
+          SSH="ssh -i $KEY_FILE -o StrictHostKeyChecking=no ${DEPLOY_USER}@${HOST}"
+          $SSH "mkdir -p /tmp/snapclient-deploy/docker/snapclient \
+                         /tmp/snapclient-deploy/docker/audio-visualizer \
+                         /tmp/snapclient-deploy/docker/fb-display \
+                         /tmp/snapclient-deploy/public"
+          $SCP common/docker-compose.yml \
+               "${DEPLOY_USER}@${HOST}:/tmp/snapclient-deploy/"
+          $SCP common/docker/snapclient/entrypoint.sh \
+               "${DEPLOY_USER}@${HOST}:/tmp/snapclient-deploy/docker/snapclient/"
+          $SCP common/docker/audio-visualizer/visualizer.py \
+               "${DEPLOY_USER}@${HOST}:/tmp/snapclient-deploy/docker/audio-visualizer/"
+          $SCP common/docker/fb-display/fb_display.py \
+               common/docker/fb-display/logo.png \
+               common/docker/fb-display/snapforge-text.png \
+               "${DEPLOY_USER}@${HOST}:/tmp/snapclient-deploy/docker/fb-display/"
+          $SCP -r common/public/ \
+               "${DEPLOY_USER}@${HOST}:/tmp/snapclient-deploy/public/"
+          rm -f "$KEY_FILE"
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN:    ${{ secrets.DOCKERHUB_TOKEN }}
+          DEPLOY_VERSION:     ${{ github.ref_name }}
+        with:
+          host:     ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key:      ${{ secrets.SSH_KEY }}
+          envs: DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,DEPLOY_VERSION
+          script: |
+            set -euo pipefail
+            cd /opt/snapclient || { echo "ERROR: /opt/snapclient not found"; exit 1; }
+
+            echo "Deploying version: ${DEPLOY_VERSION}"
+
+            echo "Updating files..."
+            sudo cp /tmp/snapclient-deploy/docker-compose.yml docker-compose.yml
+            sudo rsync -a /tmp/snapclient-deploy/docker/ docker/
+            sudo rsync -a /tmp/snapclient-deploy/public/ public/
+            rm -rf /tmp/snapclient-deploy
+
+            echo "Updating APP_VERSION in .env..."
+            if grep -q '^APP_VERSION=' .env 2>/dev/null; then
+              sudo sed -i "s|^APP_VERSION=.*|APP_VERSION=${DEPLOY_VERSION}|" .env
+            else
+              echo "APP_VERSION=${DEPLOY_VERSION}" | sudo tee -a .env > /dev/null
+            fi
+
+            echo "Logging in to Docker Hub..."
+            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin \
+              || { echo "ERROR: Docker Hub login failed"; exit 1; }
+
+            echo "Pulling latest images..."
+            docker compose pull || { echo "ERROR: docker compose pull failed"; exit 1; }
+
+            echo "Stopping old containers..."
+            docker compose down --remove-orphans || true
+
+            if mountpoint -q /media/root-ro 2>/dev/null; then
+              echo "Baking deployment to SD card lower layer..."
+              BAKE_DIR=$(mktemp -d /tmp/snapclient-bake-XXXXX)
+              cleanup() {
+                sudo umount "$BAKE_DIR" 2>/dev/null || true
+                rmdir "$BAKE_DIR" 2>/dev/null || true
+                sudo sync
+              }
+              trap cleanup EXIT
+
+              sudo mount --bind /media/root-ro "$BAKE_DIR"
+              sudo mount -o remount,rw "$BAKE_DIR"
+
+              sudo rsync -a \
+                  /opt/snapclient/.env \
+                  /opt/snapclient/docker-compose.yml \
+                  "$BAKE_DIR/opt/snapclient/"
+              sudo rsync -a /opt/snapclient/docker/ \
+                  "$BAKE_DIR/opt/snapclient/docker/"
+              sudo rsync -a /opt/snapclient/public/ \
+                  "$BAKE_DIR/opt/snapclient/public/"
+              sudo rsync -a /var/lib/docker/image/ \
+                  "$BAKE_DIR/var/lib/docker/image/"
+              sudo rsync -aX --ignore-existing /var/lib/docker/fuse-overlayfs/ \
+                  "$BAKE_DIR/var/lib/docker/fuse-overlayfs/"
+
+              BAKED=$(grep '^APP_VERSION=' "$BAKE_DIR/opt/snapclient/.env" 2>/dev/null \
+                      | cut -d= -f2)
+              if [[ "$BAKED" != "${DEPLOY_VERSION}" ]]; then
+                echo "ERROR: Bake verification failed -- expected ${DEPLOY_VERSION}, got ${BAKED}"
+                exit 1
+              fi
+              sudo sync
+              echo "Bake complete (${DEPLOY_VERSION}) -- changes will survive reboot."
+            else
+              echo "WARNING: /media/root-ro not mounted -- skipping bake (non-overlayroot target)"
+            fi
+
+            echo "Starting containers..."
+            docker compose up -d || { echo "ERROR: docker compose up failed"; exit 1; }
+
+            sleep 5
+            docker ps --format "table {{.Names}}\t{{.Status}}"
+            echo "Deployment complete (${DEPLOY_VERSION})"
