@@ -215,6 +215,7 @@ jobs:
     with:
       environment_name: snapvideo
     secrets:
+      HOST:               ${{ secrets.HOST_SNAPVIDEO }}
       USER:               ${{ secrets.USER }}
       SSH_KEY:            ${{ secrets.SSH_KEY }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -227,6 +228,7 @@ jobs:
     with:
       environment_name: snapdigi
     secrets:
+      HOST:               ${{ secrets.HOST_SNAPDIGI }}
       USER:               ${{ secrets.USER }}
       SSH_KEY:            ${{ secrets.SSH_KEY }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}

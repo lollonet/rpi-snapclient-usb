@@ -7,6 +7,8 @@ on:
         type: string
         required: true
     secrets:
+      HOST:
+        required: true
       USER:
         required: true
       SSH_KEY:
