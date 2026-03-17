@@ -970,8 +970,8 @@ set_resource_limits() {
             VISUALIZER_MEM_LIMIT="128M"
             VISUALIZER_MEM_RESERVE="64M"
             VISUALIZER_CPU_LIMIT="0.5"
-            FBDISPLAY_MEM_LIMIT="128M"
-            FBDISPLAY_MEM_RESERVE="64M"
+            FBDISPLAY_MEM_LIMIT="192M"
+            FBDISPLAY_MEM_RESERVE="96M"
             FBDISPLAY_CPU_LIMIT="0.5"
             ;;
         medium)
