@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Suppress locale warnings from apt and other tools; avoids stdout pollution
+# in functions called via $() substitution.
+export DEBIAN_FRONTEND=noninteractive
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+
 # ============================================
 # Auto mode: --auto [config_file]
 # Reads settings from config file, skips all prompts.
@@ -639,14 +645,18 @@ log_progress "apt-get update"
 start_progress_animation 1 0 12  # Animate during apt-get
 
 # Base packages (always needed)
-BASE_PACKAGES="ca-certificates curl gnupg alsa-utils avahi-daemon avahi-utils git"
+BASE_PACKAGES="ca-certificates curl alsa-utils avahi-daemon avahi-utils git"
 
 apt-get update
-log_progress "apt-get install: ca-certificates curl gnupg..."
+log_progress "apt-get install: ca-certificates curl..."
 log_progress "apt-get install: alsa-utils avahi-daemon avahi-utils git..."
 # shellcheck disable=SC2086
 apt-get install -y $BASE_PACKAGES
 log_progress "System packages installed"
+
+# Set system locale to C.UTF-8 — prevents warnings from apt and subprocesses.
+# C.UTF-8 is always available on Debian without running locale-gen.
+update-locale LANG=C.UTF-8 LC_ALL=C.UTF-8 2>/dev/null || true
 
 progress 2 "Installing Docker CE..."
 log_progress "Checking Docker installation..."
