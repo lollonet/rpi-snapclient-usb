@@ -442,7 +442,9 @@ detect_hat() {
     #   0x1A       WM8960  (Waveshare WM8960)
     #   0x3A       WM8804  (HiFiBerry Digi, JustBoom Digi, Allo DigiOne — no EEPROM variants)
     if ! command -v i2cdetect &>/dev/null; then
-        apt-get install -y -q i2c-tools || true
+        # Redirect stdout to stderr: detect_hat() is called in $() substitution so
+        # any stdout gets captured as the return value and corrupts HAT_CONFIG.
+        apt-get install -y -q i2c-tools >&2 || true
     fi
     # Enable i2c_arm at runtime in case dtparam=i2c_arm=on is not yet in config.txt
     # (e.g. on first boot before setup.sh has written the overlay). dtparam applies
