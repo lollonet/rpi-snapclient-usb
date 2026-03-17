@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.11] — 2026-03-17
+
+### CI/CD
+- **Trivy scans: continue-on-error** ([#89](https://github.com/lollonet/rpi-snapclient-usb/pull/89)) — added `continue-on-error: true` to all three Trivy steps; network failures downloading the Trivy binary must not block deploys (Trivy is reporting-only)
+
 ## [0.2.10] — 2026-03-16
 
 ### Fixed
