@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **I2C bus scan for HATs without EEPROM** ([#90](https://github.com/lollonet/rpi-snapclient-usb/pull/90)) — `detect_hat()` now falls back to raw I2C probing before defaulting to USB audio, enabling zero-touch detection for InnoMaker HiFi DAC (PCM5122), Waveshare WM8960, and no-EEPROM Allo/DigiOne variants
+- **Enable i2c_arm at runtime before scan** ([#92](https://github.com/lollonet/rpi-snapclient-usb/pull/92)) — `dtparam i2c_arm=on` called before I2C scan so `/dev/i2c-1` is available on first boot (before the HAT overlay has been written to `config.txt`)
+- **Raise fb-display memory limit in low profile** ([#91](https://github.com/lollonet/rpi-snapclient-usb/pull/91)) — `FBDISPLAY_MEM_LIMIT` increased from 128M to 192M for Pi 3B+ / Pi Zero 2 W; observed runtime usage is ~120 MiB, leaving only 8M headroom at the old limit
+
 ## [0.2.13] — 2026-03-17
 
 ### CI/CD

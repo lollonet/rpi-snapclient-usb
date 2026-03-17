@@ -104,7 +104,7 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 | Pi 4 (4GB) | Tested | High resource profile |
 | Pi 4 (8GB) | Tested | High resource profile |
 | Pi 5 | Untested | Should work, high profile |
-| Pi 3B+ | Untested | Low resource profile |
+| Pi 3B+ | Tested | Low resource profile |
 | Pi Zero 2 W | Untested | Low resource profile, no framebuffer display |
 
 #### Displays
@@ -127,7 +127,7 @@ The easiest way to get started — no SSH, no terminal needed.
 4. Eject SD card, insert in Pi, power on
 5. Wait ~5 minutes — Pi auto-detects your audio HAT, installs everything, and reboots
 
-> **HAT auto-detection**: The Pi reads your HAT's EEPROM at boot (`/proc/device-tree/hat/product`) — no configuration needed for any of the 11 supported HATs. Falls back to USB audio if no HAT is found.
+> **HAT auto-detection**: Uses a 3-step detection chain — EEPROM (`/proc/device-tree/hat/product`) → ALSA card name → I2C bus scan. The I2C scan detects HATs that ship without an EEPROM (InnoMaker, Waveshare, some Allo boards) by probing known chip addresses directly. Falls back to USB audio if nothing is found.
 
 > **Custom settings**: Edit `snapclient/snapclient.conf` on the boot partition before step 4 to override defaults (resolution, display mode, band mode, snapserver host).
 

@@ -25,7 +25,7 @@ prepare-sd.sh                   # SD card auto-install prep
 Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = streaming_port + 1.
 
 ### Auto-Detection First
-- Audio HAT: EEPROM at `/proc/device-tree/hat/product`, fallback to ALSA card names, then USB
+- Audio HAT: EEPROM at `/proc/device-tree/hat/product` → ALSA card names → I2C bus scan (detects chips without EEPROM: PCM5122 at 0x4C–0x4F, WM8960 at 0x1A, WM8804 at 0x3A) → USB fallback
 - Snapserver: mDNS discovery, never hardcode IP
 - Display resolution: `DISPLAY_RESOLUTION` env var optional; auto-detect from framebuffer, capped at 1920×1080
 
