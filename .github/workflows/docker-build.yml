@@ -71,6 +71,7 @@ jobs:
 
       - name: Scan image with Trivy
         id: trivy-snapclient
+        continue-on-error: true  # Trivy is reporting only — network failures must not block deploy
         uses: aquasecurity/trivy-action@0.30.0
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
@@ -131,6 +132,7 @@ jobs:
 
       - name: Scan image with Trivy
         id: trivy-visualizer
+        continue-on-error: true  # Trivy is reporting only — network failures must not block deploy
         uses: aquasecurity/trivy-action@0.30.0
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
@@ -191,6 +193,7 @@ jobs:
 
       - name: Scan image with Trivy
         id: trivy-fb-display
+        continue-on-error: true  # Trivy is reporting only — network failures must not block deploy
         uses: aquasecurity/trivy-action@0.30.0
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
