@@ -375,8 +375,9 @@ get_hat_config() {
 detect_hat() {
     # Detect audio HAT automatically.
     # 1. Pi firmware reads HAT EEPROM at boot → /proc/device-tree/hat/product
-    # 2. Fallback: check ALSA card names via aplay -l
-    # 3. Final fallback: USB audio
+    # 2. Fallback: check ALSA card names via aplay -l (requires overlay already loaded)
+    # 3. Fallback: I2C bus scan for known DAC chip addresses (works without overlay)
+    # 4. Final fallback: USB audio
     local hat_product=""
 
     if [ -f /proc/device-tree/hat/product ]; then
@@ -428,6 +429,46 @@ detect_hat() {
             *Katana*)           echo "innomaker-dac-pro"  ; return ;;
             *wm8960soundcard*)  echo "waveshare-wm8960"   ; return ;;
         esac
+    fi
+
+    # I2C bus scan: detect DAC chips by address, works even without overlay loaded.
+    # Many cheap HATs (InnoMaker, Waveshare, some Allo) ship without an EEPROM, so
+    # the overlay is never loaded and aplay -l never shows the card. Raw I2C probing
+    # identifies the chip regardless. Loads i2c-dev transiently; no side effects.
+    # Known addresses:
+    #   0x4C-0x4F  PCM5122 (InnoMaker HiFi DAC, IQaudio DAC+, Allo Boss, JustBoom DAC, …)
+    #   0x1A       WM8960  (Waveshare WM8960)
+    #   0x3A       WM8804  (HiFiBerry Digi, JustBoom Digi, Allo DigiOne — no EEPROM variants)
+    if ! command -v i2cdetect &>/dev/null; then
+        apt-get install -y -q i2c-tools 2>/dev/null || true
+    fi
+    modprobe i2c-dev 2>/dev/null || true
+    if command -v i2cdetect &>/dev/null; then
+        local bus addr result=""
+        for bus in 1 0; do
+            [[ -e /dev/i2c-$bus ]] || continue
+            local scan
+            scan=$(i2cdetect -y "$bus" 2>/dev/null) || continue
+            echo "I2C bus $bus scan complete" >&2
+            # PCM5122 at 0x4C/0x4D/0x4E/0x4F → PCM5122-based DAC (hifiberry-dac config)
+            for addr in 4c 4d 4e 4f; do
+                if echo "$scan" | grep -qE "(^[[:space:]]*[0-9a-f]0:[[:space:]]|[[:space:]])${addr}([[:space:]]|$)"; then
+                    echo "I2C: PCM5122 at 0x${addr} on bus ${bus} → hifiberry-dac" >&2
+                    result="hifiberry-dac"; break 2
+                fi
+            done
+            # WM8960 at 0x1A → Waveshare WM8960
+            if echo "$scan" | grep -qE "(^[[:space:]]*10:[[:space:]]|[[:space:]])1a([[:space:]]|$)"; then
+                echo "I2C: WM8960 at 0x1a on bus ${bus} → waveshare-wm8960" >&2
+                result="waveshare-wm8960"; break
+            fi
+            # WM8804 at 0x3A → digital HAT (DigiOne, Digi without EEPROM)
+            if echo "$scan" | grep -qE "(^[[:space:]]*30:[[:space:]]|[[:space:]])3a([[:space:]]|$)"; then
+                echo "I2C: WM8804 at 0x3a on bus ${bus} → hifiberry-digi" >&2
+                result="hifiberry-digi"; break
+            fi
+        done
+        [[ -n "$result" ]] && echo "$result" && return
     fi
 
     echo "usb-audio"
