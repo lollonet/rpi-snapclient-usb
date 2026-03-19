@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # Variables assigned in case statement, used via indirect expansion ${!var}
 set -euo pipefail
 
 # Test resource profile detection and limits
