@@ -1430,6 +1430,55 @@ log_progress "All images pulled successfully"
 echo ""
 
 # ============================================
+# Step 13b: Bake Docker state to SD card (overlayroot only, defensive)
+# First-boot: overlayroot not active yet -> harmless no-op.
+# Re-runs on overlayroot: persists images so tmpfs doesn't fill on next boot.
+# ============================================
+if mountpoint -q /media/root-ro 2>/dev/null; then
+    log_progress "Baking Docker images to SD card..."
+    BAKE_DIR=$(mktemp -d /tmp/snapclient-bake-XXXXX)
+    bake_cleanup() {
+        sudo umount "$BAKE_DIR" 2>/dev/null || true
+        rmdir "$BAKE_DIR" 2>/dev/null || true
+        sudo sync
+    }
+    trap bake_cleanup EXIT
+
+    sudo mount --bind /media/root-ro "$BAKE_DIR"
+    sudo mount -o remount,rw "$BAKE_DIR"
+
+    # Persist config files
+    sudo mkdir -p "$BAKE_DIR$INSTALL_DIR"
+    sudo rsync -a \
+        "$INSTALL_DIR/.env" \
+        "$INSTALL_DIR/docker-compose.yml" \
+        "$BAKE_DIR$INSTALL_DIR/"
+    sudo rsync -a --delete "$INSTALL_DIR/docker/" \
+        "$BAKE_DIR$INSTALL_DIR/docker/"
+    sudo rsync -a --delete "$INSTALL_DIR/public/" \
+        "$BAKE_DIR$INSTALL_DIR/public/"
+    if [[ -d "$INSTALL_DIR/audio-hats" ]]; then
+        sudo rsync -a --delete "$INSTALL_DIR/audio-hats/" \
+            "$BAKE_DIR$INSTALL_DIR/audio-hats/"
+    fi
+    if [[ -d "$INSTALL_DIR/scripts" ]]; then
+        sudo rsync -a --delete "$INSTALL_DIR/scripts/" \
+            "$BAKE_DIR$INSTALL_DIR/scripts/"
+    fi
+
+    # Persist Docker image index + layers
+    sudo rsync -a /var/lib/docker/image/ \
+        "$BAKE_DIR/var/lib/docker/image/"
+    sudo rsync -aX --ignore-existing /var/lib/docker/fuse-overlayfs/ \
+        "$BAKE_DIR/var/lib/docker/fuse-overlayfs/"
+
+    sudo sync
+    log_progress "Docker images baked to SD card"
+else
+    echo "Non-overlayroot system -- Docker images stored directly on disk"
+fi
+
+# ============================================
 # Setup Complete
 # ============================================
 progress_complete
