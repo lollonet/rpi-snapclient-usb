@@ -345,6 +345,7 @@ show_hat_options() {
     echo "13) HiFiBerry DAC+ ADC Pro"
     echo "14) Innomaker DAC PRO"
     echo "15) Waveshare WM8960"
+    echo "16) HiFiBerry DAC+ Standard (clone/no EEPROM)"
 }
 
 validate_choice() {
@@ -374,6 +375,7 @@ get_hat_config() {
         13) echo "hifiberry-dacplusadc" ;;
         14) echo "innomaker-dac-pro" ;;
         15) echo "waveshare-wm8960" ;;
+        16) echo "hifiberry-dac-std" ;;
         *) echo "Invalid choice"; exit 1 ;;
     esac
 }
@@ -423,10 +425,11 @@ detect_hat() {
         cards=$(aplay -l 2>/dev/null || true)
         case "$cards" in
             # NOTE: sndrpihifiberry is shared by hifiberry-dac, hifiberry-amp2, and
-            # hifiberry-dacplusadc. Without EEPROM, all three fall back to hifiberry-dac
-            # (same overlay hifiberry-dacplus; AMP2 works, DAC+ADC Pro may not init).
+            # hifiberry-dacplusadc. Without EEPROM, use hifiberry-dacplus-std (Pi as
+            # clock master) to avoid DAC+ Pro misdetection on clone boards with floating
+            # GPIO3. AMP2 boards without EEPROM also work in std mode (no oscillator).
             # HiFiBerry boards ship with EEPROM so this path is rarely reached.
-            *sndrpihifiberry*)  echo "hifiberry-dac"  ; return ;;
+            *sndrpihifiberry*)  echo "hifiberry-dac-std"  ; return ;;
             *IQaudIODAC*)       echo "iqaudio-dac"    ; return ;;
             *IQaudIOCODEC*)     echo "iqaudio-codec"  ; return ;;
             *BossDAC*)          echo "allo-boss"      ; return ;;
@@ -467,8 +470,8 @@ detect_hat() {
             # PCM5122 at 0x4C/0x4D/0x4E/0x4F → PCM5122-based DAC (hifiberry-dac config)
             for addr in 4c 4d 4e 4f; do
                 if echo "$scan" | grep -qE "(^[[:space:]]*[0-9a-f]0:[[:space:]]|[[:space:]])${addr}([[:space:]]|$)"; then
-                    echo "I2C: PCM5122 at 0x${addr} on bus ${bus} → hifiberry-dac" >&2
-                    result="hifiberry-dac"; break 2
+                    echo "I2C: PCM5122 at 0x${addr} on bus ${bus} → hifiberry-dac-std" >&2
+                    result="hifiberry-dac-std"; break 2
                 fi
             done
             # WM8960 at 0x1A → Waveshare WM8960
@@ -506,8 +509,8 @@ if [ "$AUTO_MODE" = true ]; then
     HAT_CONFIG=$(resolve_hat_config_name "$AUDIO_HAT")
 else
     show_hat_options
-    read -rp "Enter choice [1-15]: " hat_choice
-    validate_choice "$hat_choice" 15
+    read -rp "Enter choice [1-16]: " hat_choice
+    validate_choice "$hat_choice" 16
     HAT_CONFIG=$(get_hat_config "$hat_choice")
 fi
 
@@ -713,6 +716,7 @@ echo ""
 echo "Setting up installation directory..."
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/public"
+mkdir -p "$INSTALL_DIR/scripts"
 
 # Copy project files (skip if source == destination, e.g. firstboot installs)
 if [[ "$(cd "$COMMON_DIR" 2>/dev/null && pwd)" != "$(cd "$INSTALL_DIR" 2>/dev/null && pwd)" ]]; then
@@ -884,6 +888,15 @@ if [ -n "$BOOT_CONFIG" ]; then
                     ;;
             esac
         fi
+
+        # Enable I2C for HAT communication (PCM512x, WM8960, ES9038 chips need it).
+        # hifiberry-dacplus* covers dacplus, dacplus-std, dacplushd, dacplusadc*.
+        case "${HAT_OVERLAY:-}" in
+            hifiberry-dacplus*|iqaudio-dacplus|allo-boss*|\
+            justboom-dac|allo-katana*|wm8960*)
+                echo "dtparam=i2c_arm=on"
+                ;;
+        esac
 
         # Disable onboard audio
         echo "dtparam=audio=off"
@@ -1088,8 +1101,16 @@ fi
 # (DAC + loopback for spectrum analyzer). Direct hw: would bypass the loopback.
 SOUNDCARD_VALUE="default"
 
-# Docker Compose profile: always framebuffer (direct /dev/fb0 rendering)
-DOCKER_COMPOSE_PROFILES="framebuffer"
+# Docker Compose profile: detect display at install time.
+# Boot-time service (snapclient-display.service) re-checks on every boot.
+# shellcheck source=display.sh
+source "$COMMON_DIR/scripts/display.sh"
+if has_display; then
+    DOCKER_COMPOSE_PROFILES="framebuffer"
+else
+    DOCKER_COMPOSE_PROFILES=""
+    echo "No display detected -- headless mode (audio only)"
+fi
 
 # Update .env with all settings (idempotent - works on existing or new file)
 update_env_var() {
@@ -1262,7 +1283,17 @@ EOF
 systemctl daemon-reload
 systemctl enable snapclient.service
 
-echo "Systemd service created and enabled"
+# Install display detection boot service (re-checks HDMI on every boot)
+cp "$COMMON_DIR/scripts/display-detect.sh" "$INSTALL_DIR/scripts/"
+cp "$COMMON_DIR/scripts/display.sh" "$INSTALL_DIR/scripts/"
+chmod +x "$INSTALL_DIR/scripts/display-detect.sh"
+if [[ -d /etc/systemd/system ]]; then
+    cp "$COMMON_DIR/systemd/snapclient-display.service" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable snapclient-display.service
+fi
+
+echo "Systemd services created and enabled"
 echo ""
 
 # ============================================
