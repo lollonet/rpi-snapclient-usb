@@ -1,0 +1,15 @@
+[Unit]
+Description=Snapclient display detection and container reconciliation
+After=docker.socket docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/snapclient/scripts/display-detect.sh
+WorkingDirectory=/opt/snapclient
+StandardOutput=journal
+StandardError=journal
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

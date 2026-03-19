@@ -73,6 +73,8 @@ services:
     container_name: audio-visualizer
     restart: unless-stopped
     read_only: true
+    profiles:
+      - framebuffer
     tmpfs:
       - /tmp:size=32M
     user: "${PUID:-1000}:${PGID:-1000}"
