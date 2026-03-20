@@ -975,22 +975,22 @@ detect_resource_profile() {
     local mem_mb
     mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 
-    # Fallback to medium profile if detection failed (0 or very low = likely error)
+    # Fallback to standard profile if detection failed (0 or very low = likely error)
     if (( mem_mb < 256 )); then
-        echo "medium"
+        echo "standard"
         return
     fi
 
     # Determine profile based on RAM
     if (( mem_mb < 2048 )); then
         # Pi Zero 2 W, Pi 3, <2GB RAM
-        echo "low"
+        echo "minimal"
     elif (( mem_mb < 4096 )); then
         # Pi 4 2GB, 2-4GB RAM
-        echo "medium"
+        echo "standard"
     else
         # Pi 4 4GB+, Pi 5, 8GB+ RAM
-        echo "high"
+        echo "performance"
     fi
 }
 
@@ -998,39 +998,40 @@ detect_resource_profile() {
 set_resource_limits() {
     local profile=$1
 
+    # Measured baseline (idle): snapclient 18M, visualizer 36-51M, fb-display 89-114M
     case "$profile" in
-        low)
-            # Minimal: Pi Zero 2 W, Pi 3
-            SNAPCLIENT_MEM_LIMIT="96M"
-            SNAPCLIENT_MEM_RESERVE="48M"
+        minimal)
+            # Pi Zero 2 W, Pi 3, <2GB RAM
+            SNAPCLIENT_MEM_LIMIT="64M"
+            SNAPCLIENT_MEM_RESERVE="32M"
             SNAPCLIENT_CPU_LIMIT="0.5"
             VISUALIZER_MEM_LIMIT="128M"
-            VISUALIZER_MEM_RESERVE="64M"
+            VISUALIZER_MEM_RESERVE="48M"
             VISUALIZER_CPU_LIMIT="0.5"
             FBDISPLAY_MEM_LIMIT="192M"
             FBDISPLAY_MEM_RESERVE="96M"
             FBDISPLAY_CPU_LIMIT="0.5"
             ;;
-        medium)
-            # Standard: Pi 4 2GB
-            SNAPCLIENT_MEM_LIMIT="128M"
-            SNAPCLIENT_MEM_RESERVE="64M"
+        standard)
+            # Pi 4 2GB, 2-4GB RAM
+            SNAPCLIENT_MEM_LIMIT="64M"
+            SNAPCLIENT_MEM_RESERVE="32M"
             SNAPCLIENT_CPU_LIMIT="0.5"
-            VISUALIZER_MEM_LIMIT="256M"
-            VISUALIZER_MEM_RESERVE="128M"
+            VISUALIZER_MEM_LIMIT="128M"
+            VISUALIZER_MEM_RESERVE="64M"
             VISUALIZER_CPU_LIMIT="1.0"
             FBDISPLAY_MEM_LIMIT="256M"
             FBDISPLAY_MEM_RESERVE="128M"
             FBDISPLAY_CPU_LIMIT="1.0"
             ;;
-        high)
-            # Performance: Pi 4 4GB+, Pi 5
-            SNAPCLIENT_MEM_LIMIT="192M"
-            SNAPCLIENT_MEM_RESERVE="96M"
+        performance)
+            # Pi 4 4GB+, Pi 5
+            SNAPCLIENT_MEM_LIMIT="96M"
+            SNAPCLIENT_MEM_RESERVE="48M"
             SNAPCLIENT_CPU_LIMIT="1.0"
-            VISUALIZER_MEM_LIMIT="384M"
-            VISUALIZER_MEM_RESERVE="192M"
-            VISUALIZER_CPU_LIMIT="2.0"
+            VISUALIZER_MEM_LIMIT="192M"
+            VISUALIZER_MEM_RESERVE="96M"
+            VISUALIZER_CPU_LIMIT="1.5"
             FBDISPLAY_MEM_LIMIT="384M"
             FBDISPLAY_MEM_RESERVE="192M"
             FBDISPLAY_CPU_LIMIT="2.0"

@@ -1,5 +1,5 @@
 # rpi-snapclient-usb Docker Compose
-# Resource profiles auto-detected by setup.sh: low | medium | high
+# Resource profiles auto-detected by setup.sh: minimal | standard | performance
 
 x-logging: &default-logging
   driver: json-file
@@ -62,10 +62,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${SNAPCLIENT_MEM_LIMIT:-128M}
+          memory: ${SNAPCLIENT_MEM_LIMIT:-64M}
           cpus: '${SNAPCLIENT_CPU_LIMIT:-0.5}'
         reservations:
-          memory: ${SNAPCLIENT_MEM_RESERVE:-64M}
+          memory: ${SNAPCLIENT_MEM_RESERVE:-32M}
 
   # Metadata is served by the snapMULTI server (ports 8082 WS, 8083 HTTP).
   # fb-display derives METADATA_HOST from SNAPSERVER_HOST (same server).
@@ -111,10 +111,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${VISUALIZER_MEM_LIMIT:-256M}
+          memory: ${VISUALIZER_MEM_LIMIT:-128M}
           cpus: '${VISUALIZER_CPU_LIMIT:-1.0}'
         reservations:
-          memory: ${VISUALIZER_MEM_RESERVE:-128M}
+          memory: ${VISUALIZER_MEM_RESERVE:-64M}
 
   fb-display:
     image: lollonet/rpi-snapclient-usb-fb-display:latest
