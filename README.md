@@ -285,10 +285,11 @@ Expected: `Read-only mode: enabled` with overlay active. Use `ro-mode disable &&
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| Black screen | Wrong display mode | Check `DISPLAY_MODE` in `.env` (should be `framebuffer`) |
+| Black screen | Wrong display mode | Check `COMPOSE_PROFILES` in `.env` (should be `framebuffer`). Display is auto-detected at boot by `display-detect.sh` |
 | Cover art not updating | Stale metadata connection | `sudo docker restart fb-display` |
 | Wrong resolution | Override active | Remove `DISPLAY_RESOLUTION` from `.env` to auto-detect from framebuffer |
 | Stuck at 800x600 | Install video mode | Remove `video=HDMI-A-1:800x600@60` from `/boot/firmware/cmdline.txt` and reboot |
+| Display not detected at boot | Service not running | Check `sudo systemctl status snapclient-display`; runs `display-detect.sh` to set `COMPOSE_PROFILES` |
 
 ### Network
 
