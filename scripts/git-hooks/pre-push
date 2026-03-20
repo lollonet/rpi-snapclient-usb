@@ -42,7 +42,8 @@ fi
 # Hadolint
 if command -v hadolint &> /dev/null; then
     run_check "Hadolint (snapclient)" "hadolint --config .hadolint.yaml common/docker/snapclient/Dockerfile"
-    run_check "Hadolint (metadata)" "hadolint --config .hadolint.yaml digi-plus-4k/cover-display/Dockerfile"
+    run_check "Hadolint (fb-display)" "hadolint --config .hadolint.yaml common/docker/fb-display/Dockerfile"
+    run_check "Hadolint (audio-visualizer)" "hadolint --config .hadolint.yaml common/docker/audio-visualizer/Dockerfile"
 else
     echo -e "${YELLOW}⚠ Hadolint not installed - skipping${NC}"
 fi
@@ -54,7 +55,7 @@ run_check "Bash syntax" "bash -n common/scripts/setup.sh"
 run_check "HAT configs" "bash tests/test-hat-configs.sh"
 
 # HAT count
-run_check "HAT count (15)" "test \$(ls -1 common/audio-hats/*.conf | wc -l | tr -d ' ') -eq 15"
+run_check "HAT count (16)" "test \$(ls -1 common/audio-hats/*.conf | wc -l | tr -d ' ') -eq 16"
 
 echo ""
 if [ $FAILED -eq 0 ]; then

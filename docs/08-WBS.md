@@ -9,7 +9,7 @@
 | Snapclient audio playback | v0.1.0 | Stable |
 | Album art + metadata display | v0.1.0 | Stable |
 | Real-time spectrum analyzer | v0.1.0 | Stable |
-| 11 audio HAT support | v0.1.0 | Stable |
+| 15 audio HAT support | v0.2.6 | Stable |
 | Zero-touch SD install | v0.1.0 | Stable |
 | Read-only filesystem | v0.1.3 | Stable |
 | Song progress bar | v0.1.8 | Stable |

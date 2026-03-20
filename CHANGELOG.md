@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **I2C bus scan for HATs without EEPROM** ([#90](https://github.com/lollonet/rpi-snapclient-usb/pull/90)) — `detect_hat()` falls back to raw I2C probing before defaulting to USB audio, enabling zero-touch detection for InnoMaker HiFi DAC (PCM5122), Waveshare WM8960, and no-EEPROM Allo/DigiOne variants
 - **Enable i2c_arm at runtime before scan** ([#92](https://github.com/lollonet/rpi-snapclient-usb/pull/92)) — `dtparam i2c_arm=on` called before I2C scan so `/dev/i2c-1` is available on first boot (before HAT overlay written to `config.txt`)
-- **Raise fb-display memory limit in low profile** ([#91](https://github.com/lollonet/rpi-snapclient-usb/pull/91)) — `FBDISPLAY_MEM_LIMIT` increased from 128M to 192M for Pi 3B+ / Pi Zero 2 W; observed runtime usage is ~120 MiB, leaving only 8M headroom at old limit
+- **Raise fb-display memory limit in minimal profile** ([#91](https://github.com/lollonet/rpi-snapclient-usb/pull/91)) — `FBDISPLAY_MEM_LIMIT` increased from 128M to 192M for Pi 3B+ / Pi Zero 2 W; observed runtime usage is ~120 MiB, leaving only 8M headroom at old limit
 - **Redirect apt-get stdout in detect_hat()** ([#93](https://github.com/lollonet/rpi-snapclient-usb/pull/93)) — apt-get output redirected to stderr so package messages don't corrupt `AUDIO_HAT` variable
 - **C.UTF-8 locale system-wide** ([#94](https://github.com/lollonet/rpi-snapclient-usb/pull/94)) — Set `LANG=C.UTF-8` / `LC_ALL=C.UTF-8` to suppress locale warnings during apt operations; removed unused `gnupg` from base packages
 
