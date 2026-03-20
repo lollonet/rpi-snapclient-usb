@@ -35,6 +35,12 @@ Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = st
 - `ro-mode.sh enable/disable/status` manages it; requires reboot
 - Use `--no-readonly` flag on setup.sh to skip
 
+### Display Detection
+- `display-detect.sh` runs as a systemd oneshot at boot (`snapclient-display.service`)
+- Checks for HDMI display, sets `COMPOSE_PROFILES=framebuffer` in `.env` if found (empty for headless)
+- Reconciles running containers via `docker compose up -d --remove-orphans`
+- Skips restart if profile unchanged; waits up to 30s for Docker daemon
+
 ### Display Rendering
 - `fb_display.py` bind-mounted into container (live updates without image rebuild)
 - Resolution scaling: renders at internal res, scales to actual FB on output

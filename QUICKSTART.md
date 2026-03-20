@@ -15,7 +15,7 @@ Get your Raspberry Pi Snapcast client running in 5 minutes.
 
 ## Supported Audio HATs
 
-See the [Supported Audio HATs](README.md#supported-audio-hats) table in the README for the full list (10 HATs + USB audio).
+See the [Supported Audio HATs](README.md#supported-audio-hats) table in the README for the full list (15 HATs + USB audio).
 
 ## Step 1: Flash USB Drive
 
@@ -61,11 +61,12 @@ sudo bash common/scripts/setup.sh
 ```
 
 The script will:
-1. **Prompt you to select your audio HAT** (11 options):
-   - HiFiBerry DAC+, Digi+, DAC2 HD
+1. **Prompt you to select your audio HAT** (16 options):
+   - HiFiBerry DAC+, DAC+ Standard/clone, Digi+, DAC2 HD, AMP2, DAC+ ADC Pro
    - IQaudio DAC+, DigiAMP+, Codec Zero
    - Allo Boss, DigiOne
    - JustBoom DAC, Digi
+   - InnoMaker DAC PRO, Waveshare WM8960
    - USB Audio Device
 2. **Prompt you to select display resolution** (6 presets + custom):
    - 800x480, 1024x600, 1280x720, 1920x1080, 2560x1440, 3840x2160
