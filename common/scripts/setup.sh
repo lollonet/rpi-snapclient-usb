@@ -1080,8 +1080,13 @@ fi
 # (DAC + loopback for spectrum analyzer). Direct hw: would bypass the loopback.
 SOUNDCARD_VALUE="default"
 
-# Docker Compose profile: always framebuffer (direct /dev/fb0 rendering)
-DOCKER_COMPOSE_PROFILES="framebuffer"
+# Docker Compose profile: framebuffer for display stack, empty for headless.
+# DISPLAY_MODE is set by firstboot.sh (detects HDMI via /dev/fb0 + DRM status).
+if [[ "${DISPLAY_MODE:-framebuffer}" == "headless" ]]; then
+    DOCKER_COMPOSE_PROFILES=""
+else
+    DOCKER_COMPOSE_PROFILES="framebuffer"
+fi
 
 # Update .env with all settings (idempotent - works on existing or new file)
 update_env_var() {
@@ -1417,7 +1422,11 @@ echo "   - sudo systemctl status snapclient"
 echo "   - sudo docker ps"
 echo ""
 echo "The snapclient will start automatically on boot"
-echo "Cover display will render directly to framebuffer (/dev/fb0)"
+if [[ -n "$DOCKER_COMPOSE_PROFILES" ]]; then
+    echo "Cover display will render directly to framebuffer (/dev/fb0)"
+else
+    echo "Headless mode: audio only (no display services)"
+fi
 if [[ "${ENABLE_READONLY:-false}" == "true" ]]; then
 echo ""
 echo "Read-only mode is enabled. After reboot:"

@@ -71,6 +71,8 @@ services:
     image: lollonet/rpi-snapclient-usb-visualizer:latest
     build: ./docker/audio-visualizer
     container_name: audio-visualizer
+    profiles:
+      - framebuffer
     restart: unless-stopped
     read_only: true
     tmpfs:
