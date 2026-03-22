@@ -74,10 +74,10 @@ services:
     image: lollonet/rpi-snapclient-usb-visualizer:latest
     build: ./docker/audio-visualizer
     container_name: audio-visualizer
-    restart: unless-stopped
-    read_only: true
     profiles:
       - framebuffer
+    restart: unless-stopped
+    read_only: true
     tmpfs:
       - /tmp:size=32M
     user: "${PUID:-1000}:${PGID:-1000}"

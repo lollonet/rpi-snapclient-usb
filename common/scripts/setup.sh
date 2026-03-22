@@ -1513,7 +1513,11 @@ echo "   - sudo systemctl status snapclient"
 echo "   - sudo docker ps"
 echo ""
 echo "The snapclient will start automatically on boot"
-echo "Cover display will render directly to framebuffer (/dev/fb0)"
+if [[ -n "$DOCKER_COMPOSE_PROFILES" ]]; then
+    echo "Cover display will render directly to framebuffer (/dev/fb0)"
+else
+    echo "Headless mode: audio only (no display services)"
+fi
 if [[ "${ENABLE_READONLY:-false}" == "true" ]]; then
 echo ""
 echo "Read-only mode is enabled. After reboot:"
