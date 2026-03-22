@@ -96,11 +96,14 @@ jobs:
             echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin \
               || { echo "ERROR: Docker Hub login failed"; exit 1; }
 
-            echo "Pulling latest images..."
-            docker compose pull || { echo "ERROR: docker compose pull failed"; exit 1; }
-
             echo "Stopping old containers..."
             docker compose down --remove-orphans || true
+
+            echo "Pruning dangling images to free tmpfs..."
+            docker image prune -f || true
+
+            echo "Pulling latest images..."
+            docker compose pull || { echo "ERROR: docker compose pull failed"; exit 1; }
 
             if mountpoint -q /media/root-ro 2>/dev/null; then
               echo "Baking deployment to SD card lower layer..."

@@ -7,7 +7,7 @@
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-01.1 | Receive synchronized audio from Snapserver over TCP (port 1704) | Must |
-| FR-01.2 | Output audio via ALSA to any of the 11 supported HATs or USB DAC | Must |
+| FR-01.2 | Output audio via ALSA to any of the 15 supported HATs or USB DAC | Must |
 | FR-01.3 | Support hardware and software mixer modes | Must |
 | FR-01.4 | Route audio to both DAC and ALSA loopback simultaneously (for spectrum) | Must |
 | FR-01.5 | Auto-discover Snapserver via mDNS (`_snapcast._tcp`) | Must |
@@ -101,7 +101,7 @@
 |----|-------------|--------|
 | NFR-04.1 | Raspberry Pi 4 (2/4/8 GB) | Tested |
 | NFR-04.2 | Raspberry Pi 5 | Untested (should work) |
-| NFR-04.3 | Raspberry Pi 3B+ | Untested (low profile) |
-| NFR-04.4 | 11 audio HATs + USB audio | Tested |
+| NFR-04.3 | Raspberry Pi 3B+ | Untested (minimal profile) |
+| NFR-04.4 | 15 audio HATs + USB audio | Tested |
 | NFR-04.5 | Resolutions 800x480 to 3840x2160 | Tested |
 | NFR-04.6 | Big-endian platforms (PowerPC) | Tested (native, no Docker) |

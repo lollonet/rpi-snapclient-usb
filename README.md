@@ -60,7 +60,7 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 - 📊 **Real-Time Spectrum Analyzer**: dBFS FFT visualizer with half/third-octave bands, auto-gain normalization
 - 😴 **Standby Screen**: Retro hi-fi artwork with breathing animation when idle
 - 🔍 **mDNS Autodiscovery**: Snapserver found automatically — no IP configuration needed
-- 🎛️ **Multiple Audio HATs**: Support for 10 popular Raspberry Pi audio HATs + USB audio
+- 🎛️ **Multiple Audio HATs**: Support for 15 Raspberry Pi audio HATs + USB audio
 - 📺 **Flexible Display**: Direct framebuffer rendering, 6 resolution presets (800x480 to 4K)
 - ⚡ **Zero-Touch Install**: Flash SD, power on, auto-detects HAT with visual progress display
 - 🐳 **Docker-based**: Pre-built images for easy deployment
@@ -75,8 +75,11 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 | HAT | Type | Output |
 |-----|------|--------|
 | **HiFiBerry DAC+** | Analog | Line out, headphones |
+| **HiFiBerry DAC+ Standard/clone** | Analog | Line out (EEPROM-less boards) |
 | **HiFiBerry Digi+** | S/PDIF | Digital coax/optical |
 | **HiFiBerry DAC2 HD** | Analog HD | High-res line out |
+| **HiFiBerry AMP2** | Analog+Amp | Speaker terminals |
+| **HiFiBerry DAC+ ADC Pro** | Analog | Line in/out + recording |
 | **IQaudio DAC+** | Analog | Line out |
 | **IQaudio DigiAMP+** | Analog+Amp | Speaker terminals |
 | **IQaudio Codec Zero** | Analog | Line in/out |
@@ -84,6 +87,8 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 | **Allo DigiOne** | S/PDIF | Digital coax/optical |
 | **JustBoom DAC** | Analog | Line out, headphones |
 | **JustBoom Digi** | S/PDIF | Digital coax/optical |
+| **InnoMaker DAC PRO** | Analog HD | High-res line out (ES9038Q2M) |
+| **Waveshare WM8960** | Analog | Line in/out |
 | **USB Audio** | Varies | Any USB DAC/soundcard |
 
 ## Hardware Requirements
@@ -100,12 +105,12 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 
 | Model | Status | Notes |
 |-------|--------|-------|
-| Pi 4 (2GB) | Tested | Medium resource profile |
-| Pi 4 (4GB) | Tested | High resource profile |
-| Pi 4 (8GB) | Tested | High resource profile |
-| Pi 5 | Untested | Should work, high profile |
-| Pi 3B+ | Tested | Low resource profile |
-| Pi Zero 2 W | Untested | Low resource profile, no framebuffer display |
+| Pi 4 (2GB) | Tested | Standard profile |
+| Pi 4 (4GB) | Tested | Performance profile |
+| Pi 4 (8GB) | Tested | Performance profile |
+| Pi 5 | Untested | Should work, performance profile |
+| Pi 3B+ | Tested | Minimal profile |
+| Pi Zero 2 W | Untested | Minimal profile, no framebuffer display |
 
 #### Displays
 
@@ -148,7 +153,7 @@ For advanced users who prefer interactive control, see **[QUICKSTART.md](QUICKST
 2. Enable SSH and WiFi in Raspberry Pi Imager settings
 3. Boot Pi with your audio HAT attached
 4. Copy project files and run `sudo bash common/scripts/setup.sh`
-5. Select your audio HAT (11 options) and display resolution (6 presets + custom)
+5. Select your audio HAT (16 options) and display resolution (6 presets + custom)
 6. Optionally enter Snapserver IP (or leave empty for mDNS autodiscovery) and reboot
 
 The setup script installs Docker CE, automatically configures your audio HAT and ALSA, sets up the cover display for your chosen resolution, and creates systemd services for auto-start. Client ID is automatically generated from hostname.
@@ -168,7 +173,7 @@ rpi-snapclient-usb/
 │   ├── scripts/setup.sh        # Main installation script (--auto mode)
 │   ├── docker-compose.yml      # Unified Docker services
 │   ├── .env.example            # Environment template
-│   ├── audio-hats/             # Audio HAT configurations (11 files)
+│   ├── audio-hats/             # Audio HAT configurations (16 files)
 │   │   ├── hifiberry-dac.conf
 │   │   ├── hifiberry-digi.conf
 │   │   ├── hifiberry-dac2hd.conf
@@ -280,10 +285,11 @@ Expected: `Read-only mode: enabled` with overlay active. Use `ro-mode disable &&
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| Black screen | Wrong display mode | Check `DISPLAY_MODE` in `.env` (should be `framebuffer`) |
+| Black screen | Wrong display mode | Check `COMPOSE_PROFILES` in `.env` (should be `framebuffer`). Display is auto-detected at boot by `display-detect.sh` |
 | Cover art not updating | Stale metadata connection | `sudo docker restart fb-display` |
 | Wrong resolution | Override active | Remove `DISPLAY_RESOLUTION` from `.env` to auto-detect from framebuffer |
 | Stuck at 800x600 | Install video mode | Remove `video=HDMI-A-1:800x600@60` from `/boot/firmware/cmdline.txt` and reboot |
+| Display not detected at boot | Service not running | Check `sudo systemctl status snapclient-display`; runs `display-detect.sh` to set `COMPOSE_PROFILES` |
 
 ### Network
 
@@ -317,7 +323,7 @@ This project uses pre-built Docker images:
 
 All containers run with:
 - **Healthchecks** with dependency ordering (fb-display waits for visualizer, etc.)
-- **Resource limits** auto-detected based on Pi RAM (2GB/4GB/8GB profiles)
+- **Resource limits** auto-detected based on Pi RAM (minimal/standard/performance profiles)
 - **Security hardening**: no-new-privileges, capability drops, tmpfs restrictions
 
 Update to latest version:
@@ -368,7 +374,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - The setup script installs **Docker CE** (official Docker Community Edition) with Compose v2 plugin, not the Debian `docker.io` package
 - ALSA configuration is automatically generated based on the selected audio HAT
-- The script supports 11 different audio HATs with appropriate device tree overlays and card names
+- The script supports 15 different audio HATs (+ USB audio) with appropriate device tree overlays and card names
 - Metadata is served by the snapMULTI server; fb-display connects to it via WebSocket for track info and HTTP for artwork
 - All configuration is done via `.env` files - no hardcoded IP addresses in the code
 - USB audio devices are supported without requiring device tree overlays

@@ -345,6 +345,7 @@ show_hat_options() {
     echo "13) HiFiBerry DAC+ ADC Pro"
     echo "14) Innomaker DAC PRO"
     echo "15) Waveshare WM8960"
+    echo "16) HiFiBerry DAC+ Standard (clone/no EEPROM)"
 }
 
 validate_choice() {
@@ -374,6 +375,7 @@ get_hat_config() {
         13) echo "hifiberry-dacplusadc" ;;
         14) echo "innomaker-dac-pro" ;;
         15) echo "waveshare-wm8960" ;;
+        16) echo "hifiberry-dac-std" ;;
         *) echo "Invalid choice"; exit 1 ;;
     esac
 }
@@ -423,10 +425,11 @@ detect_hat() {
         cards=$(aplay -l 2>/dev/null || true)
         case "$cards" in
             # NOTE: sndrpihifiberry is shared by hifiberry-dac, hifiberry-amp2, and
-            # hifiberry-dacplusadc. Without EEPROM, all three fall back to hifiberry-dac
-            # (same overlay hifiberry-dacplus; AMP2 works, DAC+ADC Pro may not init).
+            # hifiberry-dacplusadc. Without EEPROM, use hifiberry-dacplus-std (Pi as
+            # clock master) to avoid DAC+ Pro misdetection on clone boards with floating
+            # GPIO3. AMP2 boards without EEPROM also work in std mode (no oscillator).
             # HiFiBerry boards ship with EEPROM so this path is rarely reached.
-            *sndrpihifiberry*)  echo "hifiberry-dac"  ; return ;;
+            *sndrpihifiberry*)  echo "hifiberry-dac-std"  ; return ;;
             *IQaudIODAC*)       echo "iqaudio-dac"    ; return ;;
             *IQaudIOCODEC*)     echo "iqaudio-codec"  ; return ;;
             *BossDAC*)          echo "allo-boss"      ; return ;;
@@ -467,8 +470,8 @@ detect_hat() {
             # PCM5122 at 0x4C/0x4D/0x4E/0x4F → PCM5122-based DAC (hifiberry-dac config)
             for addr in 4c 4d 4e 4f; do
                 if echo "$scan" | grep -qE "(^[[:space:]]*[0-9a-f]0:[[:space:]]|[[:space:]])${addr}([[:space:]]|$)"; then
-                    echo "I2C: PCM5122 at 0x${addr} on bus ${bus} → hifiberry-dac" >&2
-                    result="hifiberry-dac"; break 2
+                    echo "I2C: PCM5122 at 0x${addr} on bus ${bus} → hifiberry-dac-std" >&2
+                    result="hifiberry-dac-std"; break 2
                 fi
             done
             # WM8960 at 0x1A → Waveshare WM8960
@@ -506,8 +509,8 @@ if [ "$AUTO_MODE" = true ]; then
     HAT_CONFIG=$(resolve_hat_config_name "$AUDIO_HAT")
 else
     show_hat_options
-    read -rp "Enter choice [1-15]: " hat_choice
-    validate_choice "$hat_choice" 15
+    read -rp "Enter choice [1-16]: " hat_choice
+    validate_choice "$hat_choice" 16
     HAT_CONFIG=$(get_hat_config "$hat_choice")
 fi
 
@@ -713,6 +716,7 @@ echo ""
 echo "Setting up installation directory..."
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/public"
+mkdir -p "$INSTALL_DIR/scripts"
 
 # Copy project files (skip if source == destination, e.g. firstboot installs)
 if [[ "$(cd "$COMMON_DIR" 2>/dev/null && pwd)" != "$(cd "$INSTALL_DIR" 2>/dev/null && pwd)" ]]; then
@@ -875,7 +879,24 @@ if [ -n "$BOOT_CONFIG" ]; then
         # Add device tree overlay for HAT (skip if USB audio)
         if [ -n "$HAT_OVERLAY" ]; then
             echo "dtoverlay=$HAT_OVERLAY"
+
+            # Enable I2C for HATs that use it for DAC configuration
+            # PCM512x (HiFiBerry, InnoMaker, IQaudio, Allo), WM8960, WM8804 all need I2C
+            case "$HAT_OVERLAY" in
+                hifiberry-*|allo-boss|iqaudio-*|innomaker-*|allo-katana*|waveshare-wm8960)
+                    echo "dtparam=i2c_arm=on"
+                    ;;
+            esac
         fi
+
+        # Enable I2C for HAT communication (PCM512x, WM8960, ES9038 chips need it).
+        # hifiberry-dacplus* covers dacplus, dacplus-std, dacplushd, dacplusadc*.
+        case "${HAT_OVERLAY:-}" in
+            hifiberry-dacplus*|iqaudio-dacplus|allo-boss*|\
+            justboom-dac|allo-katana*|wm8960*)
+                echo "dtparam=i2c_arm=on"
+                ;;
+        esac
 
         # Disable onboard audio
         echo "dtparam=audio=off"
@@ -954,22 +975,22 @@ detect_resource_profile() {
     local mem_mb
     mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
 
-    # Fallback to medium profile if detection failed (0 or very low = likely error)
+    # Fallback to standard profile if detection failed (0 or very low = likely error)
     if (( mem_mb < 256 )); then
-        echo "medium"
+        echo "standard"
         return
     fi
 
     # Determine profile based on RAM
     if (( mem_mb < 2048 )); then
         # Pi Zero 2 W, Pi 3, <2GB RAM
-        echo "low"
+        echo "minimal"
     elif (( mem_mb < 4096 )); then
         # Pi 4 2GB, 2-4GB RAM
-        echo "medium"
+        echo "standard"
     else
         # Pi 4 4GB+, Pi 5, 8GB+ RAM
-        echo "high"
+        echo "performance"
     fi
 }
 
@@ -977,39 +998,40 @@ detect_resource_profile() {
 set_resource_limits() {
     local profile=$1
 
+    # Measured baseline (idle): snapclient 18M, visualizer 36-51M, fb-display 89-114M
     case "$profile" in
-        low)
-            # Minimal: Pi Zero 2 W, Pi 3
-            SNAPCLIENT_MEM_LIMIT="96M"
-            SNAPCLIENT_MEM_RESERVE="48M"
+        minimal)
+            # Pi Zero 2 W, Pi 3, <2GB RAM
+            SNAPCLIENT_MEM_LIMIT="64M"
+            SNAPCLIENT_MEM_RESERVE="32M"
             SNAPCLIENT_CPU_LIMIT="0.5"
             VISUALIZER_MEM_LIMIT="128M"
-            VISUALIZER_MEM_RESERVE="64M"
+            VISUALIZER_MEM_RESERVE="48M"
             VISUALIZER_CPU_LIMIT="0.5"
             FBDISPLAY_MEM_LIMIT="192M"
             FBDISPLAY_MEM_RESERVE="96M"
             FBDISPLAY_CPU_LIMIT="0.5"
             ;;
-        medium)
-            # Standard: Pi 4 2GB
-            SNAPCLIENT_MEM_LIMIT="128M"
-            SNAPCLIENT_MEM_RESERVE="64M"
+        standard)
+            # Pi 4 2GB, 2-4GB RAM
+            SNAPCLIENT_MEM_LIMIT="64M"
+            SNAPCLIENT_MEM_RESERVE="32M"
             SNAPCLIENT_CPU_LIMIT="0.5"
-            VISUALIZER_MEM_LIMIT="256M"
-            VISUALIZER_MEM_RESERVE="128M"
+            VISUALIZER_MEM_LIMIT="128M"
+            VISUALIZER_MEM_RESERVE="64M"
             VISUALIZER_CPU_LIMIT="1.0"
             FBDISPLAY_MEM_LIMIT="256M"
             FBDISPLAY_MEM_RESERVE="128M"
             FBDISPLAY_CPU_LIMIT="1.0"
             ;;
-        high)
-            # Performance: Pi 4 4GB+, Pi 5
-            SNAPCLIENT_MEM_LIMIT="192M"
-            SNAPCLIENT_MEM_RESERVE="96M"
+        performance)
+            # Pi 4 4GB+, Pi 5
+            SNAPCLIENT_MEM_LIMIT="96M"
+            SNAPCLIENT_MEM_RESERVE="48M"
             SNAPCLIENT_CPU_LIMIT="1.0"
-            VISUALIZER_MEM_LIMIT="384M"
-            VISUALIZER_MEM_RESERVE="192M"
-            VISUALIZER_CPU_LIMIT="2.0"
+            VISUALIZER_MEM_LIMIT="192M"
+            VISUALIZER_MEM_RESERVE="96M"
+            VISUALIZER_CPU_LIMIT="1.5"
             FBDISPLAY_MEM_LIMIT="384M"
             FBDISPLAY_MEM_RESERVE="192M"
             FBDISPLAY_CPU_LIMIT="2.0"
@@ -1080,12 +1102,15 @@ fi
 # (DAC + loopback for spectrum analyzer). Direct hw: would bypass the loopback.
 SOUNDCARD_VALUE="default"
 
-# Docker Compose profile: framebuffer for display stack, empty for headless.
-# DISPLAY_MODE is set by firstboot.sh (detects HDMI via /dev/fb0 + DRM status).
-if [[ "${DISPLAY_MODE:-framebuffer}" == "headless" ]]; then
-    DOCKER_COMPOSE_PROFILES=""
-else
+# Docker Compose profile: detect display at install time.
+# Boot-time service (snapclient-display.service) re-checks on every boot.
+# shellcheck source=display.sh
+source "$COMMON_DIR/scripts/display.sh"
+if has_display; then
     DOCKER_COMPOSE_PROFILES="framebuffer"
+else
+    DOCKER_COMPOSE_PROFILES=""
+    echo "No display detected -- headless mode (audio only)"
 fi
 
 # Update .env with all settings (idempotent - works on existing or new file)
@@ -1259,7 +1284,17 @@ EOF
 systemctl daemon-reload
 systemctl enable snapclient.service
 
-echo "Systemd service created and enabled"
+# Install display detection boot service (re-checks HDMI on every boot)
+cp "$COMMON_DIR/scripts/display-detect.sh" "$INSTALL_DIR/scripts/"
+cp "$COMMON_DIR/scripts/display.sh" "$INSTALL_DIR/scripts/"
+chmod +x "$INSTALL_DIR/scripts/display-detect.sh"
+if [[ -d /etc/systemd/system ]]; then
+    cp "$COMMON_DIR/systemd/snapclient-display.service" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable snapclient-display.service
+fi
+
+echo "Systemd services created and enabled"
 echo ""
 
 # ============================================
@@ -1394,6 +1429,62 @@ if ! docker compose pull 2>&1; then
 fi
 log_progress "All images pulled successfully"
 echo ""
+
+# ============================================
+# Step 13b: Bake Docker state to SD card (overlayroot only, defensive)
+# First-boot: overlayroot not active yet -> harmless no-op.
+# Re-runs on overlayroot: persists images so tmpfs doesn't fill on next boot.
+# ============================================
+if mountpoint -q /media/root-ro 2>/dev/null; then
+    log_progress "Baking Docker images to SD card..."
+    BAKE_DIR=$(mktemp -d /tmp/snapclient-bake-XXXXX)
+    bake_cleanup() {
+        sudo umount "$BAKE_DIR" 2>/dev/null || true
+        rmdir "$BAKE_DIR" 2>/dev/null || true
+        sudo sync
+    }
+    trap bake_cleanup EXIT
+
+    sudo mount --bind /media/root-ro "$BAKE_DIR"
+    sudo mount -o remount,rw "$BAKE_DIR"
+
+    # Persist config files
+    sudo mkdir -p "$BAKE_DIR$INSTALL_DIR"
+    sudo rsync -a \
+        "$INSTALL_DIR/.env" \
+        "$INSTALL_DIR/docker-compose.yml" \
+        "$BAKE_DIR$INSTALL_DIR/"
+    sudo rsync -a --delete "$INSTALL_DIR/docker/" \
+        "$BAKE_DIR$INSTALL_DIR/docker/"
+    sudo rsync -a --delete "$INSTALL_DIR/public/" \
+        "$BAKE_DIR$INSTALL_DIR/public/"
+    if [[ -d "$INSTALL_DIR/audio-hats" ]]; then
+        sudo rsync -a --delete "$INSTALL_DIR/audio-hats/" \
+            "$BAKE_DIR$INSTALL_DIR/audio-hats/"
+    fi
+    if [[ -d "$INSTALL_DIR/scripts" ]]; then
+        sudo rsync -a --delete "$INSTALL_DIR/scripts/" \
+            "$BAKE_DIR$INSTALL_DIR/scripts/"
+    fi
+
+    # Persist Docker image index + layers
+    sudo rsync -a /var/lib/docker/image/ \
+        "$BAKE_DIR/var/lib/docker/image/"
+    sudo rsync -aX --ignore-existing /var/lib/docker/fuse-overlayfs/ \
+        "$BAKE_DIR/var/lib/docker/fuse-overlayfs/"
+
+    # Verify bake wrote content (detect rsync failures)
+    if [[ ! -d "$BAKE_DIR/var/lib/docker/image" ]] || \
+       [[ -z "$(ls -A "$BAKE_DIR/var/lib/docker/image" 2>/dev/null)" ]]; then
+        echo "ERROR: Bake verification failed -- Docker image index not written"
+        exit 1
+    fi
+
+    sudo sync
+    log_progress "Docker images baked to SD card"
+else
+    echo "Non-overlayroot system -- Docker images stored directly on disk"
+fi
 
 # ============================================
 # Setup Complete

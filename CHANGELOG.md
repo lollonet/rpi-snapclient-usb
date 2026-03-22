@@ -8,9 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **I2C bus scan for HATs without EEPROM** ([#90](https://github.com/lollonet/rpi-snapclient-usb/pull/90)) — `detect_hat()` now falls back to raw I2C probing before defaulting to USB audio, enabling zero-touch detection for InnoMaker HiFi DAC (PCM5122), Waveshare WM8960, and no-EEPROM Allo/DigiOne variants
-- **Enable i2c_arm at runtime before scan** ([#92](https://github.com/lollonet/rpi-snapclient-usb/pull/92)) — `dtparam i2c_arm=on` called before I2C scan so `/dev/i2c-1` is available on first boot (before the HAT overlay has been written to `config.txt`)
-- **Raise fb-display memory limit in low profile** ([#91](https://github.com/lollonet/rpi-snapclient-usb/pull/91)) — `FBDISPLAY_MEM_LIMIT` increased from 128M to 192M for Pi 3B+ / Pi Zero 2 W; observed runtime usage is ~120 MiB, leaving only 8M headroom at the old limit
+- **HiFiBerry DAC+ auto-detect misconfiguration** ([#96](https://github.com/lollonet/rpi-snapclient-usb/issues/96)) — Changed `hifiberry-dacplus` overlay to `hifiberry-dacplus-std` to force Pi as clock master; the auto-detect overlay incorrectly identifies Standard boards as Pro when EEPROM is absent, causing DAC to expect non-existent oscillator
+- **I2C enablement for PCM512x-based HATs** — Added `dtparam=i2c_arm=on` to config.txt for HiFiBerry, InnoMaker, IQaudio, Allo, and Waveshare WM8960 HATs; kernel driver needs I2C access to configure DAC clocks and registers
+
+## [0.2.16] — 2026-03-18
+
+### Added
+- **Snapclient v0.35.0** ([#95](https://github.com/lollonet/rpi-snapclient-usb/pull/95)) — Upgraded from `lollonet/santcasp` fork to upstream `badaix/snapcast` v0.35.0; uses tagged releases for better version control
+
+### Fixed
+- **I2C bus scan for HATs without EEPROM** ([#90](https://github.com/lollonet/rpi-snapclient-usb/pull/90)) — `detect_hat()` falls back to raw I2C probing before defaulting to USB audio, enabling zero-touch detection for InnoMaker HiFi DAC (PCM5122), Waveshare WM8960, and no-EEPROM Allo/DigiOne variants
+- **Enable i2c_arm at runtime before scan** ([#92](https://github.com/lollonet/rpi-snapclient-usb/pull/92)) — `dtparam i2c_arm=on` called before I2C scan so `/dev/i2c-1` is available on first boot (before HAT overlay written to `config.txt`)
+- **Raise fb-display memory limit in minimal profile** ([#91](https://github.com/lollonet/rpi-snapclient-usb/pull/91)) — `FBDISPLAY_MEM_LIMIT` increased from 128M to 192M for Pi 3B+ / Pi Zero 2 W; observed runtime usage is ~120 MiB, leaving only 8M headroom at old limit
+- **Redirect apt-get stdout in detect_hat()** ([#93](https://github.com/lollonet/rpi-snapclient-usb/pull/93)) — apt-get output redirected to stderr so package messages don't corrupt `AUDIO_HAT` variable
+- **C.UTF-8 locale system-wide** ([#94](https://github.com/lollonet/rpi-snapclient-usb/pull/94)) — Set `LANG=C.UTF-8` / `LC_ALL=C.UTF-8` to suppress locale warnings during apt operations; removed unused `gnupg` from base packages
+
+### Changed
+- **CI resilience** ([#89](https://github.com/lollonet/rpi-snapclient-usb/pull/89)) — Trivy scans use `continue-on-error: true` so network failures don't block deploys
 
 ## [0.2.13] — 2026-03-17
 
