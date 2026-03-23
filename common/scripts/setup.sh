@@ -1285,11 +1285,18 @@ systemctl daemon-reload
 systemctl enable snapclient.service
 
 # Install display detection boot service (re-checks HDMI on every boot)
-cp "$COMMON_DIR/scripts/display-detect.sh" "$INSTALL_DIR/scripts/"
-cp "$COMMON_DIR/scripts/display.sh" "$INSTALL_DIR/scripts/"
+# Skip copy when source == destination (firstboot installs from /opt/snapclient)
+if [[ "$(cd "$COMMON_DIR" 2>/dev/null && pwd)" != "$(cd "$INSTALL_DIR" 2>/dev/null && pwd)" ]]; then
+    cp "$COMMON_DIR/scripts/display-detect.sh" "$INSTALL_DIR/scripts/"
+    cp "$COMMON_DIR/scripts/display.sh" "$INSTALL_DIR/scripts/"
+fi
 chmod +x "$INSTALL_DIR/scripts/display-detect.sh"
 if [[ -d /etc/systemd/system ]]; then
-    cp "$COMMON_DIR/systemd/snapclient-display.service" /etc/systemd/system/
+    if [[ "$(cd "$COMMON_DIR" 2>/dev/null && pwd)" != "$(cd "$INSTALL_DIR" 2>/dev/null && pwd)" ]]; then
+        cp "$COMMON_DIR/systemd/snapclient-display.service" /etc/systemd/system/
+    elif [[ -f "$INSTALL_DIR/systemd/snapclient-display.service" ]]; then
+        cp "$INSTALL_DIR/systemd/snapclient-display.service" /etc/systemd/system/
+    fi
     systemctl daemon-reload
     systemctl enable snapclient-display.service
 fi
