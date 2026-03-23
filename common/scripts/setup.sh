@@ -1239,6 +1239,29 @@ else
     log_progress "Network: ethernet (no WiFi tuning)"
 fi
 
+# ── Audio performance tuning ──
+# CPU governor: 'performance' avoids ramp-up latency during audio playback
+if [[ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]]; then
+    for gov in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+        echo performance > "$gov" 2>/dev/null || true
+    done
+    # Persist across reboots via kernel cmdline or cpufrequtils
+    if command -v update-rc.d &>/dev/null && [[ -d /etc/default ]]; then
+        echo 'GOVERNOR="performance"' > /etc/default/cpufrequtils 2>/dev/null || true
+    fi
+    echo "✓ CPU governor set to performance"
+fi
+
+# USB autosuspend: disable to prevent DAC/audio device sleep
+if [[ -f /sys/module/usbcore/parameters/autosuspend ]]; then
+    echo -1 > /sys/module/usbcore/parameters/autosuspend 2>/dev/null || true
+    # Persist via udev rule
+    mkdir -p /etc/udev/rules.d
+    echo 'ACTION=="add", SUBSYSTEM=="usb", ATTR{power/autosuspend}="-1"' \
+        > /etc/udev/rules.d/50-usb-no-autosuspend.rules 2>/dev/null || true
+    echo "✓ USB autosuspend disabled"
+fi
+
 # Verify read_only and tmpfs settings
 if grep -q "read_only: true" "$INSTALL_DIR/docker-compose.yml" 2>/dev/null; then
     echo "✓ Read-only containers configured"
