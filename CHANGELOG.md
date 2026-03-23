@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.18] — 2026-03-23
+
+### Changed
+- **Resource profiles optimized from production measurements** ([#100](https://github.com/lollonet/rpi-snapclient-usb/pull/100), [#101](https://github.com/lollonet/rpi-snapclient-usb/pull/101)) — re-baselined Docker CPU and memory limits using live measurements; documentation coherence fixes
+
 ### Fixed
 - **HiFiBerry DAC+ auto-detect misconfiguration** ([#96](https://github.com/lollonet/rpi-snapclient-usb/issues/96)) — Changed `hifiberry-dacplus` overlay to `hifiberry-dacplus-std` to force Pi as clock master; the auto-detect overlay incorrectly identifies Standard boards as Pro when EEPROM is absent, causing DAC to expect non-existent oscillator
 - **I2C enablement for PCM512x-based HATs** — Added `dtparam=i2c_arm=on` to config.txt for HiFiBerry, InnoMaker, IQaudio, Allo, and Waveshare WM8960 HATs; kernel driver needs I2C access to configure DAC clocks and registers
+- **CI deploy tmpfs exhaustion** ([#99](https://github.com/lollonet/rpi-snapclient-usb/pull/99)) — reordered deploy steps to prevent overlayroot tmpfs from filling up during image pull + bake
+- **Headless mode ignored** ([#102](https://github.com/lollonet/rpi-snapclient-usb/pull/102)) — `setup.sh` hardcoded `COMPOSE_PROFILES="framebuffer"` instead of using display detection; headless Pis ran visual containers wasting 128-256M RAM. Now uses `has_display()` from `display.sh`; `audio-visualizer` gated under `framebuffer` profile
+- **Display script self-copy crash** ([#103](https://github.com/lollonet/rpi-snapclient-usb/pull/103)) — `cp` failed with "are the same file" when `COMMON_DIR == INSTALL_DIR` on firstboot, crashing `setup.sh` under `set -e`
 
 ## [0.2.16] — 2026-03-18
 
