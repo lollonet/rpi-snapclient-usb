@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # Display detection library — sourced by firstboot.sh, setup.sh, and display-detect.sh
 #
 # Checks whether an HDMI display is physically connected to the Pi.
