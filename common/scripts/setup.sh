@@ -1147,6 +1147,8 @@ declare -A env_vars=(
     ["FBDISPLAY_MEM_LIMIT"]="$FBDISPLAY_MEM_LIMIT"
     ["FBDISPLAY_MEM_RESERVE"]="$FBDISPLAY_MEM_RESERVE"
     ["FBDISPLAY_CPU_LIMIT"]="$FBDISPLAY_CPU_LIMIT"
+    # Mixer (auto-detected from HAT config)
+    ["MIXER"]="${HAT_MIXER:-software}"
     # ALSA/network (auto-detected)
     ["ALSA_BUFFER_TIME"]="$ALSA_BUFFER_TIME"
     ["ALSA_FRAGMENTS"]="$ALSA_FRAGMENTS"
@@ -1527,6 +1529,7 @@ echo "========================================="
 echo ""
 echo "Configuration Summary:"
 echo "  - Audio HAT: $HAT_NAME"
+echo "  - Mixer: ${HAT_MIXER:-software}"
 echo "  - Resolution: ${DISPLAY_RESOLUTION:-auto}"
 echo "  - Band mode: $BAND_MODE"
 echo "  - Client ID: $CLIENT_ID"
