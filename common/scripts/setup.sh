@@ -1316,6 +1316,7 @@ if [[ "$(cd "$COMMON_DIR" 2>/dev/null && pwd)" != "$(cd "$INSTALL_DIR" 2>/dev/nu
     cp "$COMMON_DIR/scripts/display.sh" "$INSTALL_DIR/scripts/"
 fi
 chmod +x "$INSTALL_DIR/scripts/display-detect.sh"
+chmod +x "$INSTALL_DIR/scripts/display.sh"
 if [[ -d /etc/systemd/system ]]; then
     if [[ "$(cd "$COMMON_DIR" 2>/dev/null && pwd)" != "$(cd "$INSTALL_DIR" 2>/dev/null && pwd)" ]]; then
         cp "$COMMON_DIR/systemd/snapclient-display.service" /etc/systemd/system/
