@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.19] — 2026-03-25
+
+### Added
+- **Hardware mixer auto-detection** ([#105](https://github.com/lollonet/rpi-snapclient-usb/pull/105)) — `setup.sh` auto-configures `MIXER` based on detected audio HAT. Hardware mixer for DACs with volume control (PCM5122, PCM1794A, TAS5756M, DA7212, WM8960), software for S/PDIF and USB. Preserves full 16-bit audio resolution at all volume levels
+
+### Fixed
+- **CPU governor and USB autosuspend** ([#104](https://github.com/lollonet/rpi-snapclient-usb/pull/104)) — sets CPU governor to `performance` and disables USB autosuspend to prevent audio glitches
+- **display.sh safety and permissions** ([#106](https://github.com/lollonet/rpi-snapclient-usb/pull/106)) — added `set -euo pipefail` to display.sh; setup.sh now sets execute permission on display.sh after copy
+
 ## [0.2.18] — 2026-03-23
 
 ### Changed
