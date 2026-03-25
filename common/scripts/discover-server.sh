@@ -5,6 +5,17 @@ set -euo pipefail
 
 ENV_FILE="/opt/snapclient/.env"
 
+# "Both" mode: local snapserver always wins — no discovery needed
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^snapserver$'; then
+    current=$(grep "^SNAPSERVER_HOST=" "$ENV_FILE" 2>/dev/null | cut -d= -f2) || true
+    if [[ "$current" != "127.0.0.1" ]]; then
+        sed -i "s|^SNAPSERVER_HOST=.*|SNAPSERVER_HOST=127.0.0.1|" "$ENV_FILE" 2>/dev/null \
+            || echo "SNAPSERVER_HOST=127.0.0.1" >> "$ENV_FILE"
+    fi
+    echo "snapclient-discover: local snapserver detected, using 127.0.0.1"
+    exit 0
+fi
+
 # Skip if SNAPSERVER_HOST is already set (user configured explicit IP)
 current=$(grep "^SNAPSERVER_HOST=" "$ENV_FILE" 2>/dev/null | cut -d= -f2) || true
 if [[ -n "$current" ]]; then
