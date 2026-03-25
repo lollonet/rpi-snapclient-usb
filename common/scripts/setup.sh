@@ -921,11 +921,12 @@ if [ -n "$BOOT_CONFIG" ]; then
 
     echo "Boot configuration updated"
 
-    # Disable fbcon on fb0 so the kernel console doesn't overwrite
-    # the framebuffer display (maps console to nonexistent vt9)
-    if [ -n "$CMDLINE" ] && ! grep -q "fbcon=map:9" "$CMDLINE"; then
-        sed -i 's/$/ fbcon=map:9/' "$CMDLINE"
-        echo "Disabled fbcon on fb0 (cmdline.txt updated)"
+    # Remove fbcon=map:9 if present (legacy: hid boot messages by mapping
+    # console to nonexistent fb9). Kernel messages during boot are valuable
+    # for diagnostics; fb-display overwrites fb0 once it starts.
+    if [ -n "$CMDLINE" ] && grep -q "fbcon=map:9" "$CMDLINE"; then
+        sed -i 's/ fbcon=map:9//' "$CMDLINE"
+        echo "Removed fbcon=map:9 from cmdline.txt (boot messages now visible)"
     fi
 
     # Enable cgroup memory controller for Docker resource limits
