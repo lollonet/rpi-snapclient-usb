@@ -72,7 +72,6 @@ Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = st
 - **SD card**: Server's `prepare-sd.sh` copies client files to boot partition; server's `firstboot.sh` runs `setup.sh --auto`
 - **Live update**: rsync changed files + `docker compose up -d --force-recreate`
 - Bind-mounted files: `fb_display.py`, `visualizer.py` — no image rebuild needed
-- Device hosts: `snapdigi` (192.168.63.5), `snapvideo` — SSH user `claudio`
 
 ### Git & CI
 - Pre-push hook runs shellcheck, bash syntax, HAT config validation
