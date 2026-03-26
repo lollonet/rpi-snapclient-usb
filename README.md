@@ -367,6 +367,15 @@ To bypass: `git push --no-verify`
 4. Push and create a PR
 5. CI must pass before merge
 
+## Acknowledgments
+
+This project is built on:
+
+- **[Snapcast](https://github.com/badaix/snapcast)** by Johannes Pohl — the multiroom audio streaming engine
+- **[snapMULTI](https://github.com/lollonet/snapMULTI)** — the server that powers this client
+
+Part of the [snapMULTI ecosystem](https://github.com/lollonet/snapMULTI#snapmulti-ecosystem).
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
