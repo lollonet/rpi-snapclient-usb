@@ -1,5 +1,11 @@
 # Raspberry Pi Snapcast Client with HiFiBerry & Cover Display
 
+[![CI](https://github.com/lollonet/rpi-snapclient-usb/actions/workflows/ci.yml/badge.svg)](https://github.com/lollonet/rpi-snapclient-usb/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/lollonet/rpi-snapclient-usb?color=orange)](https://github.com/lollonet/rpi-snapclient-usb/releases/latest)
+[![downloads](https://img.shields.io/docker/pulls/lollonet/rpi-snapclient-usb?color=green)](https://hub.docker.com/r/lollonet/rpi-snapclient-usb)
+[![Donate](https://img.shields.io/badge/Donate-PayPal-yellowgreen)](https://paypal.me/lolettic)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 > **Requires [snapMULTI](https://github.com/lollonet/snapMULTI) server.** This is the client component of the snapMULTI multiroom audio system. Install the server first — the unified installer handles both server and client setup.
 
 Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring synchronized multiroom audio and visual cover art display.
