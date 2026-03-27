@@ -57,6 +57,13 @@ run_check "HAT configs" "bash tests/test-hat-configs.sh"
 # HAT count
 run_check "HAT count (16)" "test \$(ls -1 common/audio-hats/*.conf | wc -l | tr -d ' ') -eq 16"
 
+# Python tests
+if command -v pytest &> /dev/null; then
+    run_check "Python tests" "pytest tests/ -q --tb=short"
+else
+    echo -e "${YELLOW}⚠ pytest not installed - skipping${NC}"
+fi
+
 echo ""
 if [ $FAILED -eq 0 ]; then
     echo -e "${GREEN}✅ All checks passed! Pushing...${NC}"
