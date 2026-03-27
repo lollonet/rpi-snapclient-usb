@@ -57,6 +57,10 @@ run_check "HAT configs" "bash tests/test-hat-configs.sh"
 # HAT count
 run_check "HAT count (16)" "test \$(ls -1 common/audio-hats/*.conf | wc -l | tr -d ' ') -eq 16"
 
+# Entrypoint and resource profile tests (match remote CI)
+run_check "Entrypoint tests" "bash tests/test-entrypoint.sh"
+run_check "Resource profiles" "bash tests/test-resource-profiles.sh"
+
 # Python tests
 if command -v pytest &> /dev/null; then
     run_check "Python tests" "pytest tests/ -q --tb=short"

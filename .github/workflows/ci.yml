@@ -42,8 +42,11 @@ jobs:
           fi
           hadolint --version
 
-      - name: Hadolint (snapclient)
-        run: hadolint --config .hadolint.yaml --failure-threshold warning common/docker/snapclient/Dockerfile
+      - name: Hadolint Dockerfiles
+        run: |
+          hadolint --config .hadolint.yaml --failure-threshold warning common/docker/snapclient/Dockerfile
+          hadolint --config .hadolint.yaml --failure-threshold warning common/docker/fb-display/Dockerfile
+          hadolint --config .hadolint.yaml --failure-threshold warning common/docker/audio-visualizer/Dockerfile
 
 
   test:
