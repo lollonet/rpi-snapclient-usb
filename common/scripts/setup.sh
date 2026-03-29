@@ -75,6 +75,15 @@ if [ "$AUTO_MODE" = true ]; then
     fi
 fi
 
+# Source shared system tuning functions early (needed throughout the script)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+for _tune_candidate in \
+    "$SCRIPT_DIR/common/system-tune.sh" \
+    "$SCRIPT_DIR/../scripts/common/system-tune.sh" \
+    "$(dirname "$0")/common/system-tune.sh"; do
+    [[ -f "$_tune_candidate" ]] && source "$_tune_candidate" && break
+done
+
 echo "========================================="
 echo "Raspberry Pi Snapclient Setup Script"
 echo "With Audio HAT and Cover Display Support"
@@ -1218,21 +1227,7 @@ else
     echo "⚠ Container security options not found in docker-compose.yml"
 fi
 
-# ── System tuning (shared with server — scripts/common/system-tune.sh) ──
-TUNE_SCRIPT=""
-for _tune_candidate in \
-    "$COMMON_DIR/../scripts/common/system-tune.sh" \
-    "$INSTALL_DIR/scripts/common/system-tune.sh" \
-    "$(dirname "$0")/common/system-tune.sh"; do
-    [[ -f "$_tune_candidate" ]] && TUNE_SCRIPT="$_tune_candidate" && break
-done
-if [[ -n "$TUNE_SCRIPT" ]]; then
-    # shellcheck source=common/system-tune.sh
-    source "$TUNE_SCRIPT"
-else
-    echo "Warning: system-tune.sh not found, skipping shared tuning"
-fi
-
+# ── System tuning (system-tune.sh sourced at top of file) ──
 if [[ "$CONNECTION_TYPE" == "wifi" ]]; then
     tune_wifi_powersave
     log_progress "WiFi power management: disabled"
