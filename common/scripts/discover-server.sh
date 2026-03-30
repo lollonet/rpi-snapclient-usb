@@ -16,10 +16,19 @@ WATCH_MODE=false
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^snapserver$'; then
     current=$(grep "^SNAPSERVER_HOST=" "$ENV_FILE" 2>/dev/null | cut -d= -f2) || true
     if [[ "$current" != "127.0.0.1" ]]; then
-        sed -i "s|^SNAPSERVER_HOST=.*|SNAPSERVER_HOST=127.0.0.1|" "$ENV_FILE" 2>/dev/null \
-            || echo "SNAPSERVER_HOST=127.0.0.1" >> "$ENV_FILE"
         echo "snapclient-discover: local snapserver detected, switching to 127.0.0.1"
-        $WATCH_MODE && cd /opt/snapclient && docker compose restart snapclient 2>/dev/null || true
+        if $WATCH_MODE; then
+            if cd /opt/snapclient && docker compose restart snapclient 2>/dev/null; then
+                sed -i "s|^SNAPSERVER_HOST=.*|SNAPSERVER_HOST=127.0.0.1|" "$ENV_FILE" 2>/dev/null \
+                    || echo "SNAPSERVER_HOST=127.0.0.1" >> "$ENV_FILE"
+            else
+                echo "snapclient-discover: restart failed, will retry next cycle"
+                exit 0
+            fi
+        else
+            sed -i "s|^SNAPSERVER_HOST=.*|SNAPSERVER_HOST=127.0.0.1|" "$ENV_FILE" 2>/dev/null \
+                || echo "SNAPSERVER_HOST=127.0.0.1" >> "$ENV_FILE"
+        fi
     else
         echo "snapclient-discover: local snapserver, using 127.0.0.1"
     fi
