@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Repo renamed** to `snapclient-pi` (was `rpi-snapclient-usb`). GitHub redirects old URLs.
+- **Docker images** renamed: `lollonet/snapclient-pi[-*]:latest`
+
+## [0.2.23] — 2026-03-31
+
+### Changed
+- **Shared Docker install** ([#113](https://github.com/lollonet/snapclient-pi/pull/113)) — setup.sh uses shared `install_docker_apt()` instead of inline 25-line Docker CE installation
+
+## [0.2.22] — 2026-03-30
+
+### Added
+- **Periodic snapserver re-discovery** ([#110](https://github.com/lollonet/snapclient-pi/pull/110)) — systemd timer re-discovers snapserver every 5min via mDNS; restarts snapclient only when server IP changes
+
+### Fixed
+- **Don't write discovered IP to .env** ([#111](https://github.com/lollonet/snapclient-pi/pull/111)) — preserves autodiscovery; uses volatile `/run/` tracking
+- **Both-mode restart rollback** ([#112](https://github.com/lollonet/snapclient-pi/pull/112)) — only update .env after successful restart
+- **Shellcheck source directive** — silence SC1090 for system-tune.sh dynamic source
+
+## [0.2.21] — 2026-03-29
+
+### Fixed
+- **Source system-tune.sh at top of file** — was sourced after functions that depend on it
+
+## [0.2.20] — 2026-03-29
+
+### Fixed
+- **Pin numpy==2.4.3** — 2.1.6 incompatible with Python 3.13
+
 ## [0.2.19] — 2026-03-25
 
 ### Added
