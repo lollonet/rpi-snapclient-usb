@@ -90,6 +90,6 @@ No ports are exposed to the network. The visualizer WebSocket binds to localhost
 
 - Docker images built in CI from known Dockerfiles
 - Base images: `python:3.13-slim` (official), `alpine` (snapclient)
-- Images published to Docker Hub (`lollonet/rpi-snapclient-usb-*`)
+- Images published to Docker Hub (`lollonet/snapclient-pi-*`)
 - Pre-push hook runs shellcheck on all shell scripts
 - CI runs lint + tests on every PR

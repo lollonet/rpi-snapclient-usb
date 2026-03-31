@@ -4,7 +4,7 @@
 
 ## Project Identity
 
-**Name**: rpi-snapclient-usb
+**Name**: snapclient-pi
 **Author**: Claudio Loletti
 **License**: MIT
 **Repository**: Component of [snapMULTI](https://github.com/lollonet/snapMULTI) (included as git submodule at `client/`)
@@ -41,7 +41,7 @@ DIY audiophile and home automation community — specifically Snapcast and HiFiB
 This project is the **client component** of the snapMULTI multiroom audio appliance:
 
 ```
-snapMULTI (server)                    rpi-snapclient-usb (client)
+snapMULTI (server)                    snapclient-pi (client)
 ├── Snapserver (audio streaming)      ├── Snapclient (audio output)
 ├── MPD / Spotify / AirPlay / Tidal   ├── Audio Visualizer (spectrum analysis)
 ├── Metadata Service (centralized) ───>├── FB Display (cover art + metadata)

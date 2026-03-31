@@ -1,4 +1,4 @@
-# CLAUDE.md — rpi-snapclient-usb
+# CLAUDE.md — snapclient-pi
 
 Raspberry Pi Snapcast client with auto-detection, Docker services, and framebuffer display.
 **Requires snapMULTI server** — included as a git submodule at `client/` in the server repo.
@@ -75,5 +75,5 @@ Use `_snapcast._tcp` (port 1704), **never** `_snapcast-ctrl._tcp`. RPC port = st
 
 ### Git & CI
 - Pre-push hook runs shellcheck, bash syntax, HAT config validation
-- Docker images: `lollonet/rpi-snapclient-usb[-*]:latest` (Docker Hub)
+- Docker images: `lollonet/snapclient-pi[-*]:latest` (Docker Hub)
 - Branch naming: `feature/<desc>` or `fix/<desc>`, always use PRs

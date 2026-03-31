@@ -6,9 +6,9 @@
 
 | Image | Base | Size | Contents |
 |-------|------|------|----------|
-| `lollonet/rpi-snapclient-usb` | Alpine | ~30MB | snapclient binary, entrypoint |
-| `lollonet/rpi-snapclient-usb-visualizer` | Python 3.13-slim | ~120MB | numpy, websockets, ctypes ALSA |
-| `lollonet/rpi-snapclient-usb-fb-display` | Python 3.13-slim | ~150MB | numpy, pillow, websockets, requests |
+| `lollonet/snapclient-pi` | Alpine | ~30MB | snapclient binary, entrypoint |
+| `lollonet/snapclient-pi-visualizer` | Python 3.13-slim | ~120MB | numpy, websockets, ctypes ALSA |
+| `lollonet/snapclient-pi-fb-display` | Python 3.13-slim | ~150MB | numpy, pillow, websockets, requests |
 
 **Platform**: `linux/arm64` (Docker images). Python code also runs natively on other architectures.
 
@@ -45,9 +45,9 @@ These files are mounted from the host into containers for live updates without i
 ```
 Tag v0.2.19 pushed
     │
-    ├── build-snapclient ──▶ Docker Hub: lollonet/rpi-snapclient-usb:0.2.19, :latest
-    ├── build-visualizer ──▶ Docker Hub: lollonet/rpi-snapclient-usb-visualizer:0.2.19, :latest
-    └── build-fb-display ──▶ Docker Hub: lollonet/rpi-snapclient-usb-fb-display:0.2.19, :latest
+    ├── build-snapclient ──▶ Docker Hub: lollonet/snapclient-pi:0.2.19, :latest
+    ├── build-visualizer ──▶ Docker Hub: lollonet/snapclient-pi-visualizer:0.2.19, :latest
+    └── build-fb-display ──▶ Docker Hub: lollonet/snapclient-pi-fb-display:0.2.19, :latest
 ```
 
 All 3 jobs run in parallel on self-hosted runners.

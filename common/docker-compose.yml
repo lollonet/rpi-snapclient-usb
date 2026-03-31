@@ -1,4 +1,4 @@
-# rpi-snapclient-usb Docker Compose
+# snapclient-pi Docker Compose
 # Resource profiles auto-detected by setup.sh: minimal | standard | performance
 
 x-logging: &default-logging
@@ -15,7 +15,7 @@ x-security: &default-security
 
 services:
   snapclient:
-    image: lollonet/rpi-snapclient-usb:latest
+    image: lollonet/snapclient-pi:latest
     container_name: snapclient
     network_mode: host
     restart: unless-stopped
@@ -71,7 +71,7 @@ services:
   # fb-display derives METADATA_HOST from SNAPSERVER_HOST (same server).
 
   audio-visualizer:
-    image: lollonet/rpi-snapclient-usb-visualizer:latest
+    image: lollonet/snapclient-pi-visualizer:latest
     build: ./docker/audio-visualizer
     container_name: audio-visualizer
     profiles:
@@ -117,7 +117,7 @@ services:
           memory: ${VISUALIZER_MEM_RESERVE:-64M}
 
   fb-display:
-    image: lollonet/rpi-snapclient-usb-fb-display:latest
+    image: lollonet/snapclient-pi-fb-display:latest
     build: ./docker/fb-display
     container_name: fb-display
     restart: unless-stopped

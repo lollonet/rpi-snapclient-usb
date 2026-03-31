@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: lollonet/rpi-snapclient-usb
+  IMAGE_NAME: lollonet/snapclient-pi
 
 jobs:
   build-snapclient:

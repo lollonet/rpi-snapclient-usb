@@ -1,8 +1,8 @@
 # Raspberry Pi Snapcast Client with HiFiBerry & Cover Display
 
-[![CI](https://github.com/lollonet/rpi-snapclient-usb/actions/workflows/ci.yml/badge.svg)](https://github.com/lollonet/rpi-snapclient-usb/actions/workflows/ci.yml)
-[![release](https://img.shields.io/github/v/release/lollonet/rpi-snapclient-usb?color=orange)](https://github.com/lollonet/rpi-snapclient-usb/releases/latest)
-[![downloads](https://img.shields.io/docker/pulls/lollonet/rpi-snapclient-usb?color=green)](https://hub.docker.com/r/lollonet/rpi-snapclient-usb)
+[![CI](https://github.com/lollonet/snapclient-pi/actions/workflows/ci.yml/badge.svg)](https://github.com/lollonet/snapclient-pi/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/lollonet/snapclient-pi?color=orange)](https://github.com/lollonet/snapclient-pi/releases/latest)
+[![downloads](https://img.shields.io/docker/pulls/lollonet/snapclient-pi?color=green)](https://hub.docker.com/r/lollonet/snapclient-pi)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-yellowgreen)](https://paypal.me/lolettic)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -164,7 +164,7 @@ The setup script installs Docker CE, automatically configures your audio HAT and
 ## Project Structure
 
 ```
-rpi-snapclient-usb/
+snapclient-pi/
 ├── install/
 │   └── snapclient.conf         # Config defaults (AUDIO_HAT=auto)
 │
@@ -314,7 +314,7 @@ Expected: `Read-only mode: enabled` with overlay active. Use `ro-mode disable &&
 ## Docker Image
 
 This project uses pre-built Docker images:
-- **Images**: `lollonet/rpi-snapclient-usb-*:latest` (Docker Hub) (snapclient, visualizer, fb-display)
+- **Images**: `lollonet/snapclient-pi-*:latest` (Docker Hub) (snapclient, visualizer, fb-display)
 - **Platform**: ARM64 (Raspberry Pi 4). Python display code also runs natively on other Linux architectures (e.g. PowerPC)
 - **Requires**: Docker Compose v2+ (installed automatically by setup.sh via Docker CE)
 

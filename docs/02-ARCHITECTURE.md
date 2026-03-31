@@ -15,7 +15,7 @@
                      TCP:1704 │          │ WS:8082 + HTTP:8083
                               │          │
 ┌─────────────────────────────┼──────────┼────────────────────────┐
-│  rpi-snapclient-usb         │          │                        │
+│  snapclient-pi         │          │                        │
 │                             ▼          ▼                        │
 │  ┌──────────────┐   ┌──────────────┐   ┌──────────────────────┐ │
 │  │  snapclient  │   │  fb-display  │   │  audio-visualizer    │ │
@@ -41,9 +41,9 @@ All three are Docker containers managed by `docker-compose.yml`. fb-display is o
 
 | Container | Image | Network | Devices | User |
 |-----------|-------|---------|---------|------|
-| snapclient | `lollonet/rpi-snapclient-usb:latest` | host | `/dev/snd` | 1000:1000 + audio(29) |
-| audio-visualizer | `lollonet/rpi-snapclient-usb-visualizer:latest` | bridge (8081 localhost) | `/dev/snd` | 1000:1000 + audio(29) |
-| fb-display | `lollonet/rpi-snapclient-usb-fb-display:latest` | host | `/dev/fb0` | 1000:1000 + video(44) |
+| snapclient | `lollonet/snapclient-pi:latest` | host | `/dev/snd` | 1000:1000 + audio(29) |
+| audio-visualizer | `lollonet/snapclient-pi-visualizer:latest` | bridge (8081 localhost) | `/dev/snd` | 1000:1000 + audio(29) |
+| fb-display | `lollonet/snapclient-pi-fb-display:latest` | host | `/dev/fb0` | 1000:1000 + video(44) |
 
 ### Audio Data Flow
 
