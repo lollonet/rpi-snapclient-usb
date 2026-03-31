@@ -15,7 +15,7 @@ Get your Raspberry Pi Snapcast client running in 5 minutes.
 
 ## Supported Audio HATs
 
-See the [Supported Audio HATs](repos/snapMULTI/client/README.md#supported-audio-hats) table in the README for the full list (15 HATs + USB audio).
+See the [Supported Audio HATs](README.md#supported-audio-hats) table in the README for the full list (15 HATs + USB audio).
 
 ## Step 1: Flash USB Drive
 
@@ -134,7 +134,7 @@ sudo docker compose up -d
 
 ## Next Steps
 
-- See **[README.md](repos/snapMULTI/client/README.md)** for full documentation
+- See **[README.md](README.md)** for full documentation
 - Customize cover display: `/opt/snapclient/public/`
 - Set up additional clients for multiroom audio
 - Install MPD control app (MALP, MPDroid, Cantata, etc.)

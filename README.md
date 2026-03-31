@@ -1,4 +1,6 @@
-# Raspberry Pi Snapcast Client with HiFiBerry & Cover Display
+# SnapClient Pi
+
+> Raspberry Pi Snapcast client with HiFiBerry support and cover display.
 
 [![CI](https://github.com/lollonet/snapclient-pi/actions/workflows/ci.yml/badge.svg)](https://github.com/lollonet/snapclient-pi/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/lollonet/snapclient-pi?color=orange)](https://github.com/lollonet/snapclient-pi/releases/latest)
