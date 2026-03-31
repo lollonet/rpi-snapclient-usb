@@ -675,35 +675,29 @@ progress 2 "Installing Docker CE..."
 log_progress "Checking Docker installation..."
 start_progress_animation 2 12 35  # Animate during long Docker install
 
-# Install Docker CE (official repository) - skip if already installed
+# Install Docker CE — use shared install-docker.sh (single source of truth)
 if command -v docker &> /dev/null && docker --version | grep -q "Docker version"; then
     log_progress "Docker CE already installed, skipping"
 else
     log_progress "Removing conflicting packages..."
-    # Remove conflicting Debian packages first
     apt-get remove -y docker.io docker-compose docker-buildx containerd runc 2>/dev/null || true
 
-    # Only download GPG key if not already present
-    if [ ! -f /etc/apt/keyrings/docker.asc ]; then
-        log_progress "Downloading Docker GPG key..."
-        install -m 0755 -d /etc/apt/keyrings
-        curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-        chmod a+r /etc/apt/keyrings/docker.asc
-    fi
+    # Source shared Docker installer (same as server's firstboot.sh)
+    for _docker_candidate in \
+        "$SCRIPT_DIR/common/install-docker.sh" \
+        "$SCRIPT_DIR/../scripts/common/install-docker.sh" \
+        "$(dirname "$0")/common/install-docker.sh"; do
+        # shellcheck source=common/install-docker.sh
+        [[ -f "$_docker_candidate" ]] && source "$_docker_candidate" && break
+    done
 
-    # Only add repo if not already present
-    if [ ! -f /etc/apt/sources.list.d/docker.list ]; then
-        log_progress "Adding Docker apt repository..."
-        echo \
-          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
-          $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-          tee /etc/apt/sources.list.d/docker.list > /dev/null
-        apt-get update
+    if command -v install_docker_apt &>/dev/null; then
+        log_progress "Installing Docker CE via shared installer..."
+        install_docker_apt
+    else
+        log_progress "WARNING: install-docker.sh not found, installing Docker inline"
+        curl -fsSL https://get.docker.com | sh
     fi
-
-    log_progress "apt-get install: docker-ce docker-ce-cli..."
-    log_progress "apt-get install: containerd.io docker-compose-plugin..."
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
 
 log_progress "systemctl enable docker"
