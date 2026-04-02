@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Album details on display** ([#116](https://github.com/lollonet/snapclient-pi/pull/116)) — shows year, genre, track number, disc number below album name (`1978 · Reggae · Track 3 · Disc 1`). Only displayed when metadata is available.
 
+## [0.2.25] — 2026-04-02
+
+### Fixed
+- **Changelog** — added missing entries for v0.2.20–v0.2.24
+
 ## [0.2.24] — 2026-03-31
 
 ### Changed
