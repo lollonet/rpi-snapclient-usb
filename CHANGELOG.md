@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.27] — 2026-04-03
+
+### Added
+- **SECURITY.md** — vulnerability disclosure policy
+- **CONTRIBUTING.md** — contributor guidelines
+- **Dependabot** — Docker + GitHub Actions weekly updates
+- **Gitleaks** — secrets detection on push/PR
+
+### Changed
+- **Python 3.14** — audio-visualizer and fb-display bumped from 3.13-slim to 3.14-slim
+- **SHA-pinned all GitHub Actions** — supply chain security
+- **Native arm64 CI builds** — Mac runner replaces QEMU emulation
+- **GitHub Actions updated** — setup-qemu 4.0, login 4.1, metadata 6.0, build-push 7.0, setup-buildx 4.0
+
+### Fixed
+- **Clear stale SNAPSERVER_HOST** — discover-server.sh removes hardcoded IPs (including 127.0.0.1 from old both-mode) at boot, forcing mDNS autodiscovery
+
+### Removed
+- **deploy.yml** — SSH deployment workflow removed (reflash only)
+
 ## [0.2.26] — 2026-04-02
 
 ### Added
