@@ -35,6 +35,17 @@ if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^snapserver$'; then
     exit 0
 fi
 
+# Clear any hardcoded SNAPSERVER_HOST — clients should always use mDNS autodiscovery.
+# Old installs may have an IP written by a previous discover-server.sh version.
+current=$(grep "^SNAPSERVER_HOST=" "$ENV_FILE" 2>/dev/null | cut -d= -f2) || true
+if [[ -n "$current" && "$current" != "127.0.0.1" ]]; then
+    sed -i "s|^SNAPSERVER_HOST=.*|SNAPSERVER_HOST=|" "$ENV_FILE" 2>/dev/null || true
+    echo "snapclient-discover: cleared hardcoded SNAPSERVER_HOST=$current (using mDNS)"
+    if $WATCH_MODE; then
+        cd /opt/snapclient && docker compose restart snapclient 2>/dev/null || true
+    fi
+fi
+
 # Watch mode: detect server IP changes and restart snapclient
 if $WATCH_MODE && command -v avahi-browse &>/dev/null; then
     host=$(timeout 10 avahi-browse -rpt _snapcast._tcp 2>/dev/null \

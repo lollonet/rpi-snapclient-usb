@@ -11,21 +11,30 @@ env:
 jobs:
   build-snapclient:
     name: Build Snapclient Image
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
       security-events: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Clean up Docker
+        run: |
+          docker buildx stop || true
+          docker buildx rm --all-inactive --force || true
+          if ! pgrep -f "docker system prune" > /dev/null; then
+            docker system prune -f || true
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4.0.0
-        with:
-          driver: docker
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v4.0.0
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -39,7 +48,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v6.0.0
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
@@ -51,7 +60,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
-        uses: docker/build-push-action@v7.0.0
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
         with:
           context: common/docker/snapclient
           platforms: linux/arm64
@@ -63,7 +72,7 @@ jobs:
       - name: Scan image with Trivy
         id: trivy-snapclient
         continue-on-error: true  # Trivy is reporting only — network failures must not block deploy
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@76071ef0d7ec797419534a183b960b396899d0e0 # v0.35.0
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: sarif
@@ -71,7 +80,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
         if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: trivy-results.sarif
@@ -79,28 +88,29 @@ jobs:
 
   build-visualizer:
     name: Build Audio Visualizer Image
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
       security-events: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4.0.0
-        with:
-          driver: docker
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v4.0.0
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v6.0.0
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
         with:
           images: ${{ env.IMAGE_NAME }}-visualizer
           tags: |
@@ -112,7 +122,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
-        uses: docker/build-push-action@v7.0.0
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
         with:
           context: common/docker/audio-visualizer
           platforms: linux/arm64
@@ -123,7 +133,7 @@ jobs:
       - name: Scan image with Trivy
         id: trivy-visualizer
         continue-on-error: true  # Trivy is reporting only — network failures must not block deploy
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@76071ef0d7ec797419534a183b960b396899d0e0 # v0.35.0
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: sarif
@@ -131,7 +141,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
         if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: trivy-results.sarif
@@ -139,28 +149,29 @@ jobs:
 
   build-fb-display:
     name: Build Framebuffer Display Image
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
       security-events: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4.0.0
-        with:
-          driver: docker
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v4.0.0
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v6.0.0
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
         with:
           images: ${{ env.IMAGE_NAME }}-fb-display
           tags: |
@@ -172,7 +183,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
-        uses: docker/build-push-action@v7.0.0
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
         with:
           context: common/docker/fb-display
           platforms: linux/arm64
@@ -183,7 +194,7 @@ jobs:
       - name: Scan image with Trivy
         id: trivy-fb-display
         continue-on-error: true  # Trivy is reporting only — network failures must not block deploy
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@76071ef0d7ec797419534a183b960b396899d0e0 # v0.35.0
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: sarif
@@ -191,9 +202,34 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
         if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: trivy-results.sarif
           category: trivy-fb-display
 
+  deploy-snapvideo:
+    needs: [build-snapclient, build-visualizer, build-fb-display]
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment_name: snapvideo
+    secrets:
+      HOST:               ${{ secrets.HOST_SNAPVIDEO }}
+      USER:               ${{ secrets.USER }}
+      SSH_KEY:            ${{ secrets.SSH_KEY }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN:    ${{ secrets.DOCKERHUB_TOKEN }}
+
+  deploy-snapdigi:
+    needs: [build-snapclient, build-visualizer, build-fb-display]
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment_name: snapdigi
+    secrets:
+      HOST:               ${{ secrets.HOST_SNAPDIGI }}
+      USER:               ${{ secrets.USER }}
+      SSH_KEY:            ${{ secrets.SSH_KEY }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN:    ${{ secrets.DOCKERHUB_TOKEN }}
