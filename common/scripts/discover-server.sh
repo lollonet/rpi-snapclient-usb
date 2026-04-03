@@ -38,7 +38,7 @@ fi
 # Clear any hardcoded SNAPSERVER_HOST — clients should always use mDNS autodiscovery.
 # Old installs may have an IP written by a previous discover-server.sh version.
 current=$(grep "^SNAPSERVER_HOST=" "$ENV_FILE" 2>/dev/null | cut -d= -f2) || true
-if [[ -n "$current" && "$current" != "127.0.0.1" ]]; then
+if [[ -n "$current" ]]; then
     sed -i "s|^SNAPSERVER_HOST=.*|SNAPSERVER_HOST=|" "$ENV_FILE" 2>/dev/null || true
     echo "snapclient-discover: cleared hardcoded SNAPSERVER_HOST=$current (using mDNS)"
     if $WATCH_MODE; then
