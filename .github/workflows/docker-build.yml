@@ -11,7 +11,7 @@ env:
 jobs:
   build-snapclient:
     name: Build Snapclient Image
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, macOS, ARM64]
     permissions:
       contents: read
       security-events: write
@@ -19,19 +19,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6.0.2
 
-      - name: Clean up Docker
-        run: |
-          docker buildx stop || true
-          docker buildx rm --all-inactive --force || true
-          if ! pgrep -f "docker system prune" > /dev/null; then
-            docker system prune -f || true
-          fi
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4.0.0
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.0.0
+        with:
+          driver: docker
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v4.0.0
@@ -88,7 +79,7 @@ jobs:
 
   build-visualizer:
     name: Build Audio Visualizer Image
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, macOS, ARM64]
     permissions:
       contents: read
       security-events: write
@@ -96,11 +87,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6.0.2
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4.0.0
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.0.0
+        with:
+          driver: docker
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v4.0.0
@@ -149,7 +139,7 @@ jobs:
 
   build-fb-display:
     name: Build Framebuffer Display Image
-    runs-on: [self-hosted, linux, x64]
+    runs-on: [self-hosted, macOS, ARM64]
     permissions:
       contents: read
       security-events: write
@@ -157,11 +147,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6.0.2
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4.0.0
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.0.0
+        with:
+          driver: docker
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v4.0.0
@@ -208,28 +197,3 @@ jobs:
           sarif_file: trivy-results.sarif
           category: trivy-fb-display
 
-  deploy-snapvideo:
-    needs: [build-snapclient, build-visualizer, build-fb-display]
-    if: startsWith(github.ref, 'refs/tags/v')
-    uses: ./.github/workflows/deploy.yml
-    with:
-      environment_name: snapvideo
-    secrets:
-      HOST:               ${{ secrets.HOST_SNAPVIDEO }}
-      USER:               ${{ secrets.USER }}
-      SSH_KEY:            ${{ secrets.SSH_KEY }}
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN:    ${{ secrets.DOCKERHUB_TOKEN }}
-
-  deploy-snapdigi:
-    needs: [build-snapclient, build-visualizer, build-fb-display]
-    if: startsWith(github.ref, 'refs/tags/v')
-    uses: ./.github/workflows/deploy.yml
-    with:
-      environment_name: snapdigi
-    secrets:
-      HOST:               ${{ secrets.HOST_SNAPDIGI }}
-      USER:               ${{ secrets.USER }}
-      SSH_KEY:            ${{ secrets.SSH_KEY }}
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN:    ${{ secrets.DOCKERHUB_TOKEN }}
