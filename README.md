@@ -12,55 +12,40 @@
 
 Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring synchronized multiroom audio and visual cover art display.
 
-## Multiroom Audio Architecture
+## Client Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                       MULTIROOM AUDIO SETUP                              │
-├──────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│   ┌────────────────────────────────────────────────────────────────┐     │
-│   │                    SERVER (Single Host)                        │     │
-│   │  ┌─────────────────┐    ┌────────────────────────────────────┐ │     │
-│   │  │  MPD            │───▶│  Snapserver                        │ │     │
-│   │  │  - Local files  │    │  - Streams to all clients          │ │     │
-│   │  │  - Playlists    │FIFO│  - Ports configured via .env       │ │     │
-│   │  │  - Metadata     │    │  - Synchronized playback           │ │     │
-│   │  └─────────────────┘    └────────────────────────────────────┘ │     │
-│   └────────────────────────────────────────────────────────────────┘     │
-│                                    │                                     │
-│                          Network (WiFi/Ethernet)                         │
-│                                    │                                     │
-│   ┌────────────────────────────────┼────────────────────────────────┐    │
-│   │                                ▼                                │    │
-│   │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │    │
-│   │  │ Pi Client 1 │  │ Pi Client 2 │  │ Pi Client N │              │    │
-│   │  │ Living Room │  │ Bedroom     │  │ Kitchen     │              │    │
-│   │  │ HiFiBerry   │  │ HiFiBerry   │  │ HiFiBerry   │              │    │
-│   │  │ DAC+/Digi+  │  │ DAC+/Digi+  │  │ DAC+/Digi+  │              │    │
-│   │  │ + Display   │  │ + Display   │  │ (optional)  │              │    │
-│   │  └─────────────┘  └─────────────┘  └─────────────┘              │    │
-│   │                                                                 │    │
-│   │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │    │
-│   │  │   Mobile    │  │   Desktop   │  │   Smart TV  │              │    │
-│   │  │ Phone/Tablet│  │ PC/Mac      │  │ Android TV  │              │    │
-│   │  │ Snapclient  │  │ Snapclient  │  │ Snapclient  │              │    │
-│   │  └─────────────┘  └─────────────┘  └─────────────┘              │    │
-│   │                    SNAPCAST CLIENTS                             │    │
-│   └─────────────────────────────────────────────────────────────────┘    │
-│                                                                          │
-│   ┌────────────────────────────────────────────────────────────────┐     │
-│   │                      CONTROL APPS                              │     │
-│   │  Mobile (Recommended):        Desktop:                         │     │
-│   │  - MALP (Android)             - Cantata                        │     │
-│   │  - MPDroid                    - GMPC                           │     │
-│   │  - MPoD (iOS)                 - Sonata                         │     │
-│   │  - Rigelian (iOS)             - Persephone (macOS)             │     │
-│   └────────────────────────────────────────────────────────────────┘     │
-└──────────────────────────────────────────────────────────────────────────┘
+                    snapMULTI Server
+                    (on your network)
+                          │
+                   WiFi / Ethernet
+                          │
+              ┌───────────┴───────────┐
+              │   THIS PI (Client)    │
+              │                       │
+              │  ┌─────────────────┐  │
+              │  │   snapclient    │  │  ← receives audio stream
+              │  │   (port 1704)   │  │
+              │  └────────┬────────┘  │
+              │           │           │
+              │  ┌────────┴────────┐  │
+              │  │  Audio HAT /    │  │  ← plays through speakers
+              │  │  USB DAC        │  │
+              │  └─────────────────┘  │
+              │                       │
+              │  ┌─────────────────┐  │
+              │  │  fb-display     │  │  ← shows cover art (optional)
+              │  │  (framebuffer)  │  │
+              │  └─────────────────┘  │
+              │                       │
+              │  ┌─────────────────┐  │
+              │  │ audio-visualizer│  │  ← spectrum analyzer (optional)
+              │  │  (port 8081)    │  │
+              │  └─────────────────┘  │
+              └───────────────────────┘
 ```
 
-**Note**: Mobile apps are more mature and feature-rich for MPD control. This project provides the Raspberry Pi client implementation shown above.
+For the full system architecture (server + all clients), see [snapMULTI README](https://github.com/lollonet/snapMULTI#how-it-works).
 
 ## Features
 
@@ -105,31 +90,13 @@ Docker-based Snapcast client for Raspberry Pi with HiFiBerry DACs, featuring syn
 
 ### Common Components
 - Raspberry Pi 4 (2GB+)
-- USB drive (8GB+ for boot)
+- microSD card (16GB+)
 - Display: 9" touchscreen (1024x600) or 4K HDMI TV (3840x2160)
 - One of the supported audio HATs listed above, or a USB audio device
 
-### Compatibility Matrix
+### Compatibility
 
-#### Raspberry Pi Models
-
-| Model | Status | Notes |
-|-------|--------|-------|
-| Pi 4 (2GB) | Tested | Standard profile |
-| Pi 4 (4GB) | Tested | Performance profile |
-| Pi 4 (8GB) | Tested | Performance profile |
-| Pi 5 | Untested | Should work, performance profile |
-| Pi 3B+ | Tested | Minimal profile |
-| Pi Zero 2 W | Untested | Minimal profile, no framebuffer display |
-
-#### Displays
-
-| Display | Resolution | Notes |
-|---------|-----------|-------|
-| Official 7" touchscreen | 800x480 | Tested |
-| 9" HDMI touchscreen | 1024x600 | Tested |
-| HDMI monitor 1080p | 1920x1080 | Tested |
-| 4K HDMI TV | 3840x2160 | Render capped at 1920x1080, scaled |
+For the full hardware compatibility matrix (Pi models, RAM requirements, resource profiles, display support), see [snapMULTI Hardware Guide](https://github.com/lollonet/snapMULTI/blob/main/docs/HARDWARE.md#client-requirements).
 
 ## Installation
 
@@ -154,7 +121,7 @@ For advanced users who prefer interactive control, see **[QUICKSTART.md](QUICKST
 
 ### Summary
 
-1. Flash Raspberry Pi OS Lite (64-bit) to USB drive
+1. Flash Raspberry Pi OS Lite (64-bit) to microSD card
 2. Enable SSH and WiFi in Raspberry Pi Imager settings
 3. Boot Pi with your audio HAT attached
 4. Copy project files and run `sudo bash common/scripts/setup.sh`

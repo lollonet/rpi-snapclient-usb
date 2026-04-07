@@ -1,6 +1,6 @@
 # Quick Start Guide (Manual Setup)
 
-Get your Raspberry Pi Snapcast client running in 5 minutes.
+Get your Raspberry Pi Snapcast client running manually.
 
 > **Prefer zero-touch?** Use the [snapMULTI unified installer](https://github.com/lollonet/snapMULTI) — choose "Audio Player" option. No SSH or terminal needed.
 
@@ -8,47 +8,49 @@ Get your Raspberry Pi Snapcast client running in 5 minutes.
 
 - Raspberry Pi 4 (2GB+)
 - One of the supported audio HATs (HiFiBerry, IQaudio, Allo, JustBoom) or USB audio device
-- SD card (8GB+)
+- microSD card (16GB+)
 - Display (any resolution from 800x480 to 4K) — optional for headless
 - Computer with Raspberry Pi Imager
-- **[snapMULTI](https://github.com/lollonet/snapMULTI) server** running on your network
+- **[snapMULTI](https://github.com/lollonet/snapMULTI) server** already running on your network
 
 ## Supported Audio HATs
 
 See the [Supported Audio HATs](README.md#supported-audio-hats) table in the README for the full list (15 HATs + USB audio).
 
-## Step 1: Flash USB Drive
+## Step 1: Flash SD Card
 
 1. Download **Raspberry Pi Imager**: https://www.raspberrypi.com/software/
 2. Select **Raspberry Pi OS Lite (64-bit)**
-3. Choose your USB drive as the target
-4. Click the gear icon (⚙️) to configure settings:
-   - Enable SSH (with password or key)
-   - Set username: `pi` (or your choice)
-   - Set password
-   - Configure WiFi (SSID and password)
-   - Set hostname (optional)
+3. Choose your SD card as the target
+4. Click **Next** → **Edit Settings** to configure:
+   - Set hostname (e.g. `snapdigi`)
+   - Set username and password
+   - Configure WiFi (SSID, password, and country)
+   - Enable SSH (Services tab)
 5. Click **Write** and wait for completion
 
 ## Step 2: First Boot
 
 1. Attach your audio HAT to Raspberry Pi GPIO pins (or connect USB audio device)
-2. Connect display:
+2. Connect display (optional):
    - **9" screen**: DSI or HDMI
    - **4K TV**: HDMI
-3. Insert USB drive into Raspberry Pi
+3. Insert SD card into Raspberry Pi
 4. Power on and wait ~30 seconds for boot
 
 ## Step 3: Copy Project Files
 
-From your computer:
+From your computer, clone the repo and copy files to the Pi:
 
 ```bash
-# SSH into Raspberry Pi
-ssh pi@raspberrypi.local
+git clone https://github.com/lollonet/snapclient-pi.git
+scp -r snapclient-pi <username>@<hostname>.local:/home/<username>/
+```
 
-# From another terminal, copy project files
-scp -r ~/snapclient-pi pi@raspberrypi.local:/home/pi/
+Then SSH into the Pi:
+
+```bash
+ssh <username>@<hostname>.local
 ```
 
 ## Step 4: Run Setup Script
@@ -56,21 +58,13 @@ scp -r ~/snapclient-pi pi@raspberrypi.local:/home/pi/
 On the Raspberry Pi:
 
 ```bash
-cd /home/pi/snapclient-pi
+cd ~/snapclient-pi
 sudo bash common/scripts/setup.sh
 ```
 
 The script will:
-1. **Prompt you to select your audio HAT** (16 options):
-   - HiFiBerry DAC+, DAC+ Standard/clone, Digi+, DAC2 HD, AMP2, DAC+ ADC Pro
-   - IQaudio DAC+, DigiAMP+, Codec Zero
-   - Allo Boss, DigiOne
-   - JustBoom DAC, Digi
-   - InnoMaker DAC PRO, Waveshare WM8960
-   - USB Audio Device
-2. **Prompt you to select display resolution** (6 presets + custom):
-   - 800x480, 1024x600, 1280x720, 1920x1080, 2560x1440, 3840x2160
-   - Or enter custom resolution (e.g., 1366x768)
+1. **Auto-detect your audio HAT** (or prompt you to select from 16 options)
+2. **Prompt you to select display resolution** (6 presets + custom)
 3. Auto-generate CLIENT_ID from hostname
 4. Optionally ask for your Snapserver IP (leave empty for mDNS autodiscovery)
 5. Install Docker CE and dependencies
@@ -78,63 +72,46 @@ The script will:
 7. Set up framebuffer display at selected resolution
 8. Create systemd services for auto-start
 
-**Note**: The script takes 3-5 minutes. It uses pre-built Docker images from Docker Hub (no building required).
+The script takes 3-5 minutes. It uses pre-built Docker images from Docker Hub (no building required).
 
-## Step 5: Configure and Reboot
+## Step 5: Reboot
 
-Edit configuration if needed:
-
-```bash
-sudo nano /opt/snapclient/.env
-```
-
-The setup script auto-generates `.env` from your selections. See [`common/.env.example`](common/.env.example) for all available settings.
-
-Reboot:
 ```bash
 sudo reboot
 ```
 
 ## Verification
 
-After reboot (~30 seconds), verify everything is running:
+After reboot (~30 seconds), SSH back in and check:
 
 ```bash
-# Check Docker containers
-sudo docker ps
-# Should show: snapclient, audio-visualizer, fb-display (all "healthy")
-
-# Check services
-sudo systemctl status snapclient
-
-# View snapclient logs
-sudo docker logs -f snapclient
-
-# Test audio device
-aplay -l
+sudo docker ps --format 'table {{.Names}}\t{{.Status}}'
 ```
 
-You should see:
-- Album art displayed on screen
-- Audio playing through HiFiBerry
-- Snapclient connected to your server
+Expected output:
+```
+NAMES              STATUS
+snapclient         Up X minutes (healthy)
+audio-visualizer   Up X minutes (healthy)
+fb-display         Up X minutes (healthy)
+```
+
+`audio-visualizer` and `fb-display` only appear if an HDMI display was connected at boot.
 
 ## Configuration
 
-To change settings:
+To change settings after installation:
 
 ```bash
-# Edit configuration
 sudo nano /opt/snapclient/.env
-
-# Apply changes (restart does NOT pick up .env changes)
 cd /opt/snapclient
-sudo docker compose up -d
+sudo docker compose up -d   # NOT restart — restart doesn't pick up .env changes
 ```
+
+See [`common/.env.example`](common/.env.example) for all available settings.
 
 ## Next Steps
 
 - See **[README.md](README.md)** for full documentation
-- Customize cover display: `/opt/snapclient/public/`
 - Set up additional clients for multiroom audio
-- Install MPD control app (MALP, MPDroid, Cantata, etc.)
+- Install an MPD control app (MPDroid, Cantata, etc.) to browse your music library
