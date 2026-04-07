@@ -36,9 +36,9 @@ uvx --with numpy --with pillow --with websockets --with requests pytest tests/ -
 
 | Script | Run By | Tests | Checks |
 |--------|--------|-------|--------|
-| `test-hat-configs.sh` | Pre-push hook, CI | 15 | HAT config file format, required fields, count (15) |
-| `test-entrypoint.sh` | CI | 22 | MIXER validation (11), ALSA buffer validation (11) |
-| `test-resource-profiles.sh` | CI | — | Resource profile detection logic |
+| `test_hat_configs.sh` | Pre-push hook, CI | 15 | HAT config file format, required fields, count (15) |
+| `test_entrypoint.sh` | CI | 22 | MIXER validation (11), ALSA buffer validation (11) |
+| `test_resource_profiles.sh` | CI | — | Resource profile detection logic |
 | shellcheck | Pre-push hook, CI | — | All `.sh` files pass shellcheck |
 | bash syntax | Pre-push hook, CI | — | `bash -n` on all scripts |
 

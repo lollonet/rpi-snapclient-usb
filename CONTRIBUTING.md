@@ -11,7 +11,7 @@
 
 ```bash
 # Run pre-push checks locally
-./scripts/git-hooks/pre-push
+./dev/git-hooks/pre-push
 
 # Run tests
 pytest tests/ -v

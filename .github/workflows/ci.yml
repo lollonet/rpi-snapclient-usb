@@ -71,13 +71,13 @@ jobs:
         run: bash -n common/scripts/setup.sh
 
       - name: Test HAT configurations
-        run: bash tests/test-hat-configs.sh
+        run: bash tests/test_hat_configs.sh
 
       - name: Test entrypoint validation
-        run: bash tests/test-entrypoint.sh
+        run: bash tests/test_entrypoint.sh
 
       - name: Test resource profile detection
-        run: bash tests/test-resource-profiles.sh
+        run: bash tests/test_resource_profiles.sh
 
       - name: Validate HAT config count
         run: |

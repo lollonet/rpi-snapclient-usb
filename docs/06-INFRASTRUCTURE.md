@@ -62,7 +62,7 @@ git push
     └── HAT count check (15 expected)
 ```
 
-Install: `bash scripts/install-hooks.sh`
+Install: `bash dev/install-hooks.sh`
 
 ## Resource Profiles
 

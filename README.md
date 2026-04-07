@@ -152,7 +152,7 @@ snapclient-pi/
 │       ├── audio-visualizer/   # Spectrum analyzer (dBFS)
 │       └── fb-display/         # Framebuffer display renderer
 │
-├── scripts/                    # Development scripts
+├── dev/                        # Development tooling
 │   └── install-hooks.sh        # Git hooks installer
 │
 ├── tests/                      # Test and validation scripts
@@ -317,7 +317,7 @@ sudo ro-mode enable && sudo reboot
 Install pre-push hooks to run CI checks locally before pushing:
 
 ```bash
-bash scripts/install-hooks.sh
+bash dev/install-hooks.sh
 ```
 
 This installs a pre-push hook that runs:
