@@ -33,9 +33,7 @@ body:
       description: Which component does this affect?
       options:
         - snapMULTI (server)
-        - rpi-snapclient (client)
-        - SnapCTRL (desktop app)
+        - snapclient-pi (client)
         - Documentation
-        - Ecosystem-wide
     validations:
       required: true
