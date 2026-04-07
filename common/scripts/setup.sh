@@ -100,215 +100,64 @@ echo ""
 # When PROGRESS_MANAGED=1 (set by firstboot.sh), the parent script owns the
 # /dev/tty1 display. We only write log messages to the parent's PROGRESS_LOG
 # and skip all tty1 rendering to avoid display "bouncing."
+#
+# Sources the shared progress.sh library (same code as firstboot.sh uses)
+# instead of duplicating ~170 lines of progress rendering code.
 PROGRESS_MANAGED="${PROGRESS_MANAGED:-}"
-
-# Use monotonic counter instead of SECONDS (clock may be wrong on first boot)
-PROGRESS_START_MONO=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
-PROGRESS_ANIM_PID=""
-
-STEP_NAMES=("System dependencies" "Docker CE" "Audio HAT config"
-            "ALSA loopback" "Boot settings" "Docker environment"
-            "Security hardening" "Systemd service" "Read-only filesystem"
-            "Pulling images")
-
-# Weights reflect actual duration (Pull=40%, Docker=33%, Deps=12%, RO=5%, rest=10%)
-STEP_WEIGHTS=(12 33 2 2 2 2 2 3 5 37)
 
 # Log file: use parent's if PROGRESS_MANAGED, otherwise our own
 if [[ -n "$PROGRESS_MANAGED" ]]; then
     PROGRESS_LOG="${PROGRESS_LOG:-/tmp/snapmulti-progress.log}"
 else
     PROGRESS_LOG="/tmp/snapclient-progress.log"
-    : > "$PROGRESS_LOG"  # Clear/create log file
 fi
 
-# Render progress display to tty1 (ASCII-safe for Linux framebuffer PSF fonts)
-render_progress() {
-    # Parent owns the display — skip rendering entirely
-    [[ -n "$PROGRESS_MANAGED" ]] && return
+if [[ "$AUTO_MODE" == true ]]; then
+    # Step definitions for client setup
+    # shellcheck disable=SC2034
+    STEP_NAMES=("System dependencies" "Docker CE" "Audio HAT config"
+                "ALSA loopback" "Boot settings" "Docker environment"
+                "Security hardening" "Systemd service" "Read-only filesystem"
+                "Pulling images")
+    # Weights reflect actual duration (Pull=40%, Docker=33%, Deps=12%, RO=5%, rest=10%)
+    # shellcheck disable=SC2034
+    STEP_WEIGHTS=(12 33 2 2 2 2 2 3 5 37)
+    # Title for standalone TUI (overridden by firstboot.sh when PROGRESS_MANAGED)
+    # shellcheck disable=SC2034
+    PROGRESS_TITLE="Snapclient Auto-Install"
 
-    local step=$1 pct=$2 elapsed=$3 spinner=${4:-}
-    local total=${#STEP_NAMES[@]}
-
-    [[ -c /dev/tty1 ]] || return
-
-    # Clamp pct to 0-100 for safety
-    (( pct < 0 )) && pct=0
-    (( pct > 100 )) && pct=100
-
-    # Build progress bar (50 chars wide, ASCII-safe)
-    local bar_width=50
-    local filled=$(( pct * bar_width / 100 ))
-    local empty=$(( bar_width - filled ))
-    local bar=""
-    for ((i=0; i<filled; i++)); do bar+="#"; done
-    for ((i=0; i<empty; i++)); do bar+="-"; done
-
-    # Get last 10 lines of log for output area (wider: 64 chars)
-    local log_lines=""
-    if [[ -f "$PROGRESS_LOG" ]]; then
-        log_lines=$(tail -10 "$PROGRESS_LOG" 2>/dev/null | cut -c1-64 || true)
-    fi
-
-    {
-        printf '\033[2J\033[H'
-        printf '\n'
-        printf '  +------------------------------------------------------------------+\n'
-        printf '  |                     \033[1mSnapclient Auto-Install\033[0m                      |\n'
-        printf '  +------------------------------------------------------------------+\n'
-        printf '\n'
-        printf '  \033[36mElapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
-        printf '  \033[33m[%s]\033[0m %3d%% %s\n\n' "$bar" "$pct" "$spinner"
-        for i in $(seq 1 "$total"); do
-            local name="${STEP_NAMES[$((i-1))]}"
-            if (( i < step )); then   printf '  \033[32m[x]\033[0m %s\n' "$name"
-            elif (( i == step )); then printf '  \033[33m[>]\033[0m %s\n' "$name"
-            else                       printf '  [ ] %s\n' "$name"
-            fi
-        done
-        printf '\n'
-        printf '  +----------------------------- Output -----------------------------+\n'
-        # Print log lines (pad to 64 chars with 1-char margins)
-        if [[ -n "$log_lines" ]]; then
-            while IFS= read -r line; do
-                printf '  | \033[90m%-64s\033[0m |\n' "$line"
-            done <<< "$log_lines"
-        fi
-        # Fill remaining lines to make consistent height (10 lines)
-        local line_count
-        line_count=$(printf '%s' "$log_lines" | grep -c '^') || line_count=0
-        for ((i=line_count; i<10; i++)); do
-            printf '  | %-64s |\n' ""
-        done
-        printf '  +------------------------------------------------------------------+\n'
-    } > /dev/tty1
-}
-
-# Helper to log output for display
-log_progress() {
-    echo "$*" >> "$PROGRESS_LOG"
-}
-
-# Start background animation for long-running steps
-start_progress_animation() {
-    [[ "$AUTO_MODE" != true ]] && return
-    [[ -n "$PROGRESS_MANAGED" ]] && return
-    local step=$1 base_pct=$2 step_weight=$3
-
-    # Kill any existing animation
-    stop_progress_animation
-
-    # Start background process that updates display every second
-    (
-        local spinners=('|' '/' '-' '\')
-        local spin_idx=0
-        local step_start
-        step_start=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
-
-        while true; do
-            local now_mono elapsed step_elapsed pct_in_step current_pct
-            now_mono=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
-            elapsed=$(( now_mono - PROGRESS_START_MONO ))
-            step_elapsed=$(( now_mono - step_start ))
-
-            # Gradually fill the step's portion (ease-out curve)
-            # Max out at 90% of step weight to leave room for completion
-            if (( step_elapsed < 300 )); then
-                pct_in_step=$(( step_weight * step_elapsed * 9 / 3000 ))
-            else
-                pct_in_step=$(( step_weight * 9 / 10 ))
-            fi
-            current_pct=$(( base_pct + pct_in_step ))
-
-            render_progress "$step" "$current_pct" "$elapsed" "${spinners[$spin_idx]}"
-            spin_idx=$(( (spin_idx + 1) % 4 ))
-            sleep 1
-        done
-    ) &
-    PROGRESS_ANIM_PID=$!
-}
-
-stop_progress_animation() {
-    if [[ -n "$PROGRESS_ANIM_PID" ]]; then
-        kill "$PROGRESS_ANIM_PID" 2>/dev/null || true
-        wait "$PROGRESS_ANIM_PID" 2>/dev/null || true
-        PROGRESS_ANIM_PID=""
-    fi
-}
-
-progress() {
-    [[ "$AUTO_MODE" != true ]] && return
-    local step=$1 msg="$2"
-    local total=${#STEP_NAMES[@]}
-
-    # Stop any running animation
-    stop_progress_animation
-
-    # Elapsed time from monotonic uptime (immune to clock changes)
-    local now_mono
-    now_mono=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
-    local elapsed=$(( now_mono - PROGRESS_START_MONO ))
-
-    # Calculate weighted percentage (sum weights of COMPLETED steps)
-    # step=1 means starting step 1, nothing completed yet → 0%
-    # step=2 means step 1 done → weight[0]
-    local weight_sum=0 total_weight=0
-    for ((i=0; i<total; i++)); do
-        total_weight=$(( total_weight + STEP_WEIGHTS[i] ))
-        if (( i < step - 1 )); then
-            weight_sum=$(( weight_sum + STEP_WEIGHTS[i] ))
+    # Source shared progress library (provides render_progress, start/stop
+    # animation, progress, progress_complete, milestone, log_progress).
+    # When PROGRESS_MANAGED=1, the shared library's render_progress writes
+    # to the parent's PROGRESS_LOG only (tty1 is owned by firstboot.sh).
+    _progress_sourced=false
+    for _progress_candidate in \
+        "$SCRIPT_DIR/common/progress.sh" \
+        "$SCRIPT_DIR/../scripts/common/progress.sh" \
+        "$(dirname "$0")/common/progress.sh"; do
+        # shellcheck source=common/progress.sh
+        if [[ -f "$_progress_candidate" ]]; then
+            source "$_progress_candidate"
+            _progress_sourced=true
+            break
         fi
     done
-    local pct=$(( weight_sum * 100 / total_weight ))
+    if [[ "$_progress_sourced" != true ]]; then
+        echo "WARNING: progress.sh not found — TUI disabled"
+    fi
+fi
 
-    # One-line summary to stdout (goes to log via firstboot redirect)
-    echo "=== Step $step/$total: $msg ($((elapsed/60))m$((elapsed%60))s) ==="
-
-    # Render to tty1 (skipped when parent manages display)
-    render_progress "$step" "$pct" "$elapsed"
-}
-
-progress_complete() {
-    [[ "$AUTO_MODE" != true ]] && return
-    [[ -n "$PROGRESS_MANAGED" ]] && return
-
-    # Stop any running animation
-    stop_progress_animation
-
-    local total=${#STEP_NAMES[@]}
-    local now_mono
-    now_mono=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)
-    local elapsed=$(( now_mono - PROGRESS_START_MONO ))
-
-    [[ -c /dev/tty1 ]] || return
-
-    local bar=""
-    for ((i=0; i<50; i++)); do bar+="#"; done
-
-    {
-        printf '\033[2J\033[H'
-        printf '\n'
-        printf '  +------------------------------------------------------------------+\n'
-        printf '  |                     \033[1mSnapclient Auto-Install\033[0m                      |\n'
-        printf '  +------------------------------------------------------------------+\n'
-        printf '\n'
-        printf '  \033[36mElapsed: %02d:%02d\033[0m\n\n' $((elapsed/60)) $((elapsed%60))
-        printf '  \033[32m[%s]\033[0m 100%%\n\n' "$bar"
-        for i in $(seq 1 "$total"); do
-            printf '  \033[32m[x]\033[0m %s\n' "${STEP_NAMES[$((i-1))]}"
-        done
-        printf '\n'
-        printf '  \033[32m>>> Installation complete! <<<\033[0m\n'
-        printf '\n'
-        printf '  +----------------------------- Output -----------------------------+\n'
-        printf '  | \033[32m%-64s\033[0m |\n' "All steps completed successfully"
-        printf '  | \033[32m%-64s\033[0m |\n' "System will reboot shortly..."
-        for ((i=0; i<8; i++)); do
-            printf '  | %-64s |\n' ""
-        done
-        printf '  +------------------------------------------------------------------+\n'
-    } > /dev/tty1
-}
+# Define no-op stubs for any functions not yet defined (interactive mode,
+# or progress.sh not found). This ensures progress/log_progress calls
+# throughout the script never fail.
+declare -F progress_init &>/dev/null       || progress_init() { :; }
+declare -F render_progress &>/dev/null     || render_progress() { :; }
+declare -F log_progress &>/dev/null        || log_progress() { echo "$*" >> "$PROGRESS_LOG"; }
+declare -F start_progress_animation &>/dev/null || start_progress_animation() { :; }
+declare -F stop_progress_animation &>/dev/null  || stop_progress_animation() { :; }
+declare -F progress &>/dev/null            || progress() { :; }
+declare -F progress_complete &>/dev/null   || progress_complete() { :; }
+declare -F milestone &>/dev/null           || milestone() { :; }
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
