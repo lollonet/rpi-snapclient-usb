@@ -1092,6 +1092,8 @@ declare -A env_vars=(
     # Version tag (for display) — prefer VERSION file baked by prepare-sd.sh,
     # fall back to git describe (dev clones), then short SHA, then "dev".
     ["APP_VERSION"]="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null || echo "dev")"
+    # Image tag — passed from firstboot.sh in "both" mode, or from install.conf
+    ["IMAGE_TAG"]="${IMAGE_TAG:-latest}"
 )
 
 for key in "${!env_vars[@]}"; do
