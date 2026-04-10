@@ -802,8 +802,8 @@ if [ -n "$BOOT_CONFIG" ]; then
         echo "Disabled otg_mode=1 (conflicts with I2S audio HATs)"
         NEEDS_REBOOT=true
     fi
-    if grep -q 'dtoverlay=dwc2,dr_mode=host' "$BOOT_CONFIG"; then
-        sed -i 's/dtoverlay=dwc2,dr_mode=host/dtoverlay=dwc2/' "$BOOT_CONFIG"
+    if grep -q '^dtoverlay=dwc2,dr_mode=host' "$BOOT_CONFIG"; then
+        sed -i 's/^dtoverlay=dwc2,dr_mode=host/dtoverlay=dwc2/' "$BOOT_CONFIG"
         echo "Removed dr_mode=host from dwc2 overlay (conflicts with I2S HATs)"
         NEEDS_REBOOT=true
     fi
@@ -1492,7 +1492,7 @@ echo "  - Use 'sudo ro-mode disable && sudo reboot' for updates"
 fi
 if [[ "$NEEDS_REBOOT" == "true" ]]; then
 echo ""
-echo "NOTE: Display resolution was changed (800x600 install mode removed)."
-echo "  A reboot is required for the new resolution to take effect."
+echo "NOTE: Boot configuration was modified."
+echo "  A reboot is required for changes to take effect."
 fi
 echo ""
