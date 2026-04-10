@@ -634,7 +634,7 @@ echo ""
 progress 3 "Configuring audio HAT..."
 
 # Detect display early — needed to decide whether to set up ALSA loopback.
-# The display check is repeated later for Docker Compose profiles.
+# HAS_DISPLAY is reused later for Docker Compose profiles.
 # shellcheck source=display.sh
 if [[ ! "$(type -t has_display)" == "function" ]]; then
     source "$COMMON_DIR/scripts/display.sh"
@@ -715,10 +715,11 @@ EOF
     echo "  - Audio loopback enabled for spectrum analyzer (snd-aloop)"
 else
     # Headless: direct DAC output, no loopback (simpler, more reliable)
-    # Remove loopback module if previously configured
+    # Remove loopback from auto-load config and unload from running kernel
     if [[ -f /etc/modules-load.d/snapclient.conf ]]; then
         sed -i '/snd-aloop/d' /etc/modules-load.d/snapclient.conf
     fi
+    modprobe -r snd-aloop 2>/dev/null || true
 
     cat > /etc/asound.conf << EOF
 # ALSA configuration for $HAT_NAME (headless — no spectrum analyzer)
