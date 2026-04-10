@@ -375,6 +375,22 @@ detect_hat() {
         echo "I2C: i2cdetect unavailable after install attempt, skipping I2C detection" >&2
     fi
 
+    # Step 4: Check for USB audio device
+    if command -v aplay &>/dev/null && aplay -l 2>/dev/null | grep -qi 'USB'; then
+        echo "Detected USB audio device" >&2
+        echo "usb-audio"
+        return
+    fi
+
+    # Step 5: Fall back to internal audio (bcm2835 headphone jack / HDMI)
+    if command -v aplay &>/dev/null && aplay -l 2>/dev/null | grep -qi 'bcm2835\|Headphones'; then
+        echo "No HAT or USB DAC found, using internal audio (bcm2835)" >&2
+        echo "internal-audio"
+        return
+    fi
+
+    # Nothing found — default to USB (will fail if no device present)
+    echo "WARNING: No audio device detected" >&2
     echo "usb-audio"
 }
 
@@ -382,8 +398,9 @@ detect_hat() {
 resolve_hat_config_name() {
     local name="$1"
     case "$name" in
-        usb|usb-audio)  echo "usb-audio" ;;
-        *)              echo "$name" ;;
+        usb|usb-audio)      echo "usb-audio" ;;
+        internal|internal-audio|bcm2835) echo "internal-audio" ;;
+        *)                  echo "$name" ;;
     esac
 }
 
@@ -838,8 +855,10 @@ if [ -n "$BOOT_CONFIG" ]; then
         # Disable onboard audio
         echo "dtparam=audio=off"
 
-        # GPU memory based on resolution
-        if [ "$DISPLAY_WIDTH" -gt 1920 ]; then
+        # GPU memory: headless needs minimal (16MB), display needs more
+        if [[ "${HAS_DISPLAY:-true}" == "false" ]]; then
+            echo "gpu_mem=16"
+        elif [ "$DISPLAY_WIDTH" -gt 1920 ]; then
             echo "gpu_mem=512"
             echo "hdmi_enable_4kp60=1"
             echo "hdmi_force_hotplug=1"
@@ -983,18 +1002,26 @@ set_resource_limits "$RESOURCE_PROFILE"
 echo "Hardware profile: $RESOURCE_PROFILE ($(awk '/MemTotal/ {printf "%.1fGB RAM", $2/1024/1024}' /proc/meminfo), $(nproc) cores)"
 
 # Detect network type and set ALSA buffer defaults
-# Treat "auto" same as empty — trigger detection
-if [[ "${CONNECTION_TYPE:-auto}" == "auto" ]]; then
+# Both mode (localhost): audio goes over loopback, not WiFi — use tight buffers
+if [[ "${SNAPSERVER_HOST:-}" == "127.0.0.1" ]]; then
+    CONNECTION_TYPE="local"
+elif [[ "${CONNECTION_TYPE:-auto}" == "auto" ]]; then
     CONNECTION_TYPE=$(detect_connection_type)
 fi
 echo "Network: $CONNECTION_TYPE"
 
-# WiFi needs larger buffers due to inherent jitter (10-100ms)
-# Ethernet is stable enough for tight sync
+# Buffer sizing by connection type:
+#   local: loopback has zero jitter — tightest buffers
+#   ethernet: stable, low jitter
+#   wifi: inherent jitter (10-100ms) — needs larger buffers
 case "$CONNECTION_TYPE" in
     wifi)
         ALSA_BUFFER_TIME="${ALSA_BUFFER_TIME:-250}"
         ALSA_FRAGMENTS="${ALSA_FRAGMENTS:-8}"
+        ;;
+    local)
+        ALSA_BUFFER_TIME="${ALSA_BUFFER_TIME:-100}"
+        ALSA_FRAGMENTS="${ALSA_FRAGMENTS:-4}"
         ;;
     *)
         ALSA_BUFFER_TIME="${ALSA_BUFFER_TIME:-150}"
