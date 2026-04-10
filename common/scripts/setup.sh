@@ -242,16 +242,21 @@ get_hat_config() {
     esac
 }
 
+# Tracks how the HAT was detected: eeprom, alsa, i2c, usb, internal, none
+HAT_DETECTION_SOURCE="none"
+
 detect_hat() {
     # Detect audio HAT automatically.
     # 1. Pi firmware reads HAT EEPROM at boot → /proc/device-tree/hat/product
     # 2. Fallback: check ALSA card names via aplay -l (requires overlay already loaded)
     # 3. Fallback: I2C bus scan for known DAC chip addresses (works without overlay)
-    # 4. Final fallback: USB audio
+    # 4. USB audio device check
+    # 5. Final fallback: internal audio (bcm2835)
     local hat_product=""
 
     if [ -f /proc/device-tree/hat/product ]; then
         hat_product=$(tr -d '\0' < /proc/device-tree/hat/product)
+        HAT_DETECTION_SOURCE="eeprom"
         # Log detected product for debugging
         echo "EEPROM product: '$hat_product'" >&2
         # Match EEPROM strings - patterns based on Volumio dacs.json and real devices
@@ -282,6 +287,7 @@ detect_hat() {
         echo "Warning: Unknown HAT product '$hat_product', falling back to USB" >&2
     fi
 
+    HAT_DETECTION_SOURCE="alsa"
     if command -v aplay &>/dev/null; then
         local cards
         cards=$(aplay -l 2>/dev/null || true)
@@ -369,7 +375,11 @@ detect_hat() {
             fi
         done
         $found_bus || echo "I2C: no /dev/i2c-* nodes available after runtime enable" >&2
-        [[ -n "$result" ]] && echo "$result" && return
+        if [[ -n "$result" ]]; then
+            HAT_DETECTION_SOURCE="i2c"
+            echo "$result"
+            return
+        fi
         echo "I2C: scan completed without matching a supported HAT" >&2
     else
         echo "I2C: i2cdetect unavailable after install attempt, skipping I2C detection" >&2
@@ -378,6 +388,7 @@ detect_hat() {
     # Step 4: Check for USB audio device
     if command -v aplay &>/dev/null && aplay -l 2>/dev/null | grep -qi 'USB'; then
         echo "Detected USB audio device" >&2
+        HAT_DETECTION_SOURCE="usb"
         echo "usb-audio"
         return
     fi
@@ -385,13 +396,15 @@ detect_hat() {
     # Step 5: Fall back to internal audio (bcm2835 headphone jack / HDMI)
     if command -v aplay &>/dev/null && aplay -l 2>/dev/null | grep -qi 'bcm2835\|Headphones'; then
         echo "No HAT or USB DAC found, using internal audio (bcm2835)" >&2
+        HAT_DETECTION_SOURCE="internal"
         echo "internal-audio"
         return
     fi
 
-    # Nothing found — default to USB (will fail if no device present)
-    echo "WARNING: No audio device detected" >&2
-    echo "usb-audio"
+    # Nothing found — default to internal (safer than USB which may not exist)
+    echo "WARNING: No audio device detected, defaulting to internal audio" >&2
+    HAT_DETECTION_SOURCE="internal"
+    echo "internal-audio"
 }
 
 # Map AUDIO_HAT config name (e.g. "usb") to .conf filename
@@ -852,8 +865,12 @@ if [ -n "$BOOT_CONFIG" ]; then
             esac
         fi
 
-        # Disable onboard audio
-        echo "dtparam=audio=off"
+        # Disable onboard audio only when HAT is confirmed (EEPROM or ALSA).
+        # I2C detection can false-positive (e.g., non-DAC chip at 0x4D).
+        # USB and internal audio need onboard audio as fallback.
+        if [ -n "$HAT_OVERLAY" ] && [[ "$HAT_DETECTION_SOURCE" == "eeprom" || "$HAT_DETECTION_SOURCE" == "alsa" ]]; then
+            echo "dtparam=audio=off"
+        fi
 
         # GPU memory: headless needs minimal (16MB), display needs more
         if [[ "${HAS_DISPLAY:-true}" == "false" ]]; then
