@@ -795,6 +795,19 @@ if [ -n "$BOOT_CONFIG" ]; then
         fi
     fi
 
+    # Fix USB/I2S conflict: otg_mode=1 and dr_mode=host force USB into host
+    # mode, which prevents GPIO I2S/I2C communication with audio HATs.
+    if grep -q '^otg_mode=1' "$BOOT_CONFIG"; then
+        sed -i 's/^otg_mode=1/#otg_mode=1 # disabled by snapclient (conflicts with I2S HATs)/' "$BOOT_CONFIG"
+        echo "Disabled otg_mode=1 (conflicts with I2S audio HATs)"
+        NEEDS_REBOOT=true
+    fi
+    if grep -q '^dtoverlay=dwc2,dr_mode=host' "$BOOT_CONFIG"; then
+        sed -i 's/^dtoverlay=dwc2,dr_mode=host/dtoverlay=dwc2/' "$BOOT_CONFIG"
+        echo "Removed dr_mode=host from dwc2 overlay (conflicts with I2S HATs)"
+        NEEDS_REBOOT=true
+    fi
+
     # Extract display width from resolution (default to 0 for autodiscovery mode)
     DISPLAY_WIDTH="${DISPLAY_RESOLUTION%x*}"
     DISPLAY_WIDTH="${DISPLAY_WIDTH:-0}"
@@ -1479,7 +1492,7 @@ echo "  - Use 'sudo ro-mode disable && sudo reboot' for updates"
 fi
 if [[ "$NEEDS_REBOOT" == "true" ]]; then
 echo ""
-echo "NOTE: Display resolution was changed (800x600 install mode removed)."
-echo "  A reboot is required for the new resolution to take effect."
+echo "NOTE: Boot configuration was modified."
+echo "  A reboot is required for changes to take effect."
 fi
 echo ""
