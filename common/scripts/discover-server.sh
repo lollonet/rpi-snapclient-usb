@@ -3,8 +3,9 @@
 # Boot mode:  runs as ExecStartPre (no args) — sets localhost for "both" mode.
 # Watch mode: runs periodically (--watch) — restarts client if server IP changed.
 #
-# SNAPSERVER_HOST in .env is left empty (mDNS autodiscovery via snapclient).
-# Only "both" mode sets SNAPSERVER_HOST=127.0.0.1 (local server always wins).
+# Discovers the snapserver via mDNS and writes its IPv4 to SNAPSERVER_HOST in .env.
+# "Both" mode: SNAPSERVER_HOST=127.0.0.1 (local server always wins).
+# If mDNS fails, the existing IP in .env is kept (avoids losing a valid server).
 set -euo pipefail
 
 ENV_FILE="/opt/snapclient/.env"

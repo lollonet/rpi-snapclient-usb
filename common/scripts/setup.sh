@@ -420,8 +420,13 @@ resolve_hat_config_name() {
 if [ "$AUTO_MODE" = true ]; then
     # Auto mode: detect or use configured HAT
     if [ "$AUDIO_HAT" = "auto" ]; then
-        AUDIO_HAT=$(detect_hat)
-        echo "Auto-detected HAT: $AUDIO_HAT"
+        # Run detect_hat in current shell (not subshell) so HAT_DETECTION_SOURCE
+        # survives — command substitution $() would discard global side-effects.
+        _hat_tmp=$(mktemp)
+        detect_hat > "$_hat_tmp"
+        AUDIO_HAT=$(cat "$_hat_tmp")
+        rm -f "$_hat_tmp"
+        echo "Auto-detected HAT: $AUDIO_HAT (source: $HAT_DETECTION_SOURCE)"
     fi
     HAT_CONFIG=$(resolve_hat_config_name "$AUDIO_HAT")
 else
@@ -1140,8 +1145,6 @@ declare -A env_vars=(
     # Version tag (for display) — prefer VERSION file baked by prepare-sd.sh,
     # fall back to git describe (dev clones), then short SHA, then "dev".
     ["APP_VERSION"]="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null || echo "dev")"
-    # Image tag — passed from firstboot.sh in "both" mode, or from install.conf
-    ["IMAGE_TAG"]="${IMAGE_TAG:-latest}"
 )
 
 for key in "${!env_vars[@]}"; do
