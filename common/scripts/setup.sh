@@ -1133,6 +1133,10 @@ declare -A env_vars=(
     ["ALSA_BUFFER_TIME"]="$ALSA_BUFFER_TIME"
     ["ALSA_FRAGMENTS"]="$ALSA_FRAGMENTS"
     ["CONNECTION_TYPE"]="$CONNECTION_TYPE"
+    # Read-only filesystem (--no-readonly disables)
+    ["ENABLE_READONLY"]="$ENABLE_READONLY"
+    # Docker image tag — inherited from firstboot/prepare-sd (e.g. "dev" for --dev mode)
+    ["IMAGE_TAG"]="${IMAGE_TAG:-latest}"
     # Version tag (for display) — prefer VERSION file baked by prepare-sd.sh,
     # fall back to git describe (dev clones), then short SHA, then "dev".
     ["APP_VERSION"]="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null || echo "dev")"
