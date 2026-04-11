@@ -330,8 +330,8 @@ detect_hat() {
     [[ -z "$modprobe_bin" && -x /usr/sbin/modprobe ]] && modprobe_bin=/usr/sbin/modprobe
 
     if [[ -z "$i2cdetect_bin" ]]; then
-        # Redirect stdout to stderr: detect_hat() is called in $() substitution so
-        # any stdout gets captured as the return value and corrupts HAT_CONFIG.
+        # Redirect stdout to stderr: detect_hat() output goes to a temp file,
+        # so any apt-get stdout here would corrupt the detected HAT name.
         apt-get install -y -q i2c-tools >&2 || true
         i2cdetect_bin=$(command -v i2cdetect 2>/dev/null || true)
         [[ -z "$i2cdetect_bin" && -x /usr/sbin/i2cdetect ]] && i2cdetect_bin=/usr/sbin/i2cdetect
