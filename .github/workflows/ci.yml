@@ -82,8 +82,8 @@ jobs:
       - name: Validate HAT config count
         run: |
           count=$(ls -1 common/audio-hats/*.conf | wc -l)
-          if [ "$count" -ne 16 ]; then
-            echo "Expected 16 HAT configs, found $count"
+          if [ "$count" -ne 17 ]; then
+            echo "Expected 17 HAT configs, found $count"
             exit 1
           fi
-          echo "All 16 HAT configs present"
+          echo "All 17 HAT configs present"

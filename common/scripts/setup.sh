@@ -330,8 +330,8 @@ detect_hat() {
     [[ -z "$modprobe_bin" && -x /usr/sbin/modprobe ]] && modprobe_bin=/usr/sbin/modprobe
 
     if [[ -z "$i2cdetect_bin" ]]; then
-        # Redirect stdout to stderr: detect_hat() is called in $() substitution so
-        # any stdout gets captured as the return value and corrupts HAT_CONFIG.
+        # Redirect stdout to stderr: detect_hat() output goes to a temp file,
+        # so any apt-get stdout here would corrupt the detected HAT name.
         apt-get install -y -q i2c-tools >&2 || true
         i2cdetect_bin=$(command -v i2cdetect 2>/dev/null || true)
         [[ -z "$i2cdetect_bin" && -x /usr/sbin/i2cdetect ]] && i2cdetect_bin=/usr/sbin/i2cdetect
@@ -420,8 +420,13 @@ resolve_hat_config_name() {
 if [ "$AUTO_MODE" = true ]; then
     # Auto mode: detect or use configured HAT
     if [ "$AUDIO_HAT" = "auto" ]; then
-        AUDIO_HAT=$(detect_hat)
-        echo "Auto-detected HAT: $AUDIO_HAT"
+        # Run detect_hat in current shell (not subshell) so HAT_DETECTION_SOURCE
+        # survives — command substitution $() would discard global side-effects.
+        _hat_tmp=$(mktemp)
+        detect_hat > "$_hat_tmp"
+        AUDIO_HAT=$(cat "$_hat_tmp")
+        rm -f "$_hat_tmp"
+        echo "Auto-detected HAT: $AUDIO_HAT (source: $HAT_DETECTION_SOURCE)"
     fi
     HAT_CONFIG=$(resolve_hat_config_name "$AUDIO_HAT")
 else
