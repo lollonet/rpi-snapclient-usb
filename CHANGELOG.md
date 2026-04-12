@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Internal audio config** — `internal-audio.conf` for Pi headphone jack / HDMI fallback
+- **bcm2835 detection** — `detect_hat` now identifies onboard audio as explicit fallback
+
+### Fixed
+- **IMAGE_TAG not persisted** — `setup.sh` now writes `IMAGE_TAG` and `ENABLE_READONLY` to `.env` (previously lost after reboot)
+- **I2C false positive** — keep onboard audio as fallback when I2C scan finds ambiguous chips
+- **discover-server.sh** — writes discovered IPv4 to `.env` instead of clearing `SNAPSERVER_HOST`
+- **systemctl not-found** — suppress error from `is-enabled` on missing services
+- **gpu_mem=16 headless** — reduced GPU memory for headless clients, localhost buffer tuning
+- **HAT_DETECTION_SOURCE subshell** — `detect_hat` now runs in current shell via redirect
+
+### Removed
+- **Bloat docs** — deleted docs/00-VISION.md, 06-INFRASTRUCTURE.md, 07-TESTING.md, 08-WBS.md (planning artifacts, not user docs)
+
 ## [0.2.27] — 2026-04-03
 
 ### Added

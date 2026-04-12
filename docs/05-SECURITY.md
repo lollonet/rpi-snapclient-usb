@@ -1,5 +1,3 @@
-**Status: Reflects implementation as of v0.2.19**
-
 # Security
 
 ## Threat Model

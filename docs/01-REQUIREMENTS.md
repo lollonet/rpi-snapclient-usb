@@ -1,5 +1,3 @@
-**Status: Reflects implementation as of v0.2.19**
-
 # Requirements
 
 ## Functional Requirements
@@ -9,7 +7,7 @@
 | ID | Requirement | Priority | Status |
 |----|-------------|----------|--------|
 | FR-01.1 | Receive synchronized audio from Snapserver over TCP (port 1704) | Must | ✅ IMPLEMENTED |
-| FR-01.2 | Output audio via ALSA to any of the 15 supported HATs or USB DAC | Must | ✅ IMPLEMENTED |
+| FR-01.2 | Output audio via ALSA to any of the 17 supported HATs or USB DAC | Must | ✅ IMPLEMENTED |
 | FR-01.3 | Support hardware and software mixer modes | Must | ✅ IMPLEMENTED |
 | FR-01.4 | Route audio to both DAC and ALSA loopback simultaneously (for spectrum) | Must | ✅ IMPLEMENTED |
 | FR-01.5 | Auto-discover Snapserver via mDNS (`_snapcast._tcp`) | Must | ✅ IMPLEMENTED |
@@ -104,6 +102,6 @@
 | NFR-04.1 | Raspberry Pi 4 (2/4/8 GB) | ✅ TESTED | Standard/performance profiles |
 | NFR-04.2 | Raspberry Pi 5 | ⚠️ UNTESTED | Should work (performance profile) |
 | NFR-04.3 | Raspberry Pi 3B+ | ✅ TESTED | Minimal profile |
-| NFR-04.4 | 15 audio HATs + USB audio | ✅ TESTED | Auto-detection via EEPROM + I2C scan |
+| NFR-04.4 | 17 audio HATs + USB audio | ✅ TESTED | Auto-detection via EEPROM + I2C scan |
 | NFR-04.5 | Resolutions 800x480 to 3840x2160 | ✅ TESTED | Render capped at 1920x1080, scaled |
 | NFR-04.6 | Big-endian platforms (PowerPC) | ✅ TESTED | Native Python, no Docker |
