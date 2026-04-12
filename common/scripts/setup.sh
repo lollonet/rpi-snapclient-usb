@@ -1447,18 +1447,15 @@ _pull_failed=()
 # Pull a single service with 3-attempt retry. Returns 0 on success.
 _pull_one() {
     local svc="$1"
-    for attempt in 1 2 3; do
+    local delays=(0 10 30)  # retry after 10s, 30s
+    for i in 0 1 2; do
+        [[ ${delays[$i]} -gt 0 ]] && { log_progress "Retrying $svc in ${delays[$i]}s..."; sleep "${delays[$i]}"; }
         if docker compose pull "$svc" 2>&1 | tail -3; then
             return 0
         fi
-        [[ $attempt -lt 3 ]] && { log_progress "Retrying $svc in ${attempt}0s..."; sleep "$((attempt * 10))"; }
     done
     return 1
 }
-
-for svc in "${_pull_services[@]}"; do
-    log_progress "docker compose pull: $svc"
-done
 
 # Pull in pairs: background first, foreground second, wait
 for ((i=0; i<${#_pull_services[@]}; i+=2)); do
@@ -1468,12 +1465,14 @@ for ((i=0; i<${#_pull_services[@]}; i+=2)); do
     # Pull svc2 in background (output to temp file to avoid interleaving)
     _bg_pid="" _bg_log=""
     if [[ -n "$svc2" ]]; then
+        log_progress "Pulling $svc2..."
         _bg_log=$(mktemp)
         _pull_one "$svc2" >"$_bg_log" 2>&1 &
         _bg_pid=$!
     fi
 
     # svc1 with 3 attempts in foreground
+    log_progress "Pulling $svc1..."
     if ! _pull_one "$svc1"; then
         _pull_failed+=("$svc1")
     fi
