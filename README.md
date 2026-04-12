@@ -55,7 +55,7 @@ For the full system architecture (server + all clients), see [snapMULTI README](
 - 📊 **Real-Time Spectrum Analyzer**: dBFS FFT visualizer with half/third-octave bands, auto-gain normalization
 - 😴 **Standby Screen**: Retro hi-fi artwork with breathing animation when idle
 - 🔍 **mDNS Autodiscovery**: Snapserver found automatically — no IP configuration needed
-- 🎛️ **Multiple Audio HATs**: Support for 15 Raspberry Pi audio HATs + USB audio
+- 🎛️ **Multiple Audio HATs**: Support for 17 Raspberry Pi audio HATs + USB audio
 - 📺 **Flexible Display**: Direct framebuffer rendering, 6 resolution presets (800x480 to 4K)
 - ⚡ **Zero-Touch Install**: Via [snapMULTI](https://github.com/lollonet/snapMULTI) unified installer — flash SD, power on, auto-detects HAT
 - 🐳 **Docker-based**: Pre-built images for easy deployment

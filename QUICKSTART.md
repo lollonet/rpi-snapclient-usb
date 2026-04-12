@@ -15,7 +15,7 @@ Get your Raspberry Pi Snapcast client running manually.
 
 ## Supported Audio HATs
 
-See the [Supported Audio HATs](README.md#supported-audio-hats) table in the README for the full list (15 HATs + USB audio).
+See the [Supported Audio HATs](README.md#supported-audio-hats) table in the README for the full list (17 HATs + USB audio).
 
 ## Step 1: Flash SD Card
 
