@@ -79,6 +79,9 @@ jobs:
       - name: Test resource profile detection
         run: bash tests/test_resource_profiles.sh
 
+      - name: Test pull hardening
+        run: bash tests/test_pull_hardening.sh
+
       - name: Validate HAT config count
         run: |
           count=$(ls -1 common/audio-hats/*.conf | wc -l)
