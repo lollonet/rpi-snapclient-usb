@@ -1432,15 +1432,66 @@ progress 10 "Pulling container images..."
 start_progress_animation 10 60 40  # Animate during long image pull
 
 cd "$INSTALL_DIR"
-log_progress "docker compose pull: snapclient"
-log_progress "docker compose pull: audio-visualizer"
-log_progress "docker compose pull: fb-display"
-if ! docker compose pull 2>&1; then
+
+# Pull images with retry (network hiccups common on Pi WiFi).
+# Pull 2 services at a time — balances network throughput vs SD I/O.
+mapfile -t _pull_services < <(docker compose config --services 2>/dev/null)
+if [[ ${#_pull_services[@]} -eq 0 ]]; then
     stop_progress_animation
-    log_progress "ERROR: Failed to pull container images"
+    echo "ERROR: No services found in docker-compose.yml"
+    exit 1
+fi
+
+_pull_failed=()
+
+# Pull a single service with 3-attempt retry. Returns 0 on success.
+_pull_one() {
+    local svc="$1"
+    local delays=(0 10 30)  # retry after 10s, 30s
+    for i in 0 1 2; do
+        [[ ${delays[$i]} -gt 0 ]] && { log_progress "Retrying $svc in ${delays[$i]}s..."; sleep "${delays[$i]}"; }
+        if docker compose pull "$svc" 2>&1 | tail -3; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Pull in pairs: background first, foreground second, wait
+for ((i=0; i<${#_pull_services[@]}; i+=2)); do
+    svc1="${_pull_services[$i]}"
+    svc2="${_pull_services[$i+1]:-}"
+
+    # Pull svc2 in background (output to temp file to avoid interleaving)
+    _bg_pid="" _bg_log=""
+    if [[ -n "$svc2" ]]; then
+        log_progress "Pulling $svc2..."
+        _bg_log=$(mktemp)
+        _pull_one "$svc2" >"$_bg_log" 2>&1 &
+        _bg_pid=$!
+    fi
+
+    # svc1 with 3 attempts in foreground
+    log_progress "Pulling $svc1..."
+    if ! _pull_one "$svc1"; then
+        _pull_failed+=("$svc1")
+    fi
+
+    # Wait for background svc2 (already retried 3x in background)
+    if [[ -n "$_bg_pid" ]]; then
+        if ! wait "$_bg_pid" 2>/dev/null; then
+            cat "$_bg_log"  # surface output on failure
+            _pull_failed+=("$svc2")
+        fi
+        rm -f "$_bg_log"
+    fi
+done
+
+if [[ ${#_pull_failed[@]} -gt 0 ]]; then
+    stop_progress_animation
+    log_progress "ERROR: Failed to pull: ${_pull_failed[*]}"
     echo ""
-    echo "ERROR: Failed to pull container images."
-    echo "  Without images the system cannot start."
+    echo "ERROR: Failed to pull container images: ${_pull_failed[*]}"
     echo "  Check network connectivity and try: docker compose pull"
     exit 1
 fi
