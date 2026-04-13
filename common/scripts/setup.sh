@@ -1433,8 +1433,19 @@ start_progress_animation 10 60 40  # Animate during long image pull
 
 cd "$INSTALL_DIR"
 
+# Pre-flight: ensure enough disk space for images (~1 GB needed)
+_avail_mb=$(df -BM --output=avail "$INSTALL_DIR" 2>/dev/null | tail -1 | tr -d ' M')
+if [[ -n "$_avail_mb" ]] && [[ "$_avail_mb" -lt 1024 ]]; then
+    stop_progress_animation
+    echo "ERROR: Only ${_avail_mb}MB free — need at least 1 GB for container images"
+    echo "  Free up space and re-run: docker compose pull"
+    exit 1
+fi
+
 # Pull images with retry (network hiccups common on Pi WiFi).
 # Pull 2 services at a time — balances network throughput vs SD I/O.
+_pull_tmp=$(mktemp -d)
+trap 'rm -rf "$_pull_tmp"' EXIT
 mapfile -t _pull_services < <(docker compose config --services 2>/dev/null)
 if [[ ${#_pull_services[@]} -eq 0 ]]; then
     stop_progress_animation
@@ -1444,16 +1455,22 @@ fi
 
 _pull_failed=()
 
-# Pull a single service with 3-attempt retry. Returns 0 on success.
+# Pull a single service with 3-attempt retry.
+# Output is suppressed on success and surfaced on failure.
 _pull_one() {
     local svc="$1"
+    local log="$_pull_tmp/pull-$svc"
     local delays=(0 10 30)  # retry after 10s, 30s
     for i in 0 1 2; do
         [[ ${delays[$i]} -gt 0 ]] && { log_progress "Retrying $svc in ${delays[$i]}s..."; sleep "${delays[$i]}"; }
-        if docker compose pull "$svc" 2>&1 | tail -3; then
+        if docker compose pull "$svc" >"$log" 2>&1; then
+            rm -f "$log"
             return 0
         fi
     done
+    # Surface last attempt's output on failure
+    tail -5 "$log"
+    rm -f "$log"
     return 1
 }
 
@@ -1462,25 +1479,25 @@ for ((i=0; i<${#_pull_services[@]}; i+=2)); do
     svc1="${_pull_services[$i]}"
     svc2="${_pull_services[$i+1]:-}"
 
-    # Pull svc2 in background (output to temp file to avoid interleaving)
+    # Pull svc2 in background (capture retry messages to avoid interleaving)
     _bg_pid="" _bg_log=""
     if [[ -n "$svc2" ]]; then
         log_progress "Pulling $svc2..."
-        _bg_log=$(mktemp)
+        _bg_log="$_pull_tmp/bg-$svc2"
         _pull_one "$svc2" >"$_bg_log" 2>&1 &
         _bg_pid=$!
     fi
 
-    # svc1 with 3 attempts in foreground
+    # svc1 in foreground
     log_progress "Pulling $svc1..."
     if ! _pull_one "$svc1"; then
         _pull_failed+=("$svc1")
     fi
 
-    # Wait for background svc2 (already retried 3x in background)
+    # Wait for background svc2
     if [[ -n "$_bg_pid" ]]; then
         if ! wait "$_bg_pid" 2>/dev/null; then
-            cat "$_bg_log"  # surface output on failure
+            cat "$_bg_log"  # surface failure output
             _pull_failed+=("$svc2")
         fi
         rm -f "$_bg_log"
@@ -1496,6 +1513,7 @@ if [[ ${#_pull_failed[@]} -gt 0 ]]; then
     exit 1
 fi
 log_progress "All images pulled successfully"
+docker image prune -f >/dev/null 2>&1 || true
 echo ""
 
 # ============================================
@@ -1559,8 +1577,9 @@ fi
 # ============================================
 progress_complete
 
+_elapsed="$((SECONDS / 60))m$((SECONDS % 60))s"
 echo "========================================="
-echo "Setup Complete!"
+echo "Setup Complete! ($_elapsed)"
 echo "========================================="
 echo ""
 echo "Configuration Summary:"
