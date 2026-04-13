@@ -31,12 +31,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Get latest santcasp commit SHA
-        id: santcasp
+      - name: Get latest snapcast commit SHA (cache buster)
+        id: snapcast
         run: |
-          SHA=$(git ls-remote https://github.com/lollonet/santcasp.git HEAD | cut -f1)
+          SHA=$(git ls-remote https://github.com/badaix/snapcast.git HEAD | cut -f1)
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "santcasp HEAD: $SHA"
+          echo "snapcast HEAD: $SHA"
 
       - name: Extract metadata
         id: meta
@@ -60,7 +60,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: SANTCASP_SHA=${{ steps.santcasp.outputs.sha }}
+          build-args: SNAPCAST_SHA=${{ steps.snapcast.outputs.sha }}
 
       - name: Scan image with Trivy
         id: trivy-snapclient
