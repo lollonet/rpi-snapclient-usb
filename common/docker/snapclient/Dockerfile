@@ -17,9 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone and build snapclient from upstream badaix/snapcast.
-# Repo and tag are configurable via build args.
-# CI passes SNAPCAST_REPO=...santcasp.git when building the develop branch.
+# Clone and build snapclient from upstream badaix/snapcast (default).
+# CI passes SNAPCAST_REPO=santcasp via workflow_dispatch for :dev builds.
 ARG SNAPCAST_REPO=https://github.com/badaix/snapcast.git
 ARG SNAPCAST_BRANCH=master
 ARG SNAPCAST_TAG=
