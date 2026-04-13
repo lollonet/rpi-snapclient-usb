@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Clone and build snapclient from upstream badaix/snapcast (default).
-# CI passes SNAPCAST_REPO=santcasp via workflow_dispatch for :dev builds.
+# CI passes SNAPCAST_REPO=lollonet/santcasp.git via workflow_dispatch for :dev builds.
 ARG SNAPCAST_REPO=https://github.com/badaix/snapcast.git
 ARG SNAPCAST_BRANCH=master
 ARG SNAPCAST_TAG=

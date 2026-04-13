@@ -60,7 +60,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' && inputs.use_santcasp != true }}
             type=raw,value=dev,enable=${{ inputs.use_santcasp == true }}
 
       - name: Build and push
@@ -124,7 +124,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' && inputs.use_santcasp != true }}
             type=raw,value=dev,enable=${{ inputs.use_santcasp == true }}
 
       - name: Build and push
@@ -185,7 +185,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' && inputs.use_santcasp != true }}
             type=raw,value=dev,enable=${{ inputs.use_santcasp == true }}
 
       - name: Build and push
