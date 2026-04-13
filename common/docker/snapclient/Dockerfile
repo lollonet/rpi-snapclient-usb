@@ -17,12 +17,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone and build snapclient from upstream badaix/snapcast
-# SNAPCAST_TAG busts the Docker cache when new version is released
-ARG SNAPCAST_TAG=v0.35.0
+# Clone and build snapclient from snapcast (or santcasp fork)
+# Repo and branch are configurable via build args.
+# Note: with SNAPCAST_BRANCH=develop (constant), Docker caches the clone
+# layer indefinitely. Use --no-cache or pass a unique SNAPCAST_SHA to
+# force re-clone when the branch has new commits.
+ARG SNAPCAST_REPO=https://github.com/lollonet/santcasp.git
+ARG SNAPCAST_BRANCH=develop
+ARG SNAPCAST_TAG=
+ARG SNAPCAST_SHA=latest
 WORKDIR /build
-RUN echo "snapcast tag: $SNAPCAST_TAG" && \
-    git clone --depth 1 --branch $SNAPCAST_TAG https://github.com/badaix/snapcast.git snapcast
+RUN echo "snapcast repo: $SNAPCAST_REPO branch: ${SNAPCAST_TAG:-$SNAPCAST_BRANCH}" && \
+    git clone --depth 1 --branch "${SNAPCAST_TAG:-$SNAPCAST_BRANCH}" "$SNAPCAST_REPO" snapcast
 
 WORKDIR /build/snapcast
 RUN cmake -S . -B build \
