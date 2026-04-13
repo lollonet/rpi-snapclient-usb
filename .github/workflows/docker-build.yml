@@ -43,10 +43,12 @@ jobs:
         run: |
           if [[ "$USE_SANTCASP" == "true" ]]; then
             REPO="https://github.com/lollonet/santcasp.git"
+            BRANCH="develop"
           else
             REPO="https://github.com/badaix/snapcast.git"
+            BRANCH="master"
           fi
-          SHA=$(git ls-remote "$REPO" HEAD | cut -f1)
+          SHA=$(git ls-remote "$REPO" "refs/heads/$BRANCH" | cut -f1)
           echo "repo=$REPO" >> "$GITHUB_OUTPUT"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "snapcast: $REPO SHA: $SHA"
